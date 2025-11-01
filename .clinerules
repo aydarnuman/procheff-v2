@@ -1,0 +1,438 @@
+# Procheff-v2 - Claude Talimatları
+
+## 🎯 Proje Hakkında
+Bu proje, ihale dokümanlarını (PDF, DOCX, CSV) yükleyip AI ile analiz eden bir Next.js uygulamasıdır.
+- Dosya upload ve işleme
+- Claude AI ve Gemini ile doküman analizi
+- Supabase backend
+- Dashboard ve raporlama
+
+---
+
+## 🛠️ Teknoloji Stack
+
+### Core
+- **Framework**: Next.js 16.0.1 (App Router)
+- **React**: 19.2.0
+- **TypeScript**: Zorunlu, strict mode
+- **Styling**: Tailwind CSS 4
+
+### State & Data
+- **State Management**: Zustand (global state için)
+- **Database**: Supabase
+- **API**: Next.js API Routes
+
+### AI & File Processing
+- **AI Models**:
+  - Anthropic Claude SDK (@anthropic-ai/sdk)
+  - Google Generative AI
+- **File Processing**:
+  - PDF: pdf-lib, pdf2json, jspdf
+  - DOCX: mammoth
+  - Upload: multer, formidable
+  - Extraction: textract
+
+### UI & Animation
+- **Icons**: lucide-react
+- **Animation**: framer-motion
+- **Theme**: next-themes (dark/light mode)
+
+---
+
+## 📝 Kod Stili Kuralları
+
+### TypeScript
+✅ **YAPILMASI GEREKENLER:**
+- Her zaman TypeScript kullan, JavaScript yazma
+- Strict mode aktif
+- Type'ları explicit tanımla
+- Interface ve type'ları net isimlendirme
+
+❌ **YAPILMAMASI GEREKENLER:**
+- `any` type kullanma (unknown veya proper type kullan)
+- Type assertion yerine type guard kullan
+- `@ts-ignore` yazma
+
+```typescript
+// ✅ İyi
+interface AnalysisResult {
+  success: boolean;
+  data: string;
+  error?: string;
+}
+
+// ❌ Kötü
+const result: any = await analyze();
+```
+
+### React Components
+✅ **YAPILMASI GEREKENLER:**
+- Fonksiyonel componentler (React 19)
+- Arrow function syntax: `const Component = () => {}`
+- TypeScript ile prop typing
+- Named exports (default export yerine)
+
+❌ **YAPILMAMASI GEREKENLER:**
+- Class componentler yazma
+- Inline styles kullanma (Tailwind kullan)
+- Direct DOM manipulation
+
+```typescript
+// ✅ İyi
+interface ButtonProps {
+  onClick: () => void;
+  children: React.ReactNode;
+}
+
+export const Button = ({ onClick, children }: ButtonProps) => {
+  return <button onClick={onClick}>{children}</button>;
+};
+
+// ❌ Kötü
+export default function Button(props: any) {
+  return <button style={{ color: 'red' }}>{props.children}</button>;
+}
+```
+
+### Async/Await
+✅ **YAPILMASI GEREKENLER:**
+- async/await kullan
+- Try-catch ile error handling
+- Loading ve error state'leri yönet
+
+❌ **YAPILMAMASI GEREKENLER:**
+- `.then().catch()` zincirleme
+- Error handling yapmamak
+
+```typescript
+// ✅ İyi
+const analyzeDocument = async (file: File): Promise<AnalysisResult> => {
+  try {
+    const response = await fetch('/api/analyze', {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!response.ok) {
+      throw new Error('Analysis failed');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Analysis error:', error);
+    throw error;
+  }
+};
+
+// ❌ Kötü
+const analyzeDocument = (file) => {
+  return fetch('/api/analyze')
+    .then(res => res.json())
+    .catch(err => console.log(err));
+};
+```
+
+---
+
+## 📁 Proje Yapısı
+
+```
+/app                 # Next.js App Router
+  /api              # API routes
+  /components       # Page-specific components
+  /[page]           # Pages
+/components         # Shared/reusable components
+  /ui              # UI primitives
+/lib               # Utility functions
+  /ai              # AI helper functions
+  /supabase        # Supabase client
+/types             # TypeScript types & interfaces
+/public            # Static assets
+```
+
+### Dosya Organizasyonu
+- Components: `/components` (shared) veya `/app/components` (page-specific)
+- Utils: `/lib` altında kategorize et
+- Types: `/types` klasöründe global type'lar
+- API routes: `/app/api` altında
+
+---
+
+## 🎨 Styling Kuralları
+
+### Tailwind CSS
+✅ **YAPILMASI GEREKENLER:**
+- Tailwind utility classes kullan
+- Responsive design: `sm:`, `md:`, `lg:` breakpoints
+- Dark mode support: `dark:` prefix
+- Framer Motion ile animasyonlar
+
+❌ **YAPILMAMASI GEREKENLER:**
+- Inline styles yazma
+- CSS dosyaları oluşturma (globals.css hariç)
+- !important kullanma
+
+```typescript
+// ✅ İyi
+<div className="flex items-center gap-4 p-6 bg-white dark:bg-gray-900 rounded-lg shadow-md">
+  <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+    Başlık
+  </h1>
+</div>
+
+// ❌ Kötü
+<div style={{ display: 'flex', padding: '24px', backgroundColor: 'white' }}>
+  <h1 style={{ fontSize: '24px', fontWeight: 'bold' }}>Başlık</h1>
+</div>
+```
+
+---
+
+## 🔐 API & Backend
+
+### API Routes
+✅ **YAPILMASI GEREKENLER:**
+- Next.js 16 App Router API routes kullan
+- Error handling ve status codes
+- Request validation
+- Type-safe responses
+
+```typescript
+// /app/api/analyze/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+
+export async function POST(request: NextRequest) {
+  try {
+    const formData = await request.formData();
+    const file = formData.get('file') as File;
+
+    if (!file) {
+      return NextResponse.json(
+        { error: 'File required' },
+        { status: 400 }
+      );
+    }
+
+    // Process file...
+
+    return NextResponse.json({ success: true, data: result });
+  } catch (error) {
+    console.error('API error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+```
+
+### Supabase
+✅ **YAPILMASI GEREKENLER:**
+- Client-side: `createClient` from `@supabase/supabase-js`
+- Server-side: Server component'lerde kullan
+- Type-safe queries
+- Error handling
+
+---
+
+## 🤖 AI Integration
+
+### Claude & Gemini
+✅ **YAPILMASI GEREKENLER:**
+- Environment variables ile API keys
+- Streaming responses destekle
+- Token limitlerine dikkat et
+- Error handling ve retry logic
+
+```typescript
+// ✅ İyi
+import Anthropic from '@anthropic-ai/sdk';
+
+const analyzeWithClaude = async (content: string) => {
+  try {
+    const anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY
+    });
+
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 4096,
+      messages: [{
+        role: 'user',
+        content: `Analyze this document: ${content}`
+      }]
+    });
+
+    return message.content;
+  } catch (error) {
+    console.error('Claude API error:', error);
+    throw new Error('AI analysis failed');
+  }
+};
+```
+
+---
+
+## 📤 File Upload & Processing
+
+### File Handling
+✅ **YAPILMASI GEREKENLER:**
+- Multer veya formidable ile upload
+- File type validation
+- Size limits
+- Error handling
+
+❌ **YAPILMAMASI GEREKENLER:**
+- File'ları direkt memory'de tutma
+- Validation atlama
+
+```typescript
+// ✅ İyi - File validation
+const validateFile = (file: File) => {
+  const allowedTypes = ['application/pdf', 'text/csv', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+  const maxSize = 10 * 1024 * 1024; // 10MB
+
+  if (!allowedTypes.includes(file.type)) {
+    throw new Error('Invalid file type');
+  }
+
+  if (file.size > maxSize) {
+    throw new Error('File too large');
+  }
+};
+```
+
+---
+
+## 🎯 State Management (Zustand)
+
+### Store Yapısı
+✅ **YAPILMASI GEREKENLER:**
+- Küçük, focused store'lar oluştur
+- TypeScript ile type et
+- Immer middleware kullan (gerekirse)
+
+```typescript
+// ✅ İyi
+import { create } from 'zustand';
+
+interface AnalysisStore {
+  isAnalyzing: boolean;
+  result: AnalysisResult | null;
+  error: string | null;
+  setAnalyzing: (value: boolean) => void;
+  setResult: (result: AnalysisResult) => void;
+  setError: (error: string) => void;
+  reset: () => void;
+}
+
+export const useAnalysisStore = create<AnalysisStore>((set) => ({
+  isAnalyzing: false,
+  result: null,
+  error: null,
+  setAnalyzing: (value) => set({ isAnalyzing: value }),
+  setResult: (result) => set({ result, error: null }),
+  setError: (error) => set({ error, isAnalyzing: false }),
+  reset: () => set({ isAnalyzing: false, result: null, error: null })
+}));
+```
+
+---
+
+## ✅ Testing
+
+### Test Scripts
+- `npm run test:smoke` - Smoke tests
+- `npm run test:ai` - AI extraction tests
+
+✅ **YAPILMASI GEREKENLER:**
+- Critical flow'ları test et
+- API endpoint'leri test et
+- File processing'i test et
+
+---
+
+## 🚫 Genel Yasaklar
+
+❌ **ASLA YAPMA:**
+1. `console.log()` production code'da bırakma (development için ok)
+2. `any` type kullanma
+3. Inline styles yazma
+4. Error handling yapmamak
+5. API key'leri hardcode etme
+6. Direct DOM manipulation
+7. Class component yazma
+8. Global state'i gereksiz kullanma
+9. File validation atlama
+10. Next.js 16 conventions'a uymamak
+
+---
+
+## 🎯 Best Practices
+
+### Performance
+- Server Component'leri default olarak kullan
+- Client Component'leri sadece gerektiğinde kullan (`'use client'`)
+- Dynamic import ile code splitting
+- Image optimization (next/image)
+
+### Security
+- Environment variables ile sensitive data
+- Input validation her zaman
+- File upload güvenliği
+- API rate limiting
+
+### Code Quality
+- ESLint kurallarına uy
+- Meaningful variable names
+- Functions: tek sorumluluk prensibi
+- Comments: sadece "neden" açıkla, "ne" değil
+
+---
+
+## 🔄 Development Workflow
+
+### Scripts
+```bash
+npm run dev          # Development server
+npm run build        # Production build
+npm run lint         # Lint check
+npm run clean        # Clean cache
+npm run fresh        # Fresh install + dev
+npm run test:smoke   # Smoke tests
+npm run test:ai      # AI tests
+```
+
+### Git
+- Meaningful commit messages
+- Feature branch'ler kullan
+- PR'den önce test et
+
+---
+
+## 📚 Kaynaklar
+
+- Next.js 16: https://nextjs.org/docs
+- React 19: https://react.dev
+- Tailwind CSS 4: https://tailwindcss.com
+- Zustand: https://docs.pmnd.rs/zustand
+- Supabase: https://supabase.com/docs
+- Anthropic Claude: https://docs.anthropic.com
+
+---
+
+## 💡 Özel Notlar
+
+Bu proje için:
+1. **AI analiz kalitesi** kritik - her zaman error handling yap
+2. **File processing** güvenli olmalı - validation asla atlama
+3. **Performance** önemli - large files için streaming kullan
+4. **User experience** öncelik - loading states ve error messages net olsun
+5. **Type safety** her yerde - TypeScript'in gücünü kullan
+
+---
+
+**Son Güncelleme**: 1 Kasım 2025
+**Proje Versiyonu**: 0.1.0
+**Next.js**: 16.0.1
+**React**: 19.2.0
