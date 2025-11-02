@@ -88,6 +88,71 @@ function sendCompleteEvent(
   controller.enqueue(`data: ${data}\n\n`);
 }
 
+// Helper: Detect document types from combined text
+function detectDocumentTypes(text: string): string[] {
+  const types: string[] = [];
+
+  // Dosya başlıklarını tespit et (=== DOSYA: ... ===)
+  const fileHeaders = text.match(/=== DOSYA: (.+?) ===/g) || [];
+
+  fileHeaders.forEach(header => {
+    const fileName = header.toLowerCase();
+    if (fileName.includes('teknik') || fileName.includes('sartname')) {
+      if (!types.includes('teknik_sartname')) types.push('teknik_sartname');
+    }
+    if (fileName.includes('idari') || fileName.includes('şartname')) {
+      if (!types.includes('idari_sartname')) types.push('idari_sartname');
+    }
+    if (fileName.includes('ilan') || fileName.includes('ihale')) {
+      if (!types.includes('ihale_ilani')) types.push('ihale_ilani');
+    }
+    if (fileName.includes('sozlesme') || fileName.includes('sözleşme')) {
+      if (!types.includes('sozlesme')) types.push('sozlesme');
+    }
+    if (fileName.includes('fiyat') || fileName.includes('teklif')) {
+      if (!types.includes('fiyat_teklif')) types.push('fiyat_teklif');
+    }
+  });
+
+  // Hiç başlık yoksa içerik analizi yap
+  if (types.length === 0) {
+    if (/teknik\s+şartname|menü|porsiyon|gramaj/i.test(text)) types.push('teknik_sartname');
+    if (/idari\s+şartname|ödeme\s+şart|ceza\s+hükü/i.test(text)) types.push('idari_sartname');
+    if (/ihale\s+ilan|kurum\s+ad|teklif\s+son/i.test(text)) types.push('ihale_ilani');
+    if (/sözleşme|madde\s+\d+|taraflar/i.test(text)) types.push('sozlesme');
+  }
+
+  return types;
+}
+
+// Helper: Get document-specific messages
+function getDocumentMessages(docType: string) {
+  const messages: Record<string, { emoji: string; message: string }> = {
+    teknik_sartname: {
+      emoji: '🍽️',
+      message: 'Teknik Şartname analiz ediliyor (menü, gramaj, kalite kriterleri)...'
+    },
+    idari_sartname: {
+      emoji: '⚖️',
+      message: 'İdari Şartname analiz ediliyor (ödeme şartları, ceza hükümleri)...'
+    },
+    ihale_ilani: {
+      emoji: '📢',
+      message: 'İhale İlanı analiz ediliyor (kurum, tarih, bütçe bilgileri)...'
+    },
+    sozlesme: {
+      emoji: '📝',
+      message: 'Sözleşme analiz ediliyor (maddeler, şartlar, yükümlülükler)...'
+    },
+    fiyat_teklif: {
+      emoji: '💰',
+      message: 'Fiyat Teklifi analiz ediliyor (birim fiyatlar, toplam tutar)...'
+    }
+  };
+
+  return messages[docType] || { emoji: '📄', message: 'Belge analiz ediliyor...' };
+}
+
 // Streaming response handler
 async function createStreamingResponse(text: string, startTime: number) {
   const encoder = new TextEncoder();
@@ -98,15 +163,19 @@ async function createStreamingResponse(text: string, startTime: number) {
         // Progress: Starting
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({
           type: 'progress',
-          stage: 'Analiz başlatılıyor...',
+          stage: '🚀 AI analizi başlatılıyor...',
           progress: 5,
           timestamp: Date.now()
         })}\n\n`));
 
+        // Doküman türlerini tespit et
+        const detectedTypes = detectDocumentTypes(text);
+        console.log('📋 Tespit edilen doküman türleri:', detectedTypes);
+
         // Provider selection
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({
           type: 'progress',
-          stage: 'AI sağlayıcıları seçiliyor...',
+          stage: '🤖 AI sağlayıcıları seçiliyor...',
           progress: 10,
           timestamp: Date.now()
         })}\n\n`));
@@ -116,24 +185,54 @@ async function createStreamingResponse(text: string, startTime: number) {
           budget: "balanced",
         });
 
+        // Doküman türlerine özel mesajlar göster (çok kısa - karışıklık olmasın)
+        if (detectedTypes.length > 0) {
+          const typeList = detectedTypes.map(t => {
+            const msg = getDocumentMessages(t);
+            return msg.emoji;
+          }).join(' ');
+
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+            type: 'progress',
+            stage: `📋 ${detectedTypes.length} belge tespit edildi ${typeList}`,
+            progress: 12,
+            timestamp: Date.now()
+          })}\n\n`));
+        }
+
         // Turkish context analysis
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({
           type: 'progress',
-          stage: 'Türkçe bağlam analizi yapılıyor...',
+          stage: '🔍 Türkçe bağlam analizi yapılıyor...',
           progress: 15,
           timestamp: Date.now()
         })}\n\n`));
 
         const contextAnalysis = TurkishContextAnalyzer.analyzeParagraph(text);
 
-        // Data extraction
+        // Data extraction - Her doküman türü için mesaj göster
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({
           type: 'progress',
-          stage: `Veri çıkarımı başladı (${extraction.type.toUpperCase()})...`,
+          stage: `⚙️ AI veri çıkarımı başladı (${extraction.type.toUpperCase()})`,
           progress: 20,
-          details: 'Şartname metni AI tarafından analiz ediliyor',
           timestamp: Date.now()
         })}\n\n`));
+
+        // Doküman türlerine özel detaylı mesajlar
+        let currentProgress = 25;
+        for (const docType of detectedTypes) {
+          const docMsg = getDocumentMessages(docType);
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+            type: 'progress',
+            stage: `${docMsg.emoji} ${docMsg.message}`,
+            progress: currentProgress,
+            timestamp: Date.now()
+          })}\n\n`));
+          currentProgress += Math.floor((45 - 25) / detectedTypes.length);
+
+          // Küçük delay (mesajların okunabilir olması için)
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
 
         let rawExtractedData;
         try {
@@ -142,7 +241,7 @@ async function createStreamingResponse(text: string, startTime: number) {
 
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({
             type: 'progress',
-            stage: 'Veri çıkarımı tamamlandı',
+            stage: '✅ Veri çıkarımı tamamlandı',
             progress: 50,
             details: `Güven skoru: ${Math.round(rawExtractedData.guven_skoru * 100)}%`,
             timestamp: Date.now()
@@ -150,7 +249,7 @@ async function createStreamingResponse(text: string, startTime: number) {
         } catch (error) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({
             type: 'progress',
-            stage: 'Claude fallback aktif...',
+            stage: '🔄 Claude fallback aktif...',
             progress: 40,
             timestamp: Date.now()
           })}\n\n`));
@@ -164,9 +263,8 @@ async function createStreamingResponse(text: string, startTime: number) {
         // Validation
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({
           type: 'progress',
-          stage: 'Veri doğrulama yapılıyor...',
+          stage: '✔️ Veri doğrulama yapılıyor...',
           progress: 60,
-          details: `${extractionTime}ms sürdü`,
           timestamp: Date.now()
         })}\n\n`));
 
@@ -176,7 +274,7 @@ async function createStreamingResponse(text: string, startTime: number) {
         // Financial control
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({
           type: 'progress',
-          stage: 'Finansal kontrol hesaplanıyor...',
+          stage: '💰 Finansal kontrol hesaplanıyor...',
           progress: 65,
           timestamp: Date.now()
         })}\n\n`));
@@ -193,7 +291,7 @@ async function createStreamingResponse(text: string, startTime: number) {
         if (criticalFieldsMissing && extraction.type === "gemini") {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({
             type: 'progress',
-            stage: 'Kritik alanlar için Claude fallback...',
+            stage: '🔄 Kritik alanlar için Claude fallback...',
             progress: 70,
             timestamp: Date.now()
           })}\n\n`));
@@ -216,7 +314,7 @@ async function createStreamingResponse(text: string, startTime: number) {
         // Contextual analysis
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({
           type: 'progress',
-          stage: `Bağlamsal analiz yapılıyor (${strategic.type.toUpperCase()})...`,
+          stage: `📊 Stratejik analiz yapılıyor (${strategic.type.toUpperCase()})`,
           progress: 75,
           details: 'Risk değerlendirmesi ve öneriler hazırlanıyor',
           timestamp: Date.now()
@@ -227,11 +325,16 @@ async function createStreamingResponse(text: string, startTime: number) {
         const totalProcessingTime = Date.now() - startTime;
         const analysisTime = totalProcessingTime - extractionTime;
 
+        // Özet mesaj - hangi belgeler analiz edildi göster
+        const analyzedDocsMessage = detectedTypes.length > 0
+          ? detectedTypes.map(t => getDocumentMessages(t).emoji).join(' ')
+          : '📄';
+
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({
           type: 'progress',
-          stage: 'Sonuçlar hazırlanıyor...',
+          stage: `📋 Analiz tamamlandı ${analyzedDocsMessage}`,
           progress: 95,
-          details: `Toplam ${(totalProcessingTime / 1000).toFixed(1)} saniye`,
+          details: `${(totalProcessingTime / 1000).toFixed(1)} saniyede tamamlandı`,
           timestamp: Date.now()
         })}\n\n`));
 
