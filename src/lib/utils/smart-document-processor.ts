@@ -20,6 +20,10 @@ export class SmartDocumentProcessor {
     "text/rtf", // .rtf
     "text/html", // .html
     "application/rtf", // .rtf alternate
+    "text/csv", // .csv
+    "application/vnd.ms-excel", // .csv (eski Excel format)
+    "image/png", // .png (taranmış belgeler)
+    "image/jpeg", // .jpg (taranmış belgeler)
   ];
 
   private static readonly SUPPORTED_EXTENSIONS = [
@@ -29,6 +33,10 @@ export class SmartDocumentProcessor {
     ".txt",
     ".rtf",
     ".html",
+    ".csv",
+    ".png",
+    ".jpg",
+    ".jpeg",
   ];
 
   /**
@@ -431,6 +439,40 @@ export class SmartDocumentProcessor {
       fs.writeFileSync(tempPdfPath, buffer);
       console.log(`OCR: PDF kaydedildi (${buffer.length} bytes)`);
 
+      // 1.5. BÜYÜK PDF'LER İÇİN OPTİMİZE ET (>5MB)
+      const sizeInMB = buffer.length / (1024 * 1024);
+      let pdfToProcess = tempPdfPath;
+
+      if (sizeInMB > 5) {
+        console.log(`[OPTIMIZE] Büyük PDF tespit edildi: ${sizeInMB.toFixed(2)} MB`);
+        console.log(`[OPTIMIZE] PDF optimize ediliyor (Ghostscript)...`);
+
+        const optimizedPdfPath = path.join(tempDir, `ocr_optimized_${timestamp}.pdf`);
+        const optimizerScript = path.join(process.cwd(), "scripts/pdf_optimizer.sh");
+
+        try {
+          const { stdout: optStdout } = await execAsync(
+            `"${optimizerScript}" "${tempPdfPath}" "${optimizedPdfPath}"`,
+            { timeout: 120000 } // 2 dakika optimize için
+          );
+          console.log(`[OPTIMIZE] ${optStdout}`);
+
+          // Optimize edilmiş PDF'i kullan
+          if (fs.existsSync(optimizedPdfPath)) {
+            const optimizedSize = fs.statSync(optimizedPdfPath).size;
+            const optimizedMB = optimizedSize / (1024 * 1024);
+            console.log(`[OPTIMIZE] ✅ PDF optimize edildi: ${optimizedMB.toFixed(2)} MB`);
+
+            // Orijinal PDF'i sil, optimize edilmiş PDF'i kullan
+            fs.unlinkSync(tempPdfPath);
+            pdfToProcess = optimizedPdfPath;
+          }
+        } catch (optError) {
+          console.warn(`[OPTIMIZE] ⚠️ Optimize işlemi başarısız, orijinal PDF kullanılacak:`, optError);
+          // Optimize başarısız olursa, orijinal PDF'i kullan
+        }
+      }
+
       // 2. Bash scripti ile OCR (pdftoppm + tesseract)
       const scriptPath = path.join(
         process.cwd(),
@@ -439,7 +481,7 @@ export class SmartDocumentProcessor {
       console.log(`OCR scripti çalıştırılıyor: ${scriptPath}`);
 
       const { stdout, stderr } = await execAsync(
-        `"${scriptPath}" "${tempPdfPath}" "${tempTxtPath}"`,
+        `"${scriptPath}" "${pdfToProcess}" "${tempTxtPath}"`,
         { timeout: 300000 } // 5 dakika timeout (41 sayfa için yeterli)
       );
 
@@ -453,8 +495,9 @@ export class SmartDocumentProcessor {
 
         // Geçici dosyaları temizle
         try {
-          fs.unlinkSync(tempPdfPath);
-          fs.unlinkSync(tempTxtPath);
+          // Optimize edilmiş PDF kullanılmışsa onu, değilse orijinal PDF'i temizle
+          if (fs.existsSync(pdfToProcess)) fs.unlinkSync(pdfToProcess);
+          if (fs.existsSync(tempTxtPath)) fs.unlinkSync(tempTxtPath);
         } catch (cleanupError) {
           console.warn("Geçici dosya temizleme hatası:", cleanupError);
         }
@@ -471,8 +514,16 @@ export class SmartDocumentProcessor {
       // Hata durumunda geçici dosyaları temizle
       try {
         const fs = await import("fs");
+        const path = await import("path");
+        const timestamp = Date.now();
+
+        // Tüm olası geçici dosyaları temizle
         if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath);
         if (fs.existsSync(tempTxtPath)) fs.unlinkSync(tempTxtPath);
+
+        // Optimize edilmiş PDF varsa onu da temizle
+        const optimizedPdfPath = path.join("/tmp", `ocr_optimized_${timestamp}.pdf`);
+        if (fs.existsSync(optimizedPdfPath)) fs.unlinkSync(optimizedPdfPath);
       } catch {}
 
       throw error;

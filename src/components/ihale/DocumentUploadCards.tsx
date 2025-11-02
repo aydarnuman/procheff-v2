@@ -24,6 +24,13 @@ interface DocumentUploadCardsProps {
 
 const DOCUMENT_TYPES: DocumentType[] = [
   {
+    type: 'ihale_ilani',
+    icon: '📢',
+    label: 'İhale İlanı',
+    description: 'İhale tarihi, başvuru şartları, teminat',
+    acceptedFormats: '.pdf, .doc, .docx, .png, .jpg, .jpeg'
+  },
+  {
     type: 'teknik_sartname',
     icon: '📋',
     label: 'Teknik Şartname',
@@ -34,7 +41,7 @@ const DOCUMENT_TYPES: DocumentType[] = [
     type: 'idari_sartname',
     icon: '⚖️',
     label: 'İdari Şartname',
-    description: 'İdari kurallar ve değerlendirme',
+    description: 'İdari kurallar ve değerlendirme kriterleri',
     acceptedFormats: '.pdf, .doc, .docx, .png, .jpg, .jpeg'
   },
   {
@@ -45,12 +52,26 @@ const DOCUMENT_TYPES: DocumentType[] = [
     acceptedFormats: '.pdf, .doc, .docx, .png, .jpg, .jpeg'
   },
   {
+    type: 'fiyat_teklif_mektubu',
+    icon: '💰',
+    label: 'Fiyat Teklif Mektubu',
+    description: 'Fiyat cetveli ve teklif tutarı',
+    acceptedFormats: '.pdf, .doc, .docx, .png, .jpg, .jpeg'
+  },
+  {
     type: 'csv',
     icon: '📊',
-    label: 'İhale İlanı (CSV)',
-    description: 'Ürün fiyat listesi ve maliyet analizi',
+    label: 'Maliyet Analizi (CSV)',
+    description: 'Ürün fiyat listesi ve maliyet hesaplaması',
     acceptedFormats: '.csv',
     isCSV: true
+  },
+  {
+    type: 'diger',
+    icon: '📎',
+    label: 'Diğer Belgeler',
+    description: 'Ek belgeler, resmi yazılar, ekler',
+    acceptedFormats: '.pdf, .doc, .docx, .png, .jpg, .jpeg'
   }
 ];
 
@@ -197,21 +218,40 @@ export function DocumentUploadCards({
                       )}
                     </div>
 
-                    {/* Toplam Kelime Sayısı */}
+                    {/* Toplam Kelime Sayısı ve Güven Skoru */}
                     {(() => {
                       const totalWords = files.reduce((sum, f) => {
                         const wc = 'wordCount' in f ? f.wordCount : 0;
                         return sum + (wc || 0);
                       }, 0);
 
-                      if (totalWords > 0) {
-                        return (
-                          <div className="text-xs text-gray-400 mt-1">
-                            📝 <span className="text-green-400 font-medium">{totalWords.toLocaleString('tr-TR')}</span> kelime
-                          </div>
-                        );
-                      }
-                      return null;
+                      // Ortalama güven skoru hesapla
+                      const completedFiles = files.filter(f => f.status === 'completed' && 'detectedTypeConfidence' in f);
+                      const avgConfidence = completedFiles.length > 0
+                        ? completedFiles.reduce((sum, f) => sum + (('detectedTypeConfidence' in f ? f.detectedTypeConfidence : 0) || 0), 0) / completedFiles.length
+                        : 0;
+
+                      return (
+                        <div className="text-xs text-gray-400 mt-1 space-y-0.5">
+                          {totalWords > 0 && (
+                            <div>
+                              📝 <span className="text-green-400 font-medium">{totalWords.toLocaleString('tr-TR')}</span> kelime
+                            </div>
+                          )}
+                          {avgConfidence > 0 && (
+                            <div className="flex items-center justify-center gap-1">
+                              <span className={`font-medium ${
+                                avgConfidence >= 0.8 ? 'text-green-400' :
+                                avgConfidence >= 0.6 ? 'text-yellow-400' :
+                                'text-orange-400'
+                              }`}>
+                                {(avgConfidence * 100).toFixed(0)}%
+                              </span>
+                              <span className="text-gray-500">güven</span>
+                            </div>
+                          )}
+                        </div>
+                      );
                     })()}
                   </div>
                 ) : (
@@ -225,7 +265,7 @@ export function DocumentUploadCards({
             {/* Dosya Seçme */}
             <div className="mt-4">
               <input
-                ref={el => fileInputRefs.current[docType.type] = el}
+                ref={el => { fileInputRefs.current[docType.type] = el; }}
                 type="file"
                 multiple
                 accept={docType.acceptedFormats}

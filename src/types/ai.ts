@@ -270,6 +270,14 @@ export type IhaleStatus =
   | "under_evaluation" // Değerlendirmede - Sarı mühür
   | "rejected"; // İstenmiyor - Kırmızı mühür
 
+// Belge Tipi Bazlı Analiz için Giriş Formatı
+export interface DocumentInput {
+  type: BelgeTuru;
+  text: string;
+  fileName: string;
+  confidence: number;
+}
+
 export interface AIAnalysisResult {
   extracted_data: ExtractedData;
   contextual_analysis: ContextualAnalysis;

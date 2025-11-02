@@ -134,14 +134,14 @@ export default function IhaleDashboard() {
           />
         </div>
 
-        {/* Cache Stats Panel */}
-        <motion.div
+        {/* Cache Stats Panel - GEÇİCİ OLARAK KAPALI (test için) */}
+        {/* <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.45 }}
         >
           <CacheStatsPanel />
-        </motion.div>
+        </motion.div> */}
 
         {/* Quick Actions */}
         <motion.div

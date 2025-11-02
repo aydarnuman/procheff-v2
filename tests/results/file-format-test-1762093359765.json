@@ -1,0 +1,124 @@
+{
+  "timestamp": "2025-11-02T14:22:39.764Z",
+  "totalTests": 6,
+  "successfulTests": 6,
+  "failedTests": 0,
+  "formatResults": {
+    "TXT": {
+      "tested": 6,
+      "passed": 6,
+      "avgConfidence": 0.8666666666666666,
+      "avgProcessingTime": 12353
+    }
+  },
+  "results": [
+    {
+      "fileName": "ihale_test_1.txt",
+      "format": "TXT",
+      "success": true,
+      "processingTime": 13735,
+      "extracted": {
+        "textLength": 1602,
+        "wordCount": 244
+      },
+      "confidence": 0.98,
+      "dataExtracted": {
+        "kurum": "Ankara Büyükşehir Belediyesi",
+        "kisi_sayisi": 370,
+        "ogun_sayisi": 1,
+        "gun_sayisi": 365,
+        "guven_skoru": 0.98
+      }
+    },
+    {
+      "fileName": "ihale_test_2.txt",
+      "format": "TXT",
+      "success": true,
+      "processingTime": 11711,
+      "extracted": {
+        "textLength": 1969,
+        "wordCount": 302
+      },
+      "confidence": 0.95,
+      "dataExtracted": {
+        "kurum": "İstanbul İl Sağlık Müdürlüğü",
+        "kisi_sayisi": 552,
+        "ogun_sayisi": 3,
+        "gun_sayisi": 730,
+        "guven_skoru": 0.95
+      }
+    },
+    {
+      "fileName": "ihale_test_3.txt",
+      "format": "TXT",
+      "success": true,
+      "processingTime": 12298,
+      "extracted": {
+        "textLength": 2003,
+        "wordCount": 291
+      },
+      "confidence": 0.95,
+      "dataExtracted": {
+        "kurum": "Milli Eğitim Bakanlığı Ankara İl Müdürlüğü",
+        "kisi_sayisi": 950,
+        "ogun_sayisi": 3,
+        "gun_sayisi": 180,
+        "guven_skoru": 0.95
+      }
+    },
+    {
+      "fileName": "sample_tender_1.txt",
+      "format": "TXT",
+      "success": true,
+      "processingTime": 13003,
+      "extracted": {
+        "textLength": 1017,
+        "wordCount": 143
+      },
+      "confidence": 0.82,
+      "dataExtracted": {
+        "kurum": "Ankara Büyükşehir Belediyesi",
+        "kisi_sayisi": 500,
+        "ogun_sayisi": null,
+        "gun_sayisi": null,
+        "guven_skoru": 0.82
+      }
+    },
+    {
+      "fileName": "sample_tender_2.txt",
+      "format": "TXT",
+      "success": true,
+      "processingTime": 10582,
+      "extracted": {
+        "textLength": 1035,
+        "wordCount": 148
+      },
+      "confidence": 0.65,
+      "dataExtracted": {
+        "kurum": "T.C. İstanbul Büyükşehir Belediyesi Teknik İşler Müdürlüğü",
+        "kisi_sayisi": null,
+        "ogun_sayisi": null,
+        "gun_sayisi": 365,
+        "guven_skoru": 0.65
+      }
+    },
+    {
+      "fileName": "sample_tender_3.txt",
+      "format": "TXT",
+      "success": true,
+      "processingTime": 12786,
+      "extracted": {
+        "textLength": 1238,
+        "wordCount": 182
+      },
+      "confidence": 0.85,
+      "dataExtracted": {
+        "kurum": "Ankara Üniversitesi",
+        "kisi_sayisi": 800,
+        "ogun_sayisi": null,
+        "gun_sayisi": null,
+        "guven_skoru": 0.85
+      }
+    }
+  ]
+}

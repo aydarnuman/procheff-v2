@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { CacheProvider } from "@/components/providers/cache-provider";
+import { ErrorSuppressor } from "@/components/providers/error-suppressor";
 import { Sidebar } from "@/components/nav/Sidebar";
 import { Topbar } from "@/components/nav/Topbar";
 
@@ -15,7 +16,7 @@ export const metadata: Metadata = {
   title: "ProCheff AI | İhale Analiz Sistemi",
   description: "AI destekli ihale dokümanı analiz ve değerlendirme sistemi",
   keywords: ["ihale", "analiz", "AI", "dokument", "tender", "analysis"],
-  authors: [{ name: "ProCheff AI Team" }],
+  // authors kaldırıldı - Next.js 16'da serialize hatası veriyor
 };
 
 export const viewport = "width=device-width, initial-scale=1";
@@ -30,6 +31,7 @@ export default function RootLayout({
       <body
         className={`${inter.variable} font-sans antialiased h-full bg-gray-900`}
       >
+        <ErrorSuppressor />
         <CacheProvider>
           <ThemeProvider>
             <div className="flex h-screen overflow-hidden">

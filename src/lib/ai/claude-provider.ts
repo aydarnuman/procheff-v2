@@ -363,7 +363,16 @@ Mevcut durum:
           }
 
           // 4xx hatası - retry yapmaya gerek yok
+          const errorBody = await response.text();
           console.error(`❌ Chunk ${chunkIndex + 1} - İstek hatası: HTTP ${response.status}`);
+          console.error(`   Chunk size: ${chunk.length} chars (~${Math.round(chunk.length * 0.75)} tokens)`);
+          console.error(`   Error body: ${errorBody.substring(0, 500)}`);
+
+          // 400 hatası genelde input çok büyük demek
+          if (response.status === 400) {
+            console.error(`⚠️ CHUNK ÇOK BÜYÜK OLABİLİR - 60K karakter yerine daha küçük deneyin`);
+          }
+
           return null;
         }
 
@@ -447,8 +456,10 @@ Mevcut durum:
    * Uzun metinleri chunk'lara böl ve paralel işle (HIZLI!)
    */
   private async extractFromChunks(text: string): Promise<ExtractedData> {
-    const chunks = this.chunkText(text, 120000); // Her chunk max 120K karakter (~90K tokens safe limit)
-    console.log(`${chunks.length} chunk işlenecek...`);
+    // Chunk boyutunu küçülttük: 60K karakter (~45K tokens)
+    // Claude prompt ~5K karakter + 60K text = 65K karakter = ~49K tokens (200K limit içinde)
+    const chunks = this.chunkText(text, 60000);
+    console.log(`⚠️ Text too long (${text.length} chars), chunking into ${chunks.length} chunks of 60K chars each`);
     console.log("⚡ PARALEL İŞLEME AKTIF - 3 chunk aynı anda işleniyor");
 
     const BATCH_SIZE = 3; // Aynı anda 3 chunk işle (rate limit için güvenli)
@@ -1063,6 +1074,8 @@ JSON:`;
           : "Bilinmiyor",
       kisi_sayisi:
         typeof dataObj.kisi_sayisi === "number" ? dataObj.kisi_sayisi : null,
+      personel_sayisi:
+        typeof dataObj.personel_sayisi === "number" ? dataObj.personel_sayisi : null,
       ogun_sayisi:
         typeof dataObj.ogun_sayisi === "number" ? dataObj.ogun_sayisi : null,
       gun_sayisi:

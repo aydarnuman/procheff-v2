@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ClaudeProvider } from "@/lib/ai/claude-provider";
 import { ExtractedData } from "@/types/ai";
+import { logger, LogKategori, IslemDurumu } from "@/lib/logger";
+import { hesaplaClaudeMaliyeti } from "@/lib/ai/cost-calculator";
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
+  const sessionId = `ai_extract_${Date.now()}`;
 
   try {
-    console.log("=== AI EXTRACT API BAŞLADI ===");
+    logger.sessionBaslat(sessionId);
+    logger.info(LogKategori.AI_ANALYSIS, 'AI veri çıkarımı başladı');
 
     const { text } = await request.json();
 
@@ -33,45 +37,68 @@ export async function POST(request: NextRequest) {
     }
 
     // Claude provider'ı başlat
+    logger.info(LogKategori.AI_ANALYSIS, 'Claude provider başlatılıyor');
     const claude = new ClaudeProvider();
 
-    console.log(`Metin uzunluğu: ${text.length} karakter`);
-    console.log("Claude AI ile veri çıkarımı başlıyor...");
+    logger.info(LogKategori.AI_ANALYSIS, 'AI analizi başlıyor', {
+      karakterSayisi: text.length,
+      aiModel: 'claude-sonnet-4',
+    });
 
     // Structured data extraction
-    const extractedData: ExtractedData = await claude.extractStructuredData(
-      text
-    );
+    logger.adimBaslat('ai_extraction');
+    const extractedData: ExtractedData = await claude.extractStructuredData(text);
+    logger.adimBitir('ai_extraction', LogKategori.AI_ANALYSIS, 'Veri çıkarımı tamamlandı');
 
     const processingTime = Date.now() - startTime;
 
-    console.log("=== VERİ ÇIKARIMI TAMAMLANDI ===");
-    console.log(`İşleme süresi: ${processingTime}ms`);
-    console.log(`Güven skoru: ${Math.round(extractedData.guven_skoru * 100)}%`);
-    console.log(`Kurum: ${extractedData.kurum}`);
-    console.log(`İhale türü: ${extractedData.ihale_turu}`);
-    console.log(`Kişi sayısı: ${extractedData.kisi_sayisi}`);
-    console.log(`Tahmini bütçe: ${extractedData.tahmini_butce}`);
+    // Token kullanımını ve maliyeti hesapla (tahmini)
+    const estimatedInputTokens = Math.ceil(text.length / 4); // Rough estimate: 1 token ≈ 4 chars
+    const estimatedOutputTokens = 1000; // Structured output tahmini
+    const maliyet = hesaplaClaudeMaliyeti('claude-3-5-sonnet-20241022', estimatedInputTokens, estimatedOutputTokens);
+
+    logger.basarili(LogKategori.EXTRACTION, 'Veri başarıyla çıkarıldı', {
+      kelimeSayisi: extractedData.kisi_sayisi ?? undefined,
+      tokenKullanimi: maliyet.toplamTokens,
+      maliyetTL: maliyet.toplamMaliyetTRY,
+      aiModel: 'claude-sonnet-4',
+      ek: {
+        guvenSkoru: Math.round(extractedData.guven_skoru * 100),
+        kurum: extractedData.kurum,
+        ihaleTuru: extractedData.ihale_turu,
+      },
+    });
 
     // Serialization için veriyi düzleştir
     const sanitizedData = JSON.parse(JSON.stringify(extractedData));
+
+    logger.sessionBitir(sessionId, IslemDurumu.COMPLETED);
 
     return NextResponse.json({
       success: true,
       data: sanitizedData,
       metadata: {
         processing_time: processingTime,
-        ai_provider: "claude-3.5-sonnet",
+        ai_provider: "claude-sonnet-4",
         text_length: text.length,
         extraction_timestamp: new Date().toISOString(),
+        cost: {
+          tokens: maliyet.toplamTokens,
+          cost_usd: maliyet.toplamMaliyetUSD,
+          cost_try: maliyet.toplamMaliyetTRY,
+        },
       },
     });
   } catch (error) {
     const processingTime = Date.now() - startTime;
 
-    console.error("=== AI EXTRACT HATASI ===");
-    console.error("Error:", error);
-    console.error(`İşleme süresi: ${processingTime}ms`);
+    logger.hata(LogKategori.AI_ANALYSIS, 'AI analizi başarısız', {
+      kod: 'AI_EXTRACT_ERROR',
+      mesaj: error instanceof Error ? error.message : 'Bilinmeyen hata',
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
+    logger.sessionBitir(sessionId, IslemDurumu.FAILED);
 
     // Hata türüne göre response
     if (error instanceof Error) {

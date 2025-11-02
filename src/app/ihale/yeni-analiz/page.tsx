@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Upload,
@@ -17,11 +17,12 @@ import { AnalysisResults } from "@/components/ai/AnalysisResults";
 import { EnhancedAnalysisResults } from "@/components/ai/EnhancedAnalysisResults";
 import { LinkedDocuments } from "@/components/ai/LinkedDocuments";
 import { CSVCostAnalysis } from "@/components/ihale/CSVCostAnalysis";
-import { DocumentUploadCards } from "@/components/ihale/DocumentUploadCards";
+import { SimpleDocumentList } from "@/components/ihale/SimpleDocumentList";
 import { AIAnalysisResult } from "@/types/ai";
-import { useIhaleStore } from "@/lib/stores/ihale-store";
+import { useIhaleStore, FileProcessingStatus } from "@/lib/stores/ihale-store";
 import { CSVParser } from "@/lib/csv/csv-parser";
 import { BelgeTuru } from "@/types/ai";
+import { detectDocumentTypeFromFileName, getConfidenceScore } from "@/lib/utils/quick-document-detector";
 
 interface DocumentPage {
   pageNumber: number;
@@ -44,14 +45,8 @@ interface DocumentStats {
   fileType: string;
 }
 
-interface FileProcessingStatus {
-  file: File;
-  status: 'pending' | 'processing' | 'completed' | 'error';
-  progress?: string; // "Sayfa 5/71", "OCR yapılıyor..."
-  wordCount?: number;
-  error?: string;
-  extractedText?: string;
-}
+// FileProcessingStatus store'dan import ediliyor - local tanım kaldırıldı
+// File objelerini ayrı bir Map'te tutuyoruz (runtime-only, serialize edilmeyecek)
 
 interface AnalysisCategory {
   title: string;
@@ -98,7 +93,9 @@ export default function IhalePage() {
   } = useIhaleStore();
 
   // Local state (sadece UI-specific state kalsın)
-  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]); // Geçici - dosya yükleme için
+  // Runtime-only File arrays/maps (serialize edilmeyecek - useRef ile tutuluyor)
+  const uploadedFilesRef = useRef<File[]>([]); // Geçici - dosya yükleme için (useRef - state DEĞİL!)
+  const fileObjectsMapRef = useRef<Map<string, File>>(new Map());
   const [documentPages, setDocumentPages] = useState<DocumentPage[]>([]);
   const [documentStats, setDocumentStats] = useState<DocumentStats | null>(
     null
@@ -112,11 +109,22 @@ export default function IhalePage() {
   const [analysisStage, setAnalysisStage] = useState("");
   const [useOCR, setUseOCR] = useState(true); // Varsayılan olarak açık
 
+  // Manuel hydration KALDIRILDI - Persist middleware artık yok (PERSIST-OFF.md)
+
   // Sayfa yüklendiğinde eğer currentAnalysis varsa direkt results'a git
+  // useRef ile infinite loop'u önle
+  const hasRedirected = useRef(false);
+
   useEffect(() => {
-    if (currentAnalysis && currentStep === "upload") {
+    if (currentAnalysis && currentStep === "upload" && !hasRedirected.current) {
       console.log("📊 Mevcut analiz bulundu, results adımına geçiliyor...");
+      hasRedirected.current = true;
       setCurrentStep("results");
+    }
+
+    // Reset ref when leaving upload step
+    if (currentStep !== "upload") {
+      hasRedirected.current = false;
     }
   }, [currentAnalysis, currentStep, setCurrentStep]);
 
@@ -172,7 +180,7 @@ export default function IhalePage() {
       }
 
       // Aynı dosya zaten ekli mi?
-      if (fileStatuses.some(fs => fs.file.name === file.name)) {
+      if (fileStatuses.some(fs => fs.fileMetadata.name === file.name)) {
         alert(`⚠️ ${file.name} zaten listede!`);
         continue;
       }
@@ -181,14 +189,25 @@ export default function IhalePage() {
     }
 
     if (newFiles.length > 0) {
-      // Dosyaları pending olarak ekle
-      const newStatuses: FileProcessingStatus[] = newFiles.map(file => ({
-        file,
-        status: 'pending',
-        progress: 'İşlenmeyi bekliyor...'
-      }));
+      // Dosyaları pending olarak ekle (store'a metadata, Map'e File objesi)
+      newFiles.forEach(file => {
+        // File objesini Map'e ekle (useRef - state değil!)
+        fileObjectsMapRef.current.set(file.name, file);
 
-      setFileStatuses([...fileStatuses, ...newStatuses]);
+        // Metadata'yı store'a ekle
+        addFileStatus({
+          fileMetadata: {
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            lastModified: file.lastModified,
+          },
+          status: 'pending',
+          progress: 'İşlenmeyi bekliyor...',
+          detectedType: 'belirsiz' // AI tespit edene kadar belirsiz
+        });
+      });
+
       console.log(`✅ ${newFiles.length} dosya pending olarak eklendi (işlem başlatılmadı)`);
       // NOT: Dosyalar PENDING durumunda - kullanıcı "Dosyaları İşle" butonuna basınca işlenecek
     }
@@ -197,14 +216,27 @@ export default function IhalePage() {
     event.target.value = '';
   };
 
-  // Tek dosya işle - İYİLEŞTİRME: Zustand store kullan
-  const processSingleFile = async (file: File) => {
-    console.log(`İşleniyor: ${file.name}`);
+  // İşlem kuyruğu yönetimi - paralel işleme
+  const processingQueueRef = useRef<Set<string>>(new Set());
 
-    // Durumu processing'e çek
+  // Tek dosya işle - İYİLEŞTİRME: Zustand store kullan + Detaylı Progress + PARALEL
+  const processSingleFile = async (file: File) => {
+    // Zaten işleniyor mu kontrol et
+    if (processingQueueRef.current.has(file.name)) {
+      console.warn(`⚠️ ${file.name} zaten işleniyor, atlanıyor...`);
+      return;
+    }
+
+    // Kuyruğa ekle
+    processingQueueRef.current.add(file.name);
+
+    console.log(`İşleniyor: ${file.name}`);
+    const startTime = Date.now();
+
+    // 1️⃣ Yükleme başladı
     updateFileStatus(file.name, {
       status: 'processing',
-      progress: 'İşleniyor...'
+      progress: '📤 Dosya yükleniyor...'
     });
 
     try {
@@ -212,6 +244,11 @@ export default function IhalePage() {
       formData.append("file0", file);
       formData.append("fileCount", "1");
       formData.append("useOCR", useOCR.toString());
+
+      // 2️⃣ Server'a gönderiliyor
+      updateFileStatus(file.name, {
+        progress: '🚀 Server\'a gönderiliyor...'
+      });
 
       const response = await fetch("/api/upload", {
         method: "POST",
@@ -222,22 +259,71 @@ export default function IhalePage() {
         throw new Error(`HTTP ${response.status}`);
       }
 
-      const result = await response.json();
+      // 3️⃣ Streaming response'u oku
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let result: any = null;
 
-      if (result.success) {
-        // Başarılı - completed işaretle
+      if (!reader) {
+        throw new Error('Streaming desteklenmiyor');
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.trim() || !line.startsWith('data: ')) continue;
+
+          try {
+            const data = JSON.parse(line.replace('data: ', ''));
+
+            if (data.type === 'progress') {
+              // Canlı progress güncelle
+              updateFileStatus(file.name, {
+                progress: data.message,
+                progressPercentage: Math.round(data.progress || 0)
+              });
+            } else if (data.type === 'success') {
+              // Final result
+              result = data;
+            } else if (data.type === 'error') {
+              throw new Error(data.error);
+            }
+          } catch (parseError) {
+            console.warn('Parse error:', parseError);
+          }
+        }
+      }
+
+      if (result) {
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+        // 4️⃣ Başarılı - İlk durum
         updateFileStatus(file.name, {
           status: 'completed',
-          progress: `✅ Tamamlandı (${result.stats?.wordCount || 0} kelime)`,
+          progress: `✅ Tamamlandı (${result.stats?.wordCount || 0} kelime, ${elapsed}s)`,
+          progressPercentage: 100,
           wordCount: result.stats?.wordCount || 0,
           extractedText: result.text || ''
         });
 
-        console.log(`✅ ${file.name} tamamlandı`);
+        console.log(`✅ ${file.name} tamamlandı (${elapsed}s)`);
 
-        // YENİ: Belge türü tespiti yap (background - hata verse bile devam et)
+        // 5️⃣ YENİ: Belge türü tespiti yap (background - hata verse bile devam et)
         try {
           console.log(`🔍 Belge türü tespit ediliyor: ${file.name}`);
+
+          // Progress güncelle
+          updateFileStatus(file.name, {
+            progress: `🔍 AI belge türü tespit ediyor... (${result.stats?.wordCount || 0} kelime)`
+          });
+
           const docTypeResponse = await fetch('/api/ai/detect-document-type', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -250,11 +336,40 @@ export default function IhalePage() {
           if (docTypeResponse.ok) {
             const docTypeResult = await docTypeResponse.json();
             if (docTypeResult.success) {
+              const aiDetectedType = docTypeResult.data.belge_turu;
+              const aiConfidence = docTypeResult.data.guven;
+              const aiReason = docTypeResult.data.sebep;
+
+              // Kullanıcı seçimi var mı?
+              const currentFile = fileStatuses.find(fs => fs.fileMetadata.name === file.name);
+              const userSelectedType = currentFile?.detectedType;
+
+              // AI'nın tespit ettiği türü güncelle
               updateFileStatus(file.name, {
-                detectedType: docTypeResult.data.belge_turu,
-                detectedTypeConfidence: docTypeResult.data.guven
+                detectedType: aiDetectedType,
+                detectedTypeConfidence: aiConfidence,
+                progress: `✅ Tamamlandı • ${Math.round(aiConfidence * 100)}% güvenle tespit edildi`
               });
-              console.log(`✅ Belge türü: ${docTypeResult.data.belge_turu} (${Math.round(docTypeResult.data.guven * 100)}%)`);
+
+              console.log(`✅ AI Tespit: ${aiDetectedType} (${Math.round(aiConfidence * 100)}%)`);
+
+              // DOĞRULAMA: Kullanıcı seçimi ile AI tespiti uyuşuyor mu?
+              if (userSelectedType && userSelectedType !== aiDetectedType && aiConfidence > 0.7) {
+                console.warn(`⚠️ UYARI: Kullanıcı "${userSelectedType}" seçti ama AI "${aiDetectedType}" tespit etti!`);
+                console.warn(`   Sebep: ${aiReason}`);
+
+                // UI'da uyarı göster
+                updateFileStatus(file.name, {
+                  progress: `⚠️ Tamamlandı • AI farklı tür tespit etti (${Math.round(aiConfidence * 100)}%)`
+                });
+
+                // TODO: Toast notification eklenebilir
+              } else if (userSelectedType === aiDetectedType) {
+                console.log(`✅ Doğrulama: Kullanıcı seçimi ile AI tespiti uyuşuyor!`);
+                updateFileStatus(file.name, {
+                  progress: `✅ Tamamlandı • Doğrulandı (${Math.round(aiConfidence * 100)}%)`
+                });
+              }
             }
           }
         } catch (docTypeError) {
@@ -273,12 +388,16 @@ export default function IhalePage() {
         progress: '❌ Hata',
         error: error instanceof Error ? error.message : 'Bilinmeyen hata'
       });
+    } finally {
+      // Kuyruktan çıkar (başarılı veya hatalı olsa da)
+      processingQueueRef.current.delete(file.name);
+      console.log(`🔓 ${file.name} kuyruktan çıkarıldı (aktif: ${processingQueueRef.current.size})`);
     }
   };
 
   // Dosya listesinden kaldır
   const handleRemoveFile = (index: number) => {
-    const fileName = fileStatuses[index]?.file.name;
+    const fileName = fileStatuses[index]?.fileMetadata.name;
     if (fileName) {
       removeFileStatus(fileName);
     }
@@ -303,7 +422,12 @@ export default function IhalePage() {
 
       // Add to store with pending status
       addCSVFile({
-        file,
+        fileMetadata: {
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          lastModified: file.lastModified,
+        },
         status: 'pending'
       });
 
@@ -577,12 +701,12 @@ export default function IhalePage() {
         console.log("=== ANALİZ TAMAMLANDI ===");
       } else {
         // Eski endpoint (fallback)
-        if (uploadedFiles.length === 0) {
+        if (uploadedFilesRef.current.length === 0) {
           throw new Error("Dosya bulunamadı");
         }
 
         const formData = new FormData();
-        formData.append("file", uploadedFiles[0]);
+        formData.append("file", uploadedFilesRef.current[0]);
 
         const response = await fetch("/api/ai/analyze-document", {
           method: "POST",
@@ -665,7 +789,7 @@ export default function IhalePage() {
 
   const resetProcess = () => {
     setCurrentStep("upload");
-    setUploadedFiles([]);
+    uploadedFilesRef.current = []; // useRef - direkt assign
     clearFileStatuses();
     setDocumentPages([]);
     setAnalysisResult(null);
@@ -839,56 +963,199 @@ export default function IhalePage() {
                 </div>
               ) : (
                 <>
-                  {/* YENİ: Belge Türlerine Göre Upload Kartları */}
-                  <DocumentUploadCards
+                  {/* BASİT LİSTE - MODAL YOK! */}
+                  <SimpleDocumentList
                     fileStatuses={fileStatuses}
                     csvFiles={csvFiles}
-                    onFileSelect={async (file, documentType) => {
-                      console.log(`📄 Dosya seçildi: ${file.name} (${documentType})`);
-
-                      if (documentType === 'csv') {
-                        // CSV dosyası - Sadece listeye ekle (işleme BAŞLATMA!)
-                        const { addCSVFile } = useIhaleStore.getState();
-
-                        // Dosya zaten var mı kontrol et
-                        if (csvFiles.some(csv => csv.file.name === file.name)) {
-                          alert(`⚠️ ${file.name} zaten listede!`);
-                          return;
+                    onFileSelect={async (files) => {
+                      // Dosyaları pending olarak ekle + HIZLI TESPİT!
+                      for (const file of files) {
+                        // Duplicate check
+                        if (fileStatuses.some(fs => fs.fileMetadata.name === file.name)) {
+                          console.warn(`⚠️ ${file.name} zaten listede!`);
+                          continue;
                         }
 
-                        addCSVFile({ file, status: 'pending' });
-                        console.log(`✅ CSV listeye eklendi (pending): ${file.name}`);
-                        // NOT: İşlem başlatılmadı - kullanıcı "CSV İşle" butonuna tıklayınca başlayacak
-                      } else {
-                        // Normal belge - Sadece store'a ekle (işleme BAŞLATMA!)
-                        console.log(`📄 Normal belge ekleniyor: ${file.name} (Tür: ${documentType})`);
+                        // File objesini Map'e ekle
+                        fileObjectsMapRef.current.set(file.name, file);
 
-                        // Dosya zaten var mı kontrol et
-                        if (fileStatuses.some(fs => fs.file.name === file.name)) {
-                          alert(`⚠️ ${file.name} zaten listede!`);
-                          return;
-                        }
+                        // 1) Önce dosya isminden hızlı tahmin
+                        const quickGuess = detectDocumentTypeFromFileName(file.name);
+                        const quickConfidence = getConfidenceScore(quickGuess, file.name);
 
-                        // Store'a ekle (pending olarak) - KULLANICI SEÇTİĞİ TÜRÜ SET ET
+                        // 2) Store'a ekle (başlangıç tahmini ile)
                         addFileStatus({
-                          file,
+                          fileMetadata: {
+                            name: file.name,
+                            size: file.size,
+                            type: file.type,
+                            lastModified: file.lastModified,
+                          },
                           status: 'pending',
-                          progress: 'İşlenmeyi bekliyor...',
-                          detectedType: documentType, // ✅ Kullanıcının seçtiği türü hemen ekle
-                          detectedTypeConfidence: 1.0 // Kullanıcı seçimi %100 güvenilir
+                          progress: quickGuess !== 'belirsiz'
+                            ? `📋 ${quickGuess} (dosya isminden tahmin)`
+                            : 'İşlenmeyi bekliyor...',
+                          detectedType: quickGuess,
+                          detectedTypeConfidence: quickConfidence
                         });
 
-                        console.log(`✅ ${file.name} listeye eklendi (pending)`);
-                        // NOT: İşlem başlatılmadı - kullanıcı "Tümünü İşle" butonuna tıklayınca başlayacak
+                        console.log(`✅ ${file.name} eklendi - Hızlı tahmin: ${quickGuess} (${Math.round(quickConfidence * 100)}%)`);
+
+                        // 3) HER DOSYA İÇİN Gemini ile background tespit yap
+                        if (quickGuess === 'belirsiz' || quickConfidence < 0.9) {
+                          // Background'da Gemini ile daha iyi tahmin yap
+                          (async () => {
+                            try {
+                              let textPreview = '';
+
+                              // Dosya tipine göre preview oluştur
+                              if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+                                // PDF: İlk 500KB oku
+                                const arrayBuffer = await file.slice(0, Math.min(file.size, 500000)).arrayBuffer();
+                                textPreview = new TextDecoder().decode(arrayBuffer);
+                              } else if (file.name.toLowerCase().endsWith('.csv')) {
+                                // CSV: İlk 10 satırı oku
+                                const text = await file.text();
+                                textPreview = text.split('\n').slice(0, 10).join('\n');
+                              } else if (file.type.includes('text') || file.name.toLowerCase().endsWith('.txt')) {
+                                // Text: İlk 1000 karakter
+                                const text = await file.text();
+                                textPreview = text.slice(0, 1000);
+                              }
+
+                              const response = await fetch('/api/ai/quick-detect-type', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  fileName: file.name,
+                                  textPreview: textPreview
+                                })
+                              });
+
+                              if (response.ok) {
+                                const result = await response.json();
+                                if (result.success) {
+                                  updateFileStatus(file.name, {
+                                    detectedType: result.data.belge_turu,
+                                    detectedTypeConfidence: result.data.guven,
+                                    progress: `📋 ${result.data.belge_turu} (${result.data.sebep})`
+                                  });
+                                  console.log(`🤖 Gemini tespit: ${result.data.belge_turu} (${Math.round(result.data.guven * 100)}%)`);
+                                }
+                              }
+                            } catch (err) {
+                              console.warn('Gemini hızlı tespit başarısız:', err);
+                            }
+                          })();
+                        }
                       }
                     }}
-                    onFileRemove={(fileName, isCSV) => {
-                      if (isCSV) {
-                        const { removeCSVFile } = useIhaleStore.getState();
-                        removeCSVFile(fileName);
+                    onFileRemove={(fileName) => {
+                      removeFileStatus(fileName);
+                      fileObjectsMapRef.current.delete(fileName);
+                    }}
+                    onFileProcess={async (fileName) => {
+                      // İŞLE butonuna basınca işle
+                      const fileObject = fileObjectsMapRef.current.get(fileName);
+                      if (fileObject) {
+                        await processSingleFile(fileObject);
                       } else {
-                        removeFileStatus(fileName);
+                        console.error(`File object not found: ${fileName}`);
                       }
+                    }}
+                    onCSVSelect={async (files) => {
+                      // CSV dosyalarını pending olarak ekle
+                      for (const file of files) {
+                        if (!file.name.toLowerCase().endsWith('.csv')) {
+                          alert(`❌ ${file.name} CSV dosyası değil!`);
+                          continue;
+                        }
+
+                        // Duplicate check
+                        if (csvFiles.some(csv => csv.fileMetadata.name === file.name)) {
+                          alert(`⚠️ ${file.name} zaten listede!`);
+                          continue;
+                        }
+
+                        // File objesini Map'e ekle
+                        fileObjectsMapRef.current.set(file.name, file);
+
+                        // 1) Önce dosya isminden hızlı tahmin
+                        const quickGuess = detectDocumentTypeFromFileName(file.name);
+                        const quickConfidence = getConfidenceScore(quickGuess, file.name);
+
+                        addCSVFile({
+                          fileMetadata: {
+                            name: file.name,
+                            size: file.size,
+                            type: file.type,
+                            lastModified: file.lastModified,
+                          },
+                          status: 'pending'
+                        });
+
+                        console.log(`✅ CSV dosyası pending olarak eklendi: ${file.name}`);
+
+                        // 2) Gemini ile background tespit (CSV için ilk 10 satır)
+                        (async () => {
+                          try {
+                            const text = await file.text();
+                            const previewLines = text.split('\n').slice(0, 10).join('\n');
+
+                            const response = await fetch('/api/ai/quick-detect-type', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                fileName: file.name,
+                                textPreview: previewLines
+                              })
+                            });
+
+                            if (response.ok) {
+                              const result = await response.json();
+                              if (result.success) {
+                                // CSV için detected type bilgisi yok, sadece log
+                                console.log(`🤖 Gemini CSV tespit: ${result.data.belge_turu} (${Math.round(result.data.guven * 100)}%)`);
+                              }
+                            }
+                          } catch (err) {
+                            console.warn('Gemini CSV tespit başarısız:', err);
+                          }
+                        })();
+                      }
+                    }}
+                    onCSVProcess={async (fileName) => {
+                      // İŞLE butonuna basınca CSV'yi işle
+                      const fileObject = fileObjectsMapRef.current.get(fileName);
+                      if (!fileObject) {
+                        console.error(`File object not found: ${fileName}`);
+                        return;
+                      }
+
+                      try {
+                        updateCSVFile(fileName, { status: 'processing' });
+                        console.log(`📊 CSV dosyası işleniyor: ${fileName}`);
+
+                        const analysis = await CSVParser.parseFile(fileObject);
+
+                        console.log(`✅ CSV analizi tamamlandı:`, {
+                          items: analysis.summary.total_items,
+                          total: analysis.summary.total_cost,
+                          confidence: analysis.confidence
+                        });
+
+                        updateCSVFile(fileName, { status: 'completed', analysis });
+                      } catch (error) {
+                        console.error(`❌ CSV işleme hatası (${fileName}):`, error);
+                        updateCSVFile(fileName, {
+                          status: 'error',
+                          error: error instanceof Error ? error.message : 'Bilinmeyen hata'
+                        });
+                        alert(`❌ ${fileName} işlenirken hata oluştu: ${error instanceof Error ? error.message : 'Bilinmeyen hata'}`);
+                      }
+                    }}
+                    onCSVRemove={(fileName) => {
+                      removeCSVFile(fileName);
                     }}
                   />
 
@@ -900,68 +1167,19 @@ export default function IhalePage() {
                         <button
                           type="button"
                           onClick={async () => {
-                            const pendingCSVs = csvFiles.filter(csv => csv.status === 'pending');
-                            console.log(`🚀 ${pendingCSVs.length} pending CSV işlenecek...`);
-
-                            for (const csvFile of pendingCSVs) {
-                              try {
-                                const { updateCSVFile } = useIhaleStore.getState();
-                                updateCSVFile(csvFile.file.name, { status: 'processing' });
-
-                                const analysis = await CSVParser.parseFile(csvFile.file);
-                                updateCSVFile(csvFile.file.name, { status: 'completed', analysis });
-
-                                console.log(`✅ CSV analizi tamamlandı: ${analysis.summary.total_items} ürün`);
-                              } catch (error) {
-                                console.error('CSV parse hatası:', error);
-                                const { updateCSVFile } = useIhaleStore.getState();
-                                updateCSVFile(csvFile.file.name, {
-                                  status: 'error',
-                                  error: error instanceof Error ? error.message : 'CSV işleme hatası'
-                                });
-                              }
-                            }
-
-                            console.log(`✅ Tüm pending CSV'ler işlendi!`);
+                            // CSV'ler otomatik işleniyor, manuel işlem gerekmiyor
+                            alert('ℹ️ CSV dosyaları yüklendiğinde otomatik olarak işlenir.');
                           }}
-                          disabled={csvFiles.some(csv => csv.status === 'processing')}
+                          disabled={true}
                           className="flex-1 px-6 py-3.5 bg-emerald-600/90 hover:bg-emerald-600 text-white rounded-xl transition-all font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-emerald-500/25"
+                          title="CSV dosyaları otomatik işlenir"
                         >
                           <Upload className="w-5 h-5" />
                           <span>CSV İşle ({csvFiles.filter(csv => csv.status === 'pending').length})</span>
                         </button>
                       )}
 
-                      {/* Pending dosyaları işle */}
-                      {fileStatuses.some(fs => fs.status === 'pending') && (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            const pendingFiles = fileStatuses.filter(fs => fs.status === 'pending');
-                            console.log(`🚀 ${pendingFiles.length} pending dosya işlenecek...`);
-                            console.log('📋 Pending dosyalar:', pendingFiles.map(f => f.file.name));
-
-                            for (let i = 0; i < pendingFiles.length; i++) {
-                              const fileStatus = pendingFiles[i];
-                              console.log(`\n📄 [${i+1}/${pendingFiles.length}] İşleniyor: ${fileStatus.file.name}`);
-
-                              try {
-                                await processSingleFile(fileStatus.file);
-                                console.log(`✅ [${i+1}/${pendingFiles.length}] Tamamlandı: ${fileStatus.file.name}`);
-                              } catch (error) {
-                                console.error(`❌ [${i+1}/${pendingFiles.length}] Hata: ${fileStatus.file.name}`, error);
-                              }
-                            }
-
-                            console.log(`\n🎉 Tüm ${pendingFiles.length} dosya işlendi!`);
-                          }}
-                          disabled={fileStatuses.some(fs => fs.status === 'processing')}
-                          className="flex-1 px-6 py-3.5 bg-blue-600/90 hover:bg-blue-600 text-white rounded-xl transition-all font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-blue-500/25"
-                        >
-                          <Upload className="w-5 h-5" />
-                          <span>Dosyaları İşle ({fileStatuses.filter(fs => fs.status === 'pending').length})</span>
-                        </button>
-                      )}
+                      {/* KALDIRILDI: Pending dosyaları işle butonu - Artık her kartta kendi "İşle" butonu var */}
 
                       {/* Completed dosyaları analiz et */}
                       {fileStatuses.some(fs => fs.status === 'completed') && (
@@ -995,8 +1213,8 @@ export default function IhalePage() {
                   Dosya İşleniyor...
                 </h3>
                 <p className="text-surface-secondary">
-                  {uploadedFiles.length > 0
-                    ? `${uploadedFiles.length} dosya metne dönüştürülüyor`
+                  {uploadedFilesRef.current.length > 0
+                    ? `${uploadedFilesRef.current.length} dosya metne dönüştürülüyor`
                     : "Dosyalar işleniyor..."}
                 </p>
               </div>
@@ -1056,7 +1274,7 @@ export default function IhalePage() {
                         <CSVCostAnalysis
                           key={index}
                           analysis={csv.analysis!}
-                          fileName={csv.file.name}
+                          fileName={csv.fileMetadata.name}
                         />
                       ))}
                   </div>
@@ -1182,7 +1400,7 @@ export default function IhalePage() {
                       }
 
                       // Aynı dosya zaten ekli mi?
-                      if (fileStatuses.some(fs => fs.file.name === file.name)) {
+                      if (fileStatuses.some(fs => fs.fileMetadata.name === file.name)) {
                         alert(`⚠️ ${file.name} zaten listede!`);
                         continue;
                       }
@@ -1193,14 +1411,23 @@ export default function IhalePage() {
                     if (validFiles.length > 0) {
                       console.log(`✅ ${validFiles.length} geçerli dosya ekleniyor...`);
 
-                      // Dosyaları pending olarak ekle
-                      const newStatuses: FileProcessingStatus[] = validFiles.map(file => ({
-                        file,
-                        status: 'pending',
-                        progress: 'Sırada bekliyor...'
-                      }));
+                      // Dosyaları pending olarak ekle (store'a metadata, Map'e File objesi)
+                      validFiles.forEach(file => {
+                        // File objesini Map'e ekle (useRef - state değil!)
+                        fileObjectsMapRef.current.set(file.name, file);
 
-                      setFileStatuses([...fileStatuses, ...newStatuses]);
+                        // Metadata'yı store'a ekle
+                        addFileStatus({
+                          fileMetadata: {
+                            name: file.name,
+                            size: file.size,
+                            type: file.type,
+                            lastModified: file.lastModified,
+                          },
+                          status: 'pending',
+                          progress: 'Sırada bekliyor...'
+                        });
+                      });
 
                       // Upload sayfasına yönlendir
                       console.log('🔄 Upload sayfasına yönlendiriliyor...');

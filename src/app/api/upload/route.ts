@@ -1,123 +1,237 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SmartDocumentProcessor } from "@/lib/utils/smart-document-processor";
+import { logger, LogKategori, IslemDurumu } from "@/lib/logger";
 
 export const runtime = "nodejs";
+export const maxDuration = 420; // 7 dakika timeout (büyük PDF'ler için)
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
+  const sessionId = `upload_${Date.now()}`;
 
-  try {
-    console.log("=== SMART UPLOAD API BAŞLADI ===");
+  // Streaming için encoder
+  const encoder = new TextEncoder();
 
-    const formData = await request.formData();
-    const fileCount = parseInt(formData.get("fileCount") as string || "1");
+  // Helper function: Progress mesajı gönder
+  const sendProgress = (controller: ReadableStreamDefaultController, message: string, progress?: number) => {
+    const data = JSON.stringify({ type: 'progress', message, progress, timestamp: Date.now() });
+    controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+  };
 
-    console.log(`📂 ${fileCount} dosya yükleniyor...`);
+  // Helper function: Hata mesajı gönder
+  const sendError = (controller: ReadableStreamDefaultController, error: string, code: string) => {
+    const data = JSON.stringify({ type: 'error', error, code, timestamp: Date.now() });
+    controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+  };
 
-    // Dosyaları topla
-    const files: File[] = [];
-    for (let i = 0; i < fileCount; i++) {
-      const file = formData.get(`file${i}`) as File;
-      if (file) files.push(file);
-    }
+  // Helper function: Başarı mesajı gönder
+  const sendSuccess = (controller: ReadableStreamDefaultController, result: any) => {
+    const data = JSON.stringify({ type: 'success', ...result, timestamp: Date.now() });
+    controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+  };
 
-    if (files.length === 0) {
-      return NextResponse.json({
-        success: false,
-        error: "Hiç dosya bulunamadı",
-        code: "NO_FILES",
-      });
-    }
+  // ReadableStream oluştur
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        // Session başlat
+        logger.sessionBaslat(sessionId);
+        sendProgress(controller, '🚀 İşlem başladı');
 
-    // Her dosyayı kontrol et
-    for (const file of files) {
-      if (file.size > MAX_FILE_SIZE) {
-        return NextResponse.json({
-          success: false,
-          error: `${file.name} çok büyük (Max: ${MAX_FILE_SIZE / 1024 / 1024}MB)`,
-          code: "FILE_TOO_LARGE",
+        sendProgress(controller, '📤 Form data alınıyor...');
+        logger.info(LogKategori.UPLOAD, 'Form data alınıyor...');
+        const formData = await request.formData();
+        const fileCount = parseInt(formData.get("fileCount") as string || "1");
+
+        logger.info(LogKategori.UPLOAD, `${fileCount} dosya upload başladı`, {
+          ek: { fileCount },
         });
-      }
+        sendProgress(controller, `📦 ${fileCount} dosya alındı`);
 
-      if (!SmartDocumentProcessor.isFormatSupported(file)) {
-        return NextResponse.json({
-          success: false,
-          error: `${file.name} desteklenmeyen format`,
-          code: "UNSUPPORTED_FORMAT",
+        // Dosyaları topla
+        logger.debug(LogKategori.UPLOAD, 'Dosyalar toplanıyor...');
+        const files: File[] = [];
+        for (let i = 0; i < fileCount; i++) {
+          const file = formData.get(`file${i}`) as File;
+          if (file) {
+            files.push(file);
+            logger.debug(LogKategori.UPLOAD, `Dosya ${i + 1} alındı: ${file.name}`, {
+              dosyaAdi: file.name,
+              dosyaBoyutu: file.size,
+              dosyaTipi: file.type,
+            });
+          }
+        }
+
+        if (files.length === 0) {
+          logger.hata(LogKategori.VALIDATION, 'Hiç dosya bulunamadı', {
+            kod: 'NO_FILES',
+            mesaj: 'FormData içinde dosya bulunamadı',
+          });
+          sendError(controller, 'Hiç dosya bulunamadı', 'NO_FILES');
+          controller.close();
+          return;
+        }
+
+        logger.basarili(LogKategori.UPLOAD, `${files.length} dosya başarıyla alındı`);
+        sendProgress(controller, `✅ ${files.length} dosya başarıyla alındı`);
+
+        // Her dosyayı kontrol et
+        logger.info(LogKategori.VALIDATION, 'Dosyalar doğrulanıyor...');
+        sendProgress(controller, '🔍 Dosyalar doğrulanıyor...');
+
+        for (const file of files) {
+          logger.debug(LogKategori.VALIDATION, `${file.name} kontrol ediliyor`);
+
+          if (file.size > MAX_FILE_SIZE) {
+            logger.hata(LogKategori.VALIDATION, `${file.name} çok büyük`, {
+              kod: 'FILE_TOO_LARGE',
+              mesaj: `Dosya boyutu: ${(file.size / 1024 / 1024).toFixed(2)}MB, Max: ${MAX_FILE_SIZE / 1024 / 1024}MB`,
+            });
+            sendError(controller, `${file.name} çok büyük (Max: ${MAX_FILE_SIZE / 1024 / 1024}MB)`, 'FILE_TOO_LARGE');
+            controller.close();
+            return;
+          }
+
+          if (!SmartDocumentProcessor.isFormatSupported(file)) {
+            logger.hata(LogKategori.VALIDATION, `${file.name} desteklenmeyen format`, {
+              kod: 'UNSUPPORTED_FORMAT',
+              mesaj: `Format: ${file.type}`,
+            });
+            sendError(controller, `${file.name} desteklenmeyen format`, 'UNSUPPORTED_FORMAT');
+            controller.close();
+            return;
+          }
+
+          logger.debug(LogKategori.VALIDATION, `${file.name} ✓ geçti`);
+        }
+
+        logger.basarili(LogKategori.VALIDATION, 'Tüm dosyalar doğrulandı');
+        sendProgress(controller, '✅ Tüm dosyalar doğrulandı');
+
+        // Her dosyayı işle ve etiketle
+        logger.info(LogKategori.PROCESSING, `${files.length} dosya işlenmeye başlandı`);
+        sendProgress(controller, `⚙️ ${files.length} dosya işleniyor...`);
+
+        const processedTexts: string[] = [];
+        let totalWordCount = 0;
+        let totalCharCount = 0;
+        const allWarnings: string[] = [];
+
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const adimId = `process_${i}`;
+          const progress = Math.round(((i + 1) / files.length) * 100);
+
+          sendProgress(controller, `⚙️ ${file.name} işleniyor... (${i + 1}/${files.length})`, progress);
+
+          logger.progressGuncelle(
+            LogKategori.PROCESSING,
+            `${file.name} işleniyor...`,
+            progress,
+            { dosyaAdi: file.name }
+          );
+
+          logger.adimBaslat(adimId);
+          const result = await SmartDocumentProcessor.extractText(file);
+
+          if (!result.success) {
+            logger.hata(LogKategori.PROCESSING, `${file.name} işlenemedi`, {
+              kod: 'PROCESSING_ERROR',
+              mesaj: result.error || 'Bilinmeyen hata',
+            });
+            sendError(controller, `${file.name} işlenemedi: ${result.error}`, 'PROCESSING_ERROR');
+            controller.close();
+            return;
+          }
+
+          const wordCount = result.text.split(/\s+/).filter((w) => w.length > 0).length;
+          const charCount = result.text.length;
+
+          totalWordCount += wordCount;
+          totalCharCount += charCount;
+
+          if (result.warnings?.length) {
+            allWarnings.push(...result.warnings.map(w => `${file.name}: ${w}`));
+            result.warnings.forEach(w => {
+              logger.uyari(LogKategori.PROCESSING, w, { dosyaAdi: file.name });
+            });
+          }
+
+          // Dosyayı etiketle ve ekle
+          const label = `=== DOSYA: ${file.name} ===`;
+          processedTexts.push(`${label}\n\n${result.text}\n\n`);
+
+          logger.adimBitir(adimId, LogKategori.PROCESSING, `${file.name} başarıyla işlendi`, {
+            dosyaAdi: file.name,
+            kelimeSayisi: wordCount,
+            karakterSayisi: charCount,
+          });
+
+          sendProgress(controller, `✅ ${file.name} tamamlandı (${wordCount.toLocaleString()} kelime)`, progress);
+        }
+
+        logger.basarili(LogKategori.PROCESSING, `${files.length} dosya başarıyla işlendi`, {
+          kelimeSayisi: totalWordCount,
+          karakterSayisi: totalCharCount,
         });
-      }
-    }
 
-    // Her dosyayı işle ve etiketle
-    const processedTexts: string[] = [];
-    let totalWordCount = 0;
-    let totalCharCount = 0;
-    const allWarnings: string[] = [];
+        // Tüm metinleri birleştir
+        logger.info(LogKategori.COMPLETION, 'Dosyalar birleştiriliyor...');
+        sendProgress(controller, '🔗 Dosyalar birleştiriliyor...', 100);
 
-    for (const file of files) {
-      console.log(`\n📄 İşleniyor: ${file.name}`);
+        const combinedText = processedTexts.join("\n" + "=".repeat(80) + "\n\n");
 
-      const result = await SmartDocumentProcessor.extractText(file);
+        const processingTime = Date.now() - startTime;
+        const stats = {
+          fileCount: files.length,
+          wordCount: totalWordCount,
+          totalWordCount,
+          totalCharCount: combinedText.length,
+          processingTime,
+          files: files.map(f => ({ name: f.name, size: f.size })),
+        };
 
-      if (!result.success) {
-        return NextResponse.json({
-          success: false,
-          error: `${file.name} işlenemedi: ${result.error}`,
-          code: "PROCESSING_ERROR",
+        // Session'ı bitir
+        logger.sessionBitir(sessionId, IslemDurumu.COMPLETED);
+
+        logger.basarili(LogKategori.COMPLETION, 'İşlem tamamlandı', {
+          kelimeSayisi: totalWordCount,
+          karakterSayisi: combinedText.length,
         });
+
+        // Final success message
+        sendSuccess(controller, {
+          text: combinedText,
+          stats,
+          warnings: allWarnings,
+          message: `${files.length} dosya başarıyla birleştirildi`,
+        });
+
+        controller.close();
+      } catch (error) {
+        logger.hata(LogKategori.UPLOAD, 'Upload işlemi başarısız', {
+          kod: 'UNKNOWN_ERROR',
+          mesaj: error instanceof Error ? error.message : 'Bilinmeyen hata',
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+
+        logger.sessionBitir(sessionId, IslemDurumu.FAILED);
+
+        sendError(controller, error instanceof Error ? error.message : "Bilinmeyen hata", 'UNKNOWN_ERROR');
+        controller.close();
       }
+    },
+  });
 
-      const wordCount = result.text.split(/\s+/).filter((w) => w.length > 0).length;
-      const charCount = result.text.length;
-
-      totalWordCount += wordCount;
-      totalCharCount += charCount;
-
-      if (result.warnings?.length) {
-        allWarnings.push(...result.warnings.map(w => `${file.name}: ${w}`));
-      }
-
-      // Dosyayı etiketle ve ekle
-      const label = `=== DOSYA: ${file.name} ===`;
-      processedTexts.push(`${label}\n\n${result.text}\n\n`);
-
-      console.log(`✅ ${file.name}: ${wordCount} kelime, ${charCount} karakter`);
-    }
-
-    // Tüm metinleri birleştir
-    const combinedText = processedTexts.join("\n" + "=".repeat(80) + "\n\n");
-
-    const stats = {
-      fileCount: files.length,
-      wordCount: totalWordCount,
-      totalWordCount,
-      totalCharCount: combinedText.length,
-      processingTime: Date.now() - startTime,
-      files: files.map(f => ({ name: f.name, size: f.size })),
-    };
-
-    console.log("\n=== BİRLEŞTİRME TAMAMLANDI ===");
-    console.log(`Toplam: ${files.length} dosya`);
-    console.log(`Toplam kelime: ${totalWordCount}`);
-    console.log(`Toplam karakter: ${combinedText.length}`);
-    console.log(`Süre: ${stats.processingTime}ms`);
-
-    return NextResponse.json({
-      success: true,
-      text: combinedText,
-      stats,
-      warnings: allWarnings,
-      message: `${files.length} dosya başarıyla birleştirildi`,
-    });
-  } catch (error) {
-    console.error("=== UPLOAD API HATASI ===");
-    console.error(error);
-    return NextResponse.json({
-      success: false,
-      error: error instanceof Error ? error.message : "Bilinmeyen hata",
-      code: "UNKNOWN_ERROR",
-    });
-  }
+  // Return streaming response
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    },
+  });
 }

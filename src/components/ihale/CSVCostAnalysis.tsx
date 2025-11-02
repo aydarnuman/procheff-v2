@@ -49,11 +49,11 @@ export function CSVCostAnalysis({ analysis, fileName, onRemove }: CSVCostAnalysi
       className="bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/30 rounded-xl overflow-hidden"
     >
       {/* Header - Kompakt */}
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-4 py-3 flex items-center justify-between hover:bg-emerald-500/5 transition-colors"
-      >
-        <div className="flex items-center gap-3 flex-1 min-w-0">
+      <div className="w-full px-4 py-3 flex items-center justify-between">
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="flex items-center gap-3 flex-1 min-w-0 hover:bg-emerald-500/5 transition-colors rounded-lg p-2"
+        >
           <div className="p-1.5 bg-emerald-500/20 rounded-lg shrink-0">
             <FileText className="w-4 h-4 text-emerald-400" />
           </div>
@@ -63,33 +63,34 @@ export function CSVCostAnalysis({ analysis, fileName, onRemove }: CSVCostAnalysi
               {summary.total_items} ürün • {formatPrice(summary.total_cost)}
             </p>
           </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Delete button */}
-          {onRemove && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                if (confirm(`"${fileName}" dosyasını silmek istediğinizden emin misiniz?`)) {
-                  onRemove();
-                }
-              }}
-              className="p-1 hover:bg-red-500/20 rounded transition-colors"
-              title="Sil"
-            >
-              <X className="w-4 h-4 text-red-400" />
-            </button>
-          )}
-          <div className="text-xs text-emerald-400 font-semibold">
-            {Math.round(analysis.confidence * 100)}%
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="text-xs text-emerald-400 font-semibold">
+              {Math.round(analysis.confidence * 100)}%
+            </div>
+            {isExpanded ? (
+              <ChevronUp className="w-4 h-4 text-emerald-400" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-emerald-400" />
+            )}
           </div>
-          {isExpanded ? (
-            <ChevronUp className="w-4 h-4 text-emerald-400" />
-          ) : (
-            <ChevronDown className="w-4 h-4 text-emerald-400" />
-          )}
-        </div>
-      </button>
+        </button>
+
+        {/* Delete button - Artık button'ın dışında */}
+        {onRemove && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (confirm(`"${fileName}" dosyasını silmek istediğinizden emin misiniz?`)) {
+                onRemove();
+              }
+            }}
+            className="p-1 hover:bg-red-500/20 rounded transition-colors ml-2"
+            title="Sil"
+          >
+            <X className="w-4 h-4 text-red-400" />
+          </button>
+        )}
+      </div>
 
       {/* Content */}
       <AnimatePresence>

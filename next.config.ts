@@ -10,9 +10,6 @@ const nextConfig: NextConfig = {
       bodySizeLimit: '30mb',
     },
   },
-
-  // Turbopack config (empty to suppress warnings)
-  turbopack: {},
 };
 
 export default nextConfig;

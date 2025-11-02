@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear Storage</title>
+</head>
+<body>
+    <h1>Clearing localStorage...</h1>
+    <script>
+        // LocalStorage'ı temizle
+        localStorage.clear();
+        sessionStorage.clear();
+
+        // IndexedDB'yi de temizle
+        if (window.indexedDB) {
+            indexedDB.databases().then(databases => {
+                databases.forEach(db => {
+                    if (db.name) indexedDB.deleteDatabase(db.name);
+                });
+            });
+        }
+
+        document.body.innerHTML = '<h1>✅ Storage temizlendi!</h1><p>Sayfayı yenileyin veya <a href="/">Ana sayfaya</a> gidin.</p>';
+    </script>
+</body>
+</html>

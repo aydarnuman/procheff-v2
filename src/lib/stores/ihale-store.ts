@@ -10,10 +10,20 @@ import { CSVCostAnalysis } from '@/lib/csv/csv-parser';
  * Çözüm: Merkezi state yönetimi
  */
 
+// File metadata (File objesi yerine - serializable)
+export interface FileMetadata {
+  name: string;
+  size: number;
+  type: string;
+  lastModified: number;
+}
+
 export interface FileProcessingStatus {
-  file: File;
+  // File objesi KALDIRILDI - sadece metadata
+  fileMetadata: FileMetadata;
   status: 'pending' | 'processing' | 'completed' | 'error';
   progress?: string;
+  progressPercentage?: number; // 0-100 arası gerçek zamanlı progress
   wordCount?: number;
   error?: string;
   extractedText?: string;
@@ -23,7 +33,8 @@ export interface FileProcessingStatus {
 }
 
 export interface CSVFileStatus {
-  file: File;
+  // File objesi KALDIRILDI - sadece metadata
+  fileMetadata: FileMetadata;
   status: 'pending' | 'processing' | 'completed' | 'error';
   analysis?: CSVCostAnalysis;
   error?: string;
@@ -80,153 +91,156 @@ const initialState = {
 };
 
 /**
- * İhale Store - Persist ile localStorage desteği
+ * İhale Store - SADECE ANALIZ SONUÇLARINI PERSIST ET
+ *
+ * ✅ localStorage'da saklanır: currentAnalysis, analysisHistory
+ * ❌ localStorage'da SAKLANMAZ: fileStatuses, csvFiles, isProcessing
+ *
+ * Kullanıcı analiz sonuçlarını isterse kapatabilir (localStorage'ı temizle)
  */
 export const useIhaleStore = create<IhaleState>()(
   persist(
     (set, get) => ({
       ...initialState,
 
-      // Current Analysis
-      setCurrentAnalysis: (analysis) => {
-        set({ currentAnalysis: analysis });
-        // History'e ekle (eğer yeni analiz tamamlandıysa)
-        if (analysis) {
-          const history = get().analysisHistory;
-          // Aynı analiz zaten varsa ekleme
-          const exists = history.some(
-            h => h.extracted_data.kurum === analysis.extracted_data.kurum &&
-                 h.processing_metadata.processing_time === analysis.processing_metadata.processing_time
-          );
-          if (!exists) {
-            set({ analysisHistory: [...history, analysis] });
-          }
-        }
-      },
-
-      // File Statuses
-      setFileStatuses: (statuses) => set({ fileStatuses: statuses }),
-
-      addFileStatus: (status) => {
-        const current = get().fileStatuses;
-        set({ fileStatuses: [...current, status] });
-      },
-
-      updateFileStatus: (fileName, updates) => {
-        const current = get().fileStatuses;
-        const updated = current.map(fs =>
-          fs.file.name === fileName ? { ...fs, ...updates } : fs
-        );
-        console.log(`🔄 updateFileStatus called for: ${fileName}`, updates);
-        console.log(`   Status: ${updates.status}, WordCount: ${updates.wordCount}`);
-        set({ fileStatuses: updated });
-      },
-
-      removeFileStatus: (fileName) => {
-        const current = get().fileStatuses;
-        set({ fileStatuses: current.filter(fs => fs.file.name !== fileName) });
-      },
-
-      clearFileStatuses: () => set({ fileStatuses: [] }),
-
-      // Processing State
-      setIsProcessing: (processing) => set({ isProcessing: processing }),
-
-      setCurrentStep: (step) => set({ currentStep: step }),
-
-      // CSV Actions
-      addCSVFile: (status) => {
-        const current = get().csvFiles;
-        set({ csvFiles: [...current, status] });
-      },
-
-      updateCSVFile: (fileName, updates) => {
-        const current = get().csvFiles;
-        const updated = current.map(csv =>
-          csv.file.name === fileName ? { ...csv, ...updates } : csv
-        );
-        set({ csvFiles: updated });
-      },
-
-      removeCSVFile: (fileName) => {
-        const current = get().csvFiles;
-        set({ csvFiles: current.filter(csv => csv.file.name !== fileName) });
-      },
-
-      clearCSVFiles: () => set({ csvFiles: [] }),
-
-      // History
-      addToHistory: (analysis) => {
-        const history = get().analysisHistory;
+  // Current Analysis
+  setCurrentAnalysis: (analysis) => {
+    set({ currentAnalysis: analysis });
+    // History'e ekle (eğer yeni analiz tamamlandıysa)
+    if (analysis) {
+      const history = get().analysisHistory;
+      // Aynı analiz zaten varsa ekleme
+      const exists = history.some(
+        h => h.extracted_data.kurum === analysis.extracted_data.kurum &&
+             h.processing_metadata.processing_time === analysis.processing_metadata.processing_time
+      );
+      if (!exists) {
         set({ analysisHistory: [...history, analysis] });
-      },
+      }
+    }
+  },
 
-      clearHistory: () => set({ analysisHistory: [] }),
+  // File Statuses
+  setFileStatuses: (statuses) => set({ fileStatuses: statuses }),
 
-      removeFromHistory: (index) => {
-        const history = get().analysisHistory;
-        set({ analysisHistory: history.filter((_, i) => i !== index) });
-      },
+  addFileStatus: (status) => {
+    const current = get().fileStatuses;
+    console.log(`📥 [STORE] addFileStatus çağrıldı:`, {
+      fileName: status.fileMetadata.name,
+      detectedType: status.detectedType,
+      status: status.status,
+      currentCount: current.length,
+      newCount: current.length + 1
+    });
+    set({ fileStatuses: [...current, status] });
+    console.log(`✅ [STORE] Dosya eklendi - Toplam dosya: ${current.length + 1}`);
+  },
 
-      updateProposalData: (index, proposalData) => {
-        const history = get().analysisHistory;
-        const updated = history.map((item, i) =>
-          i === index ? { ...item, proposal_data: proposalData } : item
+  updateFileStatus: (fileName, updates) => {
+    const current = get().fileStatuses;
+    const updated = current.map(fs =>
+      fs.fileMetadata.name === fileName ? { ...fs, ...updates } : fs
+    );
+    console.log(`🔄 updateFileStatus called for: ${fileName}`, updates);
+    console.log(`   Status: ${updates.status}, WordCount: ${updates.wordCount}`);
+    set({ fileStatuses: updated });
+  },
+
+  removeFileStatus: (fileName) => {
+    const current = get().fileStatuses;
+    set({ fileStatuses: current.filter(fs => fs.fileMetadata.name !== fileName) });
+  },
+
+  clearFileStatuses: () => set({ fileStatuses: [] }),
+
+  // Processing State
+  setIsProcessing: (processing) => set({ isProcessing: processing }),
+
+  setCurrentStep: (step) => set({ currentStep: step }),
+
+  // CSV Actions
+  addCSVFile: (status) => {
+    const current = get().csvFiles;
+    set({ csvFiles: [...current, status] });
+  },
+
+  updateCSVFile: (fileName, updates) => {
+    const current = get().csvFiles;
+    const updated = current.map(csv =>
+      csv.fileMetadata.name === fileName ? { ...csv, ...updates } : csv
+    );
+    set({ csvFiles: updated });
+  },
+
+  removeCSVFile: (fileName) => {
+    const current = get().csvFiles;
+    set({ csvFiles: current.filter(csv => csv.fileMetadata.name !== fileName) });
+  },
+
+  clearCSVFiles: () => set({ csvFiles: [] }),
+
+  // History
+  addToHistory: (analysis) => {
+    const history = get().analysisHistory;
+    set({ analysisHistory: [...history, analysis] });
+  },
+
+  clearHistory: () => set({ analysisHistory: [] }),
+
+  removeFromHistory: (index) => {
+    const history = get().analysisHistory;
+    set({ analysisHistory: history.filter((_, i) => i !== index) });
+  },
+
+  updateProposalData: (index, proposalData) => {
+    const history = get().analysisHistory;
+    const updated = history.map((item, i) =>
+      i === index ? { ...item, proposal_data: proposalData } : item
+    );
+    set({ analysisHistory: updated });
+  },
+
+  updateDeepAnalysis: (deepAnalysis) => {
+    const current = get().currentAnalysis;
+    if (current) {
+      const updated = { ...current, deep_analysis: deepAnalysis };
+      set({ currentAnalysis: updated });
+
+      // History'de de güncelle (eğer varsa)
+      const history = get().analysisHistory;
+      const historyIndex = history.findIndex(
+        h => h.extracted_data.kurum === current.extracted_data.kurum &&
+             h.processing_metadata.processing_time === current.processing_metadata.processing_time
+      );
+      if (historyIndex !== -1) {
+        const updatedHistory = history.map((item, i) =>
+          i === historyIndex ? updated : item
         );
-        set({ analysisHistory: updated });
-      },
+        set({ analysisHistory: updatedHistory });
+      }
+    }
+  },
 
-      updateDeepAnalysis: (deepAnalysis) => {
-        const current = get().currentAnalysis;
-        if (current) {
-          const updated = { ...current, deep_analysis: deepAnalysis };
-          set({ currentAnalysis: updated });
-
-          // History'de de güncelle (eğer varsa)
-          const history = get().analysisHistory;
-          const historyIndex = history.findIndex(
-            h => h.extracted_data.kurum === current.extracted_data.kurum &&
-                 h.processing_metadata.processing_time === current.processing_metadata.processing_time
-          );
-          if (historyIndex !== -1) {
-            const updatedHistory = history.map((item, i) =>
-              i === historyIndex ? updated : item
-            );
-            set({ analysisHistory: updatedHistory });
-          }
-        }
-      },
-
-      updateStatus: (index, status) => {
-        const history = get().analysisHistory;
-        const updated = history.map((item, i) =>
-          i === index ? { ...item, status } : item
-        );
-        set({ analysisHistory: updated });
-      },
+  updateStatus: (index, status) => {
+    const history = get().analysisHistory;
+    const updated = history.map((item, i) =>
+      i === index ? { ...item, status } : item
+    );
+    set({ analysisHistory: updated });
+  },
 
       // Reset Everything
       reset: () => set(initialState),
     }),
     {
-      name: 'ihale-store', // localStorage key
-      version: 4, // ⚠️ VERSİYON ARTTIRILDI - CSV support eklendi!
+      name: 'ihale-analysis-storage', // localStorage key
       storage: createJSONStorage(() => localStorage),
-      // Analysis history ve currentAnalysis'i persist et
+      // SADECE analiz sonuçlarını sakla, file processing state'i SAKLAMA
       partialize: (state) => ({
-        analysisHistory: state.analysisHistory,
         currentAnalysis: state.currentAnalysis,
-        // fileStatuses ve csvFiles File object içerdiği için persist edilmiyor
+        analysisHistory: state.analysisHistory,
+        // fileStatuses, csvFiles, isProcessing, currentStep SAKLANMAZ
       }),
-      // Migration: Eski version'dan yeniye geçiş
-      migrate: (persistedState: any, version: number) => {
-        if (version < 4) {
-          // Version 4'den önceki tüm cache'i temizle
-          console.log('🔄 Store migrating to v4 - clearing old cache (CSV support added)...');
-          return initialState;
-        }
-        return persistedState;
-      },
     }
   )
 );

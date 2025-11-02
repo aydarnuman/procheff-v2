@@ -434,10 +434,10 @@ export function EnhancedAnalysisResults({
               <CSVCostAnalysis
                 key={index}
                 analysis={csv.analysis!}
-                fileName={csv.file.name}
+                fileName={csv.fileMetadata.name}
                 onRemove={() => {
                   const { removeCSVFile } = useIhaleStore.getState();
-                  removeCSVFile(csv.file.name);
+                  removeCSVFile(csv.fileMetadata.name);
                 }}
               />
             ))}
@@ -868,6 +868,19 @@ export function EnhancedAnalysisResults({
           >
             <Upload className="w-4 h-4" />
             <span>Yeni Analiz</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (confirm('Analiz sonuçlarını kapatmak istediğinizden emin misiniz?\n\n(Sayfa yenilendiğinde analiz hala burada olacaktır)')) {
+                onReturnToView();
+                setCurrentAnalysis(null);
+              }
+            }}
+            className="flex items-center space-x-2 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-xl transition-colors"
+          >
+            <X className="w-4 h-4" />
+            <span>Analizi Kapat</span>
           </button>
         </div>
 

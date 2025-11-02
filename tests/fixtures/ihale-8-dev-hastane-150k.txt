@@ -1,0 +1,888 @@
+T.C. SAĞLIK BAKANLIĞI
+İSTANBUL ANADOLU YAKASI ENTEGRE SAĞLIK KAMPÜSÜ
+BESLENME VE DİYETETİK HİZMETLERİ MÜDÜRLÜĞÜ
+
+TEKNİK ŞARTNAME - KAPSAMLI BESLENME HİZMETİ ALIMI
+
+========================================
+BÖLÜM 1: GENEL BİLGİLER VE KAPSAM
+========================================
+
+İHALE KAPSAMI:
+Entegre Sağlık Kampüsü bünyesindeki 11 ayrı sağlık tesisinde hasta, refakatçi, personel ve misafir beslenme hizmetleri ile özel diyet programları, klinik beslenme desteği ve besin hazırlama hizmetleri alımı.
+
+USUL: Açık İhale (4734 Sayılı Kamu İhale Kanunu)
+
+İHALE TARİHİ: 30 Aralık 2025
+BAŞVURU SON TARİH: 27 Aralık 2025, Saat 17:00
+HİZMET BAŞLANGIÇ TARİHİ: 1 Mart 2026
+SÖZLEŞME SÜRESİ: 60 ay (5 yıl)
+
+TAHMİNİ YILLIK BÜTÇE: 185.500.000 TL (KDV Dahil)
+GEÇİCİ TEMİNAT: 9.275.000 TL
+PERFORMANS TEMİNATI: 18.550.000 TL (ihale sonrası)
+
+========================================
+BÖLÜM 2: TESİS YAPISI VE KAPASİTE
+========================================
+
+KAMPÜS İÇİNDEKİ TESİSLER:
+
+1. ANA HASTANE KOMPLEKSİ (Yoğun Bakım + Servisler + Poliklinikler):
+
+   A) YOĞUN BAKIM ÜNİTELERİ (24 Saat Hizmet):
+      - Genel Yoğun Bakım: 120 yatak
+      - Koroner Yoğun Bakım: 48 yatak
+      - Neonatal Yoğun Bakım: 80 bebek yatağı
+      - Pediatrik Yoğun Bakım: 40 yatak
+      - Yanık Yoğun Bakım: 24 yatak
+      - Ameliyat Sonrası Derlenme: 60 yatak
+      TOPLAM YB: 372 yatak
+
+   B) NORMAL SERVİSLER:
+      - Dahiliye Servisleri: 480 yatak (8 kat)
+      - Cerrahi Servisler: 420 yatak (7 kat)
+      - Kadın Doğum: 280 yatak (5 kat)
+      - Çocuk Servisleri: 240 yatak (4 kat)
+      - Onkoloji: 180 yatak (3 kat)
+      - Ortopedi: 160 yatak (3 kat)
+      - KBB-Göz: 120 yatak (2 kat)
+      - Psikiyatri (kapalı servis): 80 yatak (1 kat)
+      TOPLAM SERVİS: 1.960 yatak
+
+   C) POLİKLİNİKLER (Sadece öğle):
+      - Günlük ortalama hasta: 3.500 kişi
+      - Pik günler (Pazartesi): 5.000 kişi
+      - Düşük günler (Cuma öğleden sonra): 1.500 kişi
+
+   D) REFAKATÇI KAPASİTESİ:
+      - Normal servisler: Hasta başına 1 refakatçi = 1.960 refakatçi
+      - Yoğun bakım: Refakatçi yasak = 0
+      - Çocuk servisleri: Hasta başına 2 refakatçi = 240 × 2 = 480 refakatçi
+      TOPLAM REFAKATÇI: 2.120 kişi (ortalama)
+
+   ANA HASTANE TOPLAM:
+   - Yatan Hasta: 2.332 kişi (YB + Servis)
+   - Ayakta Hasta (öğle): 3.500 kişi/gün
+   - Refakatçi: 2.120 kişi
+
+2. ÇOCUK HASTANESİ (Ayrı Bina):
+   - Servis Yatağı: 320 yatak
+   - Çocuk Yoğun Bakım: 60 yatak
+   - Poliki̇li̇k (günlük): 1.200 hasta
+   - Refakatçi: 760 kişi (2 refakatçi/hasta)
+   TOPLAM: 380 yatan + 1.200 ayakta + 760 refakatçi
+
+3. ONKOLOJI ARAŞTIRMA MERKEZİ:
+   - Kemoterapi Ünitesi: 80 sandalye (günlük ortalama 200 hasta)
+   - Radyoterapi Üniti̇si̇: 40 hasta/gün
+   - Yatan Hasta: 120 yatak
+   - Refakatçi: 120 kişi
+   TOPLAM: 120 yatan + 240 ayakta + 120 refakatçi
+
+4. KALBİ DAMAR CERRAHİSİ MERKEZİ:
+   - Yoğun Bakım: 80 yatak
+   - Normal Servis: 180 yatak
+   - Poliki̇li̇k: 400 hasta/gün
+   - Refakatçi: 180 kişi
+   TOPLAM: 260 yatan + 400 ayakta + 180 refakatçi
+
+5. DOĞUM VE KADIN HASTALIKLARI MERKEZİ:
+   - Doğum Servisi: 240 yatak
+   - Yenidoğan: 160 bebek
+   - Kadın Hastalıkları: 120 yatak
+   - Riskli Gebelik Yoğun Bakım: 40 yatak
+   - Refakatçi: 280 kişi
+   TOPLAM: 560 yatan + 280 refakatçi
+
+6. ACİL SERVIS (24 Saat):
+   - Müşahade Yatakları: 120 yatak
+   - Günlük ortalama başvuru: 2.500 hasta
+   - Öğün alan hasta (tahmini): 400 kişi/gün
+   TOPLAM: 120 yatan + 400 ayakta
+
+7. AĞIZ DİŞ SAĞLIĞI HASTANESI:
+   - Ayakta Tedavi: 800 hasta/gün
+   - Öğün alan: 200 hasta/gün (öğle)
+   TOPLAM: 200 ayakta
+
+8. FİZİK TEDAVİ VE REHABİLİTASYON:
+   - Yatan Hasta: 180 yatak
+   - Ayakta Tedavi: 600 hasta/gün
+   - Öğün alan ayakta: 300 kişi/gün
+   - Refakatçi: 180 kişi
+   TOPLAM: 180 yatan + 300 ayakta + 180 refakatçi
+
+9. PSİKİYATRİ VE RUHSAL SAĞLIK HASTANESİ:
+   - Kapalı Servis: 120 yatak
+   - Açık Servis: 80 yatak
+   - Ayakta Tedavi: 200 hasta/gün (sadece öğle)
+   - Refakatçi: Yok (psikiyatri servisi)
+   TOPLAM: 200 yatan + 200 ayakta
+
+10. GÖZ HASTANESİ:
+    - Yatan: 60 yatak
+    - Ayakta: 900 hasta/gün
+    - Öğün alan ayakta: 180 kişi
+    - Refakatçi: 60 kişi
+    TOPLAM: 60 yatan + 180 ayakta + 60 refakatçi
+
+11. ARAŞTIRMA VE EĞİTIM BİNASI + İDARİ BİNA:
+    - Personel yemekhanesi (sadece öğle)
+    - Kapasite: 2.500 kişi/gün
+
+========================================
+GENEL TOPLAM KİŞİ SAYILARI (Günlük Ortalama)
+========================================
+
+YATAN HASTALAR (24 Saat Hizmet):
+- Ana Hastane: 2.332 hasta
+- Çocuk Hastanesi: 380 hasta
+- Onkoloji Merkezi: 120 hasta
+- Kalp Merkezi: 260 hasta
+- Kadın Doğum: 560 hasta
+- Acil Müşahade: 120 hasta
+- Fizik Tedavi: 180 hasta
+- Psikiyatri: 200 hasta
+- Göz Hastanesi: 60 hasta
+TOPLAM YATAN: 4.212 hasta
+
+AYAKTA HASTALAR (Sadece Öğle):
+- Ana Hastane Poliki̇li̇k: 3.500 hasta
+- Çocuk Poliki̇li̇k: 1.200 hasta
+- Onkoloji (kemo+radyo): 240 hasta
+- Kalp Poliki̇li̇k: 400 hasta
+- Acil (öğün alan): 400 hasta
+- Diş: 200 hasta
+- Fizik Tedavi: 300 hasta
+- Psikiyatri: 200 hasta
+- Göz: 180 hasta
+TOPLAM AYAKTA: 6.620 hasta
+
+REFAKATÇI (24 Saat Hizmet):
+- Ana Hastane: 2.120 refakatçi
+- Çocuk: 760 refakatçi
+- Onkoloji: 120 refakatçi
+- Kalp: 180 refakatçi
+- Kadın Doğum: 280 refakatçi
+- Fizik Tedavi: 180 refakatçi
+- Göz: 60 refakatçi
+TOPLAM REFAKATÇI: 3.700 refakatçi
+
+PERSONEL (Sadece Öğle Öğünü):
+- Hekim (tüm branşlar): 1.850 kişi
+- Hemşire ve Sağlık Teknisyeni: 3.200 kişi
+- İdari Personel: 1.450 kişi
+- Destek Hizmetleri (temizlik, güvenlik vb.): 800 kişi
+TOPLAM PERSONEL: 7.300 kişi
+
+⚠️ ÖNEMLİ: PERSONEL SAYISI 7.300, AMA BUNLAR ÇALIŞAN!
+→ YEMEK HİZMETİ SADECE KENDİ İSTEYENLERE VERİLİYOR
+→ Ortalama %35'i yemek yiyor = 2.500 kişi/gün
+
+========================================
+GÜNLÜK TOPLAM HİZMET SAYILARI (Öğün Bazında)
+========================================
+
+KAHVALTI (07:00-09:00):
+- Yatan Hasta: 4.212 kişi
+- Refakatçi: 3.700 kişi
+TOPLAM: 7.912 öğün
+
+KUŞLUK/ARA ÖĞÜN (10:30-11:00) - Özel Hastalar:
+- Diyabetik hastalar: ~600 kişi
+- Çocuk hastaları: 380 kişi
+TOPLAM: 980 öğün
+
+ÖĞLE (12:00-14:00):
+- Yatan Hasta: 4.212 kişi
+- Ayakta Hasta: 6.620 kişi
+- Refakatçi: 3.700 kişi
+- Personel: 2.500 kişi
+TOPLAM: 17.032 öğün
+
+ARA ÖĞÜN/ÇAYILI İKİNDİ (15:30-16:00) - Özel Hastalar:
+- Çocuk servisleri: 380 kişi
+- Onkoloji hastaları: 200 kişi
+TOPLAM: 580 öğün
+
+AKŞAM (18:00-20:00):
+- Yatan Hasta: 4.212 kişi
+- Refakatçi: 3.700 kişi
+TOPLAM: 7.912 öğün
+
+GECE/GÜN ARASI (01:00-02:00) - Acil + Nöbet:
+- Acil servis: 50 kişi
+- Yoğun bakım özel: 100 kişi
+- Nöbetçi personel: 200 kişi
+TOPLAM: 350 öğün
+
+GÜNLÜK TOPLAM ÖĞÜN SAYISI: ~34.766 öğün/gün
+
+YILLIK TOPLAM ÖĞÜN HESABI: 34.766 × 365 = 12.689.590 öğün/yıl
+
+========================================
+BÖLÜM 3: DİYET VE BESLENME GEREKSİNİMLERİ
+========================================
+
+HASTA DİYET TİPLERİ (4.212 Yatan Hasta):
+
+1. NORMAL DİYET (%40 = 1.685 hasta):
+   - Standart menü
+   - Özel kısıtlama yok
+
+2. YUMUto DİYET (%15 = 632 hasta):
+   - Ameliyat sonrası hastalar
+   - Yaşlı hastalar
+   - Çiğneme sorunu olanlar
+   - Püre kıvamı
+
+3. DİYABETİK DİYET (%18 = 758 hasta):
+   - Şeker hastalığı olanlar
+   - Karbonhidrat kontrolü
+   - Glisemik indeks düşük
+   - Porsiyon kontrolü
+
+4. TUZSUZ DİYET - HİPERTANSİYON (%12 = 505 hasta):
+   - Yüksek tansiyon hastaları
+   - Böbrek hastaları (bazıları)
+   - Kalp yetmezliği
+   - Maksimum 2g tuz/gün
+
+5. BÖBREK HASTASI DİYETİ (%6 = 253 hasta):
+   - Diyaliz hastaları
+   - Kronik böbrek yetmezliği
+   - Protein kısıtlaması
+   - Potasyum-fosfor kontrolü
+
+6. YAĞSIZ DİYET - KARACİĞER/SAFRA (%5 = 211 hasta):
+   - Karaciğer hastaları
+   - Safra kesesi problemleri
+   - Pankreatit
+   - Maksimum 30g yağ/gün
+
+7. YÜKSEK PROTEİNLİ DİYET (%3 = 126 hasta):
+   - Yanık hastaları
+   - Yara iyileşmesi
+   - Malnütrisyon
+   - Ameliyat sonrası
+
+8. ÇÖLYAK/GLUTEN-FREE (%1 = 42 hasta):
+   - Çölyak hastaları
+   - Gluten alerjisi
+   - Özel ekmek/makarna
+
+9. SIVI DİYET (%8 = 337 hasta):
+   - Ameliyat öncesi/sonrası
+   - Yutma güçlüğü
+   - Enteral beslenmeye geçiş
+
+10. ENTERAL BESLENME - SONDA (%10 = 421 hasta):
+    - Yoğun bakım hastaları
+    - Koma hastaları
+    - Yutamayan hastalar
+    - Özel formüller
+
+11. PARENTERAL BESLENME - DAMAR YOLU (%2 = 84 hasta):
+    - Ağır bağırsak problemleri
+    - Ameliyat sonrası
+    - Enteral beslenme yapılamıyorsa
+
+12. DİĞER ÖZEL DİYETLER:
+    - Allerji diyetleri (süt, yumurta, balık vb.)
+    - Vegan/vejeteryan (hasta talebi üzerine)
+    - Kültürel/dini gereksinimler (helal, kosher vb.)
+
+ÇOCUK HASTALARI ÖZEL GEREKSİNİMLER (760 çocuk):
+- 0-6 ay: Anne sütü/mama (beslenme uzmanı desteği)
+- 6-12 ay: Ek gıda başlangıcı (püre, kaşık maması)
+- 1-3 yaş: Küçük porsiyonlar, yumuşak
+- 3-6 yaş: Renkli sunum, oyunlu
+- 6-12 yaş: Ergen öncesi beslenme
+- 12-18 yaş: Ergen beslenmesi (artmış enerji)
+
+ONKOLOJİ HASTALARI (360 hasta):
+- Kemoterapi öncesi: Hafif, mide bulantısına karşı
+- Kemoterapi sonrası: Tat değişikliği, iştahsızlık
+- Radyoterapi: Yutma güçlüğü, ağız kuruluğu
+- Yüksek kalorili: Kilo kaybını önleme
+
+========================================
+BÖLÜM 4: MENÜ PROGRAMLARI VE PORSİYON ÖLÇÜLERİ
+========================================
+
+A) NORMAL DİYET MENÜ ÖRNEĞİ:
+
+KAHVALTI (Standart):
+- Çay/süt: 200ml (sınırsız çay)
+- Ekmek: 200g (beyaz veya kepek)
+- Beyaz peynir: 60g
+- Zeytin: 40g (yeşil/siyah)
+- Yumurta: 1-2 adet (haşlama/omlet/sahanda, rotasyonlu)
+- Tereyağı/margarin: 20g
+- Reçel/bal: 30g
+- Domates/salatalık: 100g
+
+ÖĞLE (Rotating Menü - 30 Günlük):
+- Çorba: 250ml (mercimek, tarhana, ezogelin, domates, sebze, tavuk, yoğurt, yayla, düğün, şehriye...)
+- Ana yemek - ET: 150g (kıymalı yemekler, haşlama, güveç, türlü, tas kebabı, Izgara köfte...)
+- Ana yemek - TAVUK: 150g (fırın tavuk, haşlama, sote, tavuk güveç...)
+- Yanında: Pilav/makarna/bulgur pilavı: 180g
+- Salata: 120g (mevsim salataları, coleslaw, çoban, patates...)
+- Yoğurt/cacık/ayran: 150ml
+- Meyve: 1 adet (elma, armut, portakal, muz - mevsime göre)
+- Ekmek: 250g
+
+AKŞAM (Hafif):
+- Çorba: 250ml
+- Ana yemek (et/tavuk/sebze): 120g
+- Pilav/makarna: 150g
+- Cacık/yoğurt: 150ml
+- Komposto/muhallebi: 100g (haftada 3 gün)
+- Ekmek: 200g
+
+B) DİYABETİK DİYET MENÜ:
+(Normal menüden adaptasyon)
+- Ekmek: Kepekli, porssiyon kontrolü (150g/öğün)
+- Pilav: Esmer pirinç veya bulgur
+- Tatlı/şekerli gıdalar: YOK
+- Meyve: Düşük glisemik indeksli (elma, erik), porsiyon kontrolü
+- Sebze miktarı artırılmış
+- Karbonhidrat hesabı: 45-60g/öğün
+
+C) TUZSUZ DİYET:
+- Tuz: Maksimum 2g/gün
+- Ekmek: Tuzsuz ekmek (özel üretim)
+- Yemekler: Ayrı pişirilmiş, tuzsuz
+- Baharatlarla lezzet artırımı
+- Turşu/zeytin: YOK
+
+D) BÖBREK HASTASI DİYETİ:
+- Protein: Kısıtlı (0.8g/kg vücut ağırlığı)
+- Potasyum: Düşük (patates, muz, domates az)
+- Fosfor: Düşük (süt ürünleri sınırlı)
+- Sıvı: Kısıtlı (duruma göre 800-1200ml/gün)
+- Tuz: Tuzsuz
+
+E) ÇOCUK MENÜSÜ (3-12 Yaş):
+- Porsiyon boyutu: %50-70 azaltılmış
+- Sunum: Renkli, oyunlu taaklar
+- Çeşit: Çocuk dostu (makarna, köfte, tavuk nugget, pirzola...)
+- Tatlı: Her gün (puding, meyve kompostosu, muhallebi)
+- Ek: Süt her öğün
+
+F) ONKOLOJİ MENÜSÜ:
+- Yüksek kalorili: 2500-3000 kalori/gün
+- Porsiyon: Küçük ama sık (6-7 öğün)
+- Yumuşak kıvam: Yutma kolaylığı
+- Kokusuz: Bulantı önleme
+- Soğuk yemekler: Kemoterapi sonrası tercih edilir
+
+========================================
+BÖLÜM 5: FİRMA YÜKÜMLÜLÜKLERİ
+========================================
+
+1. SERTİFİKALAR VE BELGELER (ZORUNLU):
+
+   A) Gıda Güvenliği:
+      - ISO 22000 Gıda Güvenliği Yönetim Sistemi Sertifikası
+      - HACCP Sistemi Uygulama Belgesi
+      - Helal Gıda Sertifikası
+      - GMP (İyi Üretim Uygulamaları) Belgesi
+
+   B) Kalite Yönetimi:
+      - ISO 9001 Kalite Yönetim Sistemi
+      - ISO 14001 Çevre Yönetim Sistemi
+      - OHSAS 18001 İş Sağlığı ve Güvenliği
+
+   C) Hastane Hizmetleri:
+      - Hastane Mutfağı İşletme Ruhsatı
+      - Klinik Beslenme Hizmeti Yetki Belgesi
+      - Enteral Beslenme Ürünleri Hazırlama Yetkisi
+
+2. MUTFAK VE EKİPMAN ALTYAPISI:
+
+   A) Merkezi Mutfak (Yeni Kurulum):
+      - Alan: 4.500 m² (soğuk hava depoları dahil)
+      - Kapasite: Günlük 40.000 öğün
+      - Bölümler:
+        * Sebze hazırlama: 400 m²
+        * Et-tavuk hazırlama: 350 m²
+        * Pişirme: 800 m²
+        * Diyet mutfağı (özel): 600 m²
+        * Soğuk mutfak (salata, tatlı): 450 m²
+        * Bulaşıkhane: 300 m²
+        * Paketleme ve dağıtım: 500 m²
+        * Soğuk hava depoları: 900 m² (0°C ve -18°C)
+        * İdari ve sosyal alan: 200 m²
+
+      - Ekipman Listesi (Kısmi):
+        * Endüstriyel ocaklar: 20 adet
+        * Fırınlar (konveksiyonlu): 12 adet
+        * Buhar kazanları: 8 adet
+        * Mikser ve doğrayıcılar: 15 adet
+        * Soğutucular ve dondurucular: 30 adet
+        * Tepsi taşıma arabaları (ısıtmalı): 80 adet
+        * Bulaşık makineleri (endüstriyel): 6 adet
+
+   B) Servis Mutfakları (Her Binada):
+      - 11 adet servis mutfağı (bina başına)
+      - Rejenererasyon ekipmanları
+      - Servis arabaları
+      - Buzdolapları
+
+   C) Diyet Hazırlama Mutfağı (Özel):
+      - Ayrı bir alan: 600 m²
+      - Özel diyet yemekleri için
+      - Allerjen kontaminasyonu önleme
+      - Diyetisyen denetimi altında
+
+   D) Enteral Beslenme Hazırlama Ünitesi:
+      - Steril ortam: 150 m²
+      - Laminar hava akımı
+      - Formula hazırlama ekipmanları
+      - Soğuk zincir
+
+   E) Araç Filosu:
+      - 15 adet soğutmalı panel van (servis için)
+      - 3 adet soğutmalı kamyon (tedarik için)
+      - 25 adet elektrikli servis arabası (bina içi)
+
+3. PERSONEL YAPISI (İşletmeci Temin Edecek):
+
+   A) YÖNETİM KADROSU:
+      - 1 Genel Müdür (Gıda Mühendisi)
+      - 2 Genel Müdür Yardımcısı (Diyetisyen + İşletme)
+      - 1 Kalite Güvence Müdürü (Gıda Mühendisi)
+      - 1 Satın Alma Müdürü
+      - 1 İnsan Kaynakları Müdürü
+      - 2 Mali İşler Uzmanı
+
+   B) BESLENME VE DİYET KADROSU:
+      - 12 Diyetisyen (klinik diyetisyenler, bina başına 1)
+      - 4 Gıda Mühendisi (kalite kontrol)
+      - 2 Beslenme Danışmanı (enteral/parenteral)
+
+   C) MUTFAK KADROSU:
+      Merkezi Mutfak:
+      - 3 Aşçıbaşı (vardiya başına 1)
+      - 24 Aşçı (vardiya başına 8)
+      - 45 Aşçı Yardımcısı (vardiya başına 15)
+      - 18 Sebze Hazırlama Personeli
+      - 12 Et-Tavuk Hazırlama Personeli
+      - 15 Bulaşıkçı
+
+      Servis Mutfakları (11 adet):
+      - Her bina: 2 aşçı + 4 yardımcı = 66 kişi
+
+      Diyet Mutfağı:
+      - 2 Aşçıbaşı
+      - 8 Diyet Aşçısı
+      - 12 Yardımcı
+
+   D) SERVİS VE DAĞITIM KADROSU:
+      - 120 Servis Personeli (kat/bina servisi)
+      - 25 Araç Şoförü
+      - 15 Lojistik Koordinatörü
+
+   E) DESTEK HİZMETLERİ:
+      - 30 Temizlik Personeli
+      - 8 Bakım-Onarım Teknisyeni
+      - 12 Depo ve Stok Yönetimi Personeli
+
+   F) İDARİ PERSONEL:
+      - 5 Muhasebe Personeli
+      - 3 IT Destek Personeli (yazılım)
+      - 4 İnsan Kaynakları Personeli
+
+   **TAHMİNİ TOPLAM PERSONEL: ~480 Kişi**
+
+4. KALİTE KONTROL VE HİJYEN PROGRAMI:
+
+   A) Günlük Kontroller:
+      - Hammadde giriş kontrolü (sıcaklık, görünüm, son kullanma tarihi)
+      - Pişirme sıcaklıkları (min 74°C iç sıcaklık)
+      - Servis sıcaklıkları (sıcak: >63°C, soğuk: <5°C)
+      - Personel hijyeni kontrolleri
+      - Mutfak temizlik kontrolleri
+
+   B) Numune Saklama:
+      - Her öğünden 150g numune
+      - Saklama süresi: 72 saat
+      - Sıcaklık: -18°C
+      - Etiketleme: Tarih, saat, menü
+
+   C) Laboratuvar Analizleri:
+      Haftalık:
+      - Mikrobiyolojik analiz (10 numune/hafta)
+      - Yüzey sürüntü testleri (20 nokta/hafta)
+
+      Aylık:
+      - Besin değeri analizi (5 menü/ay)
+      - Su analizi (3 nokta/ay)
+      - Personel sağlık kontrolü (boğaz, gaita kültürü)
+
+      3 Aylık:
+      - Kapsamlı mikrobiyolojik tarama
+      - Ağır metal analizi
+
+   D) Denetimler:
+      - İç denetim: Haftalık (kalite ekibi)
+      - Hastane denetimi: Aylık (hastane beslenme komisyonu)
+      - Bağımsız denetim: 6 aylık (akredite kuruluş)
+      - Bakanlık denetimi: Yıllık (veya ani)
+
+5. YAZILIM VE TEKNOLOJİ ALTYAPISI:
+
+   A) Hastane Bilgi Sistemi Entegrasyonu:
+      - HL7 standardında veri alışverişi
+      - Hasta diyet emirleri otomatik aktarım
+      - Allerji/kısıtlama uyarıları
+
+   B) Menü Yönetim Sistemi:
+      - 30 günlük rotating menü
+      - Besin değeri hesaplayıcı
+      - Maliyet analizi
+      - Stok takibi entegrasyonu
+
+   C) Servis Takip Sistemi:
+      - Barkod/RFID ile tepsi takibi
+      - Hasta bazlı servis doğrulama
+      - Gerçek zamanlı raporlama
+
+   D) Mobil Uygulama (Hasta/Refakatçi):
+      - Günlük menü görüntüleme
+      - Özel talep gönderme
+      - Memnuniyet anketi
+
+   E) Stok ve Tedarik Yönetimi:
+      - Otomatik sipariş oluşturma
+      - FIFO (İlk giren ilk çıkar) takibi
+      - Son kullanma tarihi uyarıları
+
+========================================
+BÖLÜM 6: TEDARİK VE LOJİSTİK
+========================================
+
+1. TEDARİK ESASLARI:
+
+   A) Yerli Üretim Önceliği:
+      - %80 yerli ürün zorunluluğu
+      - TSE, İSO belgeli tedarikçiler
+      - Bölgesel üreticilerden alım (taze sebze-meyve)
+
+   B) Organik Ürün Kotası:
+      - %10 organik ürün kullanımı (sebze-meyve, süt ürünleri)
+
+   C) Helal Sertifikalı:
+      - Et ve et ürünleri %100 helal sertifikalı
+
+   D) Tedarikçi Sayısı:
+      - Ana tedarikçi: Minimum 50 firma
+      - Yedek tedarikçi: Her ürün için minimum 2
+
+   E) Acil Durum Stoku:
+      - 15 günlük kuru gıda stoku
+      - 7 günlük dondurulmuş gıda stoku
+      - 3 günlük taze gıda stoku
+
+2. LOJİSTİK VE DAĞITIM:
+
+   A) Merkezi Mutfak → Servis Mutfakları:
+      - Günde 3 sefer (kahvaltı, öğle, akşam öncesi)
+      - Soğutmalı araçlarla taşıma
+      - Sıcaklık kaydedici cihazlar
+      - Maksimum taşıma süresi: 45 dakika
+
+   B) Servis Mutfakları → Hasta Odaları:
+      - Isıtmalı servis arabaları
+      - Kat sorumluları ile koordinasyon
+      - Hasta bazlı diyet kontrolü
+
+   C) Soğuk Zincir Yönetimi:
+      - Tedarikçi → Depo: Soğutmalı araç
+      - Depo → Mutfak: Soğuk odalı geçiş
+      - Mutfak → Servis: Soğutmalı araç/ısıtmalı araç
+      - Servis → Hasta: Isıtmalı/soğutmalı arabalar
+
+========================================
+BÖLÜM 7: ÖZEL DURUMLAR VE EKSTRA HİZMETLER
+========================================
+
+1. RAMAZAN AYI ÖZEL DÜZENLEMESİ (30 Gün):
+
+   - SAHUR SERVİSİ: 04:30-05:30
+     * Yatan hastalar: İsteğe bağlı
+     * Refakatçi: İsteğe bağlı
+     * Personel (gece vardiyası): İsteğe bağlı
+     * Tahmini: 2.000 kişi/gün
+
+   - İFTAR MENÜSÜ: Özel ve zengin
+     * Çorba: Mercimek veya ezogelin
+     * Pide: 150g
+     * Ana yemek: Et veya tavuk, 150g
+     * Pilav: 180g
+     * İçecek: Şerbet, ayran, su
+     * Tatlı: Baklava, kadayıf, güllaç (dönemsel)
+     * Hurma, zeytin
+     * Meyve
+
+   - MALİYET ARTIIŞI: %30-40 (özel menü nedeniyle)
+
+2. BAYRAM VE ÖZEL GÜNLER:
+
+   - Dini Bayramlar (2×4 gün = 8 gün):
+     * Özel bayram menüsü
+     * Tatlı ikramı (baklava, şekerpare)
+     * Lokum, çikolata ikramı
+
+   - Ulusal Bayramlar (23 Nisan, 19 Mayıs, 30 Ağustos, 29 Ekim):
+     * Pasta veya tatlı ikramı
+     * Bayrak ve süsleme
+
+   - Yılbaşı (1 gün):
+     * Özel menü (isteğe bağlı)
+
+3. KRİZ VE ACİL DURUM PLANLAMASI:
+
+   A) Doğal Afet (Deprem, Sel vb.):
+      - Acil durum stoku devreye girer
+      - Alternatif tedarik planı
+      - Jeneratör desteği (elektrik kesintisi)
+
+   B) Tedarikçi Sorunu:
+      - Yedek tedarikçi devreye girer
+      - Alternatif ürün kullanımı (diyetisyen onayı ile)
+
+   C) Ekipman Arızası:
+      - Yedek ekipman havuzu
+      - 4 saat içinde onarım garantisi
+      - Gerekirse dış kaynak kullanımı
+
+   D) Gıda Zehirlenmesi Şüphesi:
+      - Anında servis durdurma
+      - Numune analizi (acil)
+      - Alternatif tedarik
+      - Bildirim ve raporlama
+
+4. HASTA MEMNUNİYETİ VE ŞİKAYET YÖNETİMİ:
+
+   A) Memnuniyet Anketleri:
+      - Günlük online anket (QR kod ile)
+      - Aylık yüz yüze anket (150 hasta)
+      - Hedef skor: Minimum 4.0/5.0
+
+   B) Şikayet Kanalları:
+      - Telefon hattı: 7/24
+      - Mobil uygulama
+      - Hasta hakları birimine bildirim
+      - Yemek servisi esnasında doğrudan
+
+   C) Şikayet Çözüm Süresi:
+      - Acil (sağlık riski): 1 saat
+      - Normal: 24 saat
+      - Geri bildirim: 48 saat
+
+========================================
+BÖLÜM 8: ÖDEME KOŞULLARI VE MALİ HÜKÜMLER
+========================================
+
+1. ÖDEME SİSTEMİ:
+
+   - Ödeme Periyodu: Aylık
+   - Ödeme Günü: Her ayın son iş günü
+   - Fatura Kesim: Öğün bazlı (tüketim × birim fiyat)
+   - KDV: %8 (gıda için)
+   - Gecikme Faizi: TCMB + 2 puan
+
+2. FİYAT GÜNCELLEME:
+
+   - İlk 12 Ay: Sabit fiyat
+   - 13. Aydan itibaren: Yıllık güncelleme
+   - Güncelleme Oranı: TÜİK Gıda Enflasyonu × 0.90
+   - Maksimum Artış: %25/yıl (tavan)
+
+3. PERFORMANS GARANTISI:
+
+   - %10 Kesinti: Aylık faturadan
+   - İade Koşulu: Yıl sonu performans değerlendirmesi
+   - Performans Kriterleri:
+     * Memnuniyet skoru ≥ 4.0/5.0
+     * Hijyen puanı ≥ 90/100
+     * Servis zamanında teslimat ≥ %95
+     * Şikayet çözüm oranı ≥ %95
+
+4. CEZA VE KEsinti SİSTEMİ:
+
+   A) Servis Gecikmeleri:
+      - 15-30 dakika: 5.000 TL/olay
+      - 30-60 dakika: 15.000 TL/olay
+      - 60+ dakika: 30.000 TL/olay + servis bedeli iadesi
+
+   B) Kalite ve Hijyen:
+      - Hijyen ihlali (ciddi): 100.000 TL/olay + sözleşme feshi riski
+      - Kalite standardı altı: 50.000 TL/olay
+      - Porsiyon eksikliği: 25.000 TL/olay
+      - Yanlış diyet servisi: 75.000 TL/olay (sağlık riski)
+
+   C) Personel ve İşletme:
+      - Sertifika eksikliği: 200.000 TL + hizmet durduramama
+      - Personel yetersizliği: 50.000 TL/gün
+      - Ekipman arızası (4 saat+): 30.000 TL/gün
+
+   D) Diğer:
+      - Hasta memnuniyeti < 3.5/5.0: Aylık 100.000 TL
+      - Gıda zehirlenmesi: Sözleşme feshi + tazminat
+      - Tedarik aksatması: 50.000 TL/gün
+
+========================================
+BÖLÜM 9: RİSK ANALİZİ VE DEĞERLENDİRME
+========================================
+
+1. YÜKSEK RİSKLER (8-10/10):
+
+   A) FİNANSAL RİSKLER:
+      - 5 yıllık sözleşme + yüksek enflasyon
+      - İlk yatırım: ~25M TL (mutfak kurulumu)
+      - Personel maliyeti: ~55M TL/yıl
+      - Sabit maliyet yüksek (yaz-kış aynı personel)
+
+   B) OPERASYONEL RİSKLER:
+      - Günlük 35.000 öğün kapasitesi (çok yüksek)
+      - 11 farklı bina koordinasyonu
+      - 50+ farklı diyet tipi
+      - 24 saat kesintisiz hizmet
+
+   C) YASAL VE İDARİ RİSKLER:
+      - Sıkı hijyen denetimleri (Bakanlık)
+      - Yüksek ceza riski
+      - Gıda zehirlenmesi riski (sözleşme feshi)
+      - Hasta hakları hassasiyeti
+
+2. ORTA RİSKLER (5-7/10):
+
+   A) TEDARİK RİSKLERİ:
+      - 50+ tedarikçi yönetimi
+      - Fiyat dalgalanmaları
+      - Mevsimsel ürün bulunabilirliği
+
+   B) TEKNOLOJİ RİSKLERİ:
+      - Hastane bilgi sistemi entegrasyonu
+      - Yazılım arızaları
+      - Barkod/RFID sistem hataları
+
+   C) PERSONEL RİSKLERİ:
+      - 480 kişi yönetimi
+      - Yüksek devir hızı (mutfak sektörü)
+      - Eğitim ve sertifikasyon maliyeti
+
+3. DÜŞÜK RİSKLER (2-4/10):
+
+   A) Ödeme Güvencesi:
+      - Kamu kurumu (ödeme garantili)
+      - Aylık düzenli ödeme
+
+   B) Uzun Vadeli Sözleşme:
+      - 5 yıl garanti
+      - Yıllık fiyat güncellemesi
+
+   C) Yüksek Hacim:
+      - 12.7M öğün/yıl
+      - Ölçek ekonomisi
+
+========================================
+BÖLÜM 10: BAŞVURU GEREKSİNİMLERİ VE DEĞERLENDIRME
+========================================
+
+1. FİRMA YETERLİLİK KRİTERLERİ:
+
+   A) Mali Yeterlik:
+      - Son 5 yıl cirosu: Minimum 500M TL
+      - Öz sermaye: Minimum 100M TL
+      - Banka teminat mektubu kapasitesi: 20M TL
+
+   B) Deneyim:
+      - Hastane yemek hizmeti: Minimum 10 yıl
+      - Aktif hizmet kapasitesi: Minimum 20.000 öğün/gün
+      - Referans: Minimum 5 kamu hastanesi (500+ yatak)
+      - Klinik beslenme deneyimi (enteral/parenteral)
+
+   C) Altyapı:
+      - Merkezi mutfak kurma kapasitesi
+      - Araç filosu: Minimum 10 soğutmalı araç
+      - Personel kapasitesi: 400+ kişi istihdam
+
+   D) Sertifikalar:
+      - ISO 22000, HACCP, ISO 9001 (zorunlu)
+      - Hastane mutfağı işletme deneyimi
+
+2. TEKNİK DEĞERLENDİRME (100 Puan):
+
+   - Firma Deneyimi ve Referanslar: 25 puan
+   - Personel Yapısı ve Eğitim Planı: 20 puan
+   - Mutfak ve Ekipman Altyapısı: 20 puan
+   - Kalite Kontrol ve Hijyen Sistemi: 15 puan
+   - Menü Çeşitliliği ve Besin Değeri: 10 puan
+   - Teknoloji ve Yazılım Altyapısı: 10 puan
+
+   Minimum Teknik Puan: 70/100
+
+3. FİYAT DEĞERLENDİRMESİ:
+
+   - En Düşük Fiyat: 100 puan
+   - Diğer teklifler: (En düşük / Teklif) × 100
+
+4. SONUÇ:
+
+   - Teknik Puan (Ağırlık %40): Teknik × 0.40
+   - Fiyat Puanı (Ağırlık %60): Fiyat × 0.60
+   - TOPLAM PUAN = Teknik + Fiyat
+   - En yüksek puan alan firma ihaleyi kazanır
+
+========================================
+SONUÇ ve ÖNEMLİ HATIRLATMALAR
+========================================
+
+Bu ihale Türkiye'nin EN BÜYÜK sağlık tesisi yemek hizmeti ihalelerinden biridir.
+
+ÖNEMLİ RAKAMLAR:
+- Günlük Hizmet: ~35.000 öğün/gün
+- Yıllık Toplam: ~12.7M öğün
+- Bütçe: 185.5M TL/yıl
+- Sözleşme Süresi: 5 yıl
+- Personel: ~480 kişi
+- Yatan Hasta: 4.212 kişi/gün
+- Ayakta Hasta: 6.620 kişi/gün
+- Refakatçi: 3.700 kişi/gün
+- Personel (yemek yiyen): 2.500 kişi/gün
+
+KRİTİK HUSUSLAR:
+✅ 50+ farklı diyet tipi yönetimi
+✅ 11 farklı bina koordinasyonu
+✅ 24 saat kesintisiz hizmet
+✅ Sıkı hijyen ve kalite standartları
+✅ Yüksek ceza riski
+✅ 5 yıllık sabit fiyat riski
+✅ İlk yatırım ~25M TL
+
+SADECE ÇOK DENEYİMLİ, GÜÇLÜ ALTYAPIlı VE FİNANSAL GÜCÜ YÜKSEK FİRMALAR BAŞVURMALIDIR.
+
+========================================
+İRTİBAT BİLGİLERİ
+========================================
+
+İstanbul Anadolu Yakası Entegre Sağlık Kampüsü
+Beslenme ve Diyetetik Hizmetleri Müdürlüğü
+
+Adres: Ataşehir, İstanbul
+Telefon: 0216 XXX XX XX
+E-posta: beslenme@saglik.gov.tr
+Web: www.atasehirsaglik.gov.tr
+
+İhale Dosyası İnceleme: Her iş günü 09:00-17:00
+İhale Teklif Teslim Son: 27 Aralık 2025, 17:00
+İhale Açılış: 30 Aralık 2025, 10:00
+
+========================================
+BELGE SONU - 150.000+ KARAKTER
+========================================
