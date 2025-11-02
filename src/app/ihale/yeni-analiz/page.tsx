@@ -1159,9 +1159,41 @@ export default function IhalePage() {
                     }}
                   />
 
+                  {/* İşlem Sırası Rehberi */}
+                  {(fileStatuses.length > 0 || csvFiles.length > 0) && (
+                    <div className="mt-6 bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="flex-shrink-0">
+                          <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center">
+                            <span className="text-blue-400 text-lg">💡</span>
+                          </div>
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="text-sm font-semibold text-blue-400 mb-2">
+                            İşlem Sırası
+                          </h4>
+                          <div className="space-y-2 text-xs text-gray-300">
+                            <div className="flex items-center gap-2">
+                              <span className="text-yellow-400">1️⃣</span>
+                              <span>Her dosya kartındaki <span className="text-blue-400 font-medium">"İşle"</span> butonuna basarak dosyaları işleyin</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-yellow-400">2️⃣</span>
+                              <span>CSV dosyalarınız varsa, bunları da işleyin (maliyet analizi için)</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-yellow-400">3️⃣</span>
+                              <span>Tüm dosyalar işlendikten sonra <span className="text-green-400 font-medium">"Analiz Et"</span> butonuna basın</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Dosya İşleme Butonları */}
                   {(fileStatuses.length > 0 || csvFiles.length > 0) && (
-                    <div className="mt-6 flex gap-3">
+                    <div className="mt-4 flex gap-3">
                       {/* Pending CSV dosyaları işle */}
                       {csvFiles.some(csv => csv.status === 'pending') && (
                         <button
@@ -1260,6 +1292,12 @@ export default function IhalePage() {
                   warnings={warnings}
                   onAnalyze={handleAnalyze}
                   isAnalyzing={isProcessing}
+                  detectedDocTypes={Array.from(new Set(
+                    fileStatuses
+                      .filter(f => f.status === 'completed' && f.detectedType && f.detectedType !== 'belirsiz')
+                      .map(f => f.detectedType!)
+                  ))}
+                  aiProvider="Gemini + Claude"
                 />
 
                 {/* CSV Analiz Sonuçları */}

@@ -40,6 +40,8 @@ interface DocumentPreviewProps {
   warnings: string[];
   onAnalyze: () => void;
   isAnalyzing: boolean;
+  detectedDocTypes?: string[]; // Detected document types from files
+  aiProvider?: string; // Which AI will be used
 }
 
 export function DocumentPreview({
@@ -48,6 +50,8 @@ export function DocumentPreview({
   warnings,
   onAnalyze,
   isAnalyzing,
+  detectedDocTypes = [],
+  aiProvider = 'Claude Sonnet 4',
 }: DocumentPreviewProps) {
   const [selectedPage, setSelectedPage] = useState<number | null>(null);
   const [showEmptyPages, setShowEmptyPages] = useState(false);
@@ -332,7 +336,22 @@ export function DocumentPreview({
       </AnimatePresence>
 
       {/* Analiz Butonu */}
-      <div className="text-center">
+      <div className="text-center space-y-4">
+        {/* AI Provider ve Doküman Bilgisi */}
+        {detectedDocTypes.length > 0 && (
+          <div className="flex items-center justify-center gap-4 text-sm">
+            <div className="flex items-center gap-2 px-4 py-2 bg-purple-500/10 border border-purple-500/30 rounded-lg">
+              <span className="text-purple-400 font-medium">
+                📋 {detectedDocTypes.length} belge türü tespit edildi
+              </span>
+            </div>
+            <div className="flex items-center gap-2 px-4 py-2 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+              <span className="text-gray-400">🧠</span>
+              <span className="text-blue-400 font-medium">AI: {aiProvider}</span>
+            </div>
+          </div>
+        )}
+
         <button
           onClick={onAnalyze}
           disabled={isAnalyzing || filteredPages.length === 0}
@@ -344,9 +363,17 @@ export function DocumentPreview({
               <span>Analiz Ediliyor...</span>
             </div>
           ) : (
-            `Analiz Et (${
-              filteredPages.filter((p) => !p.isEmpty).length
-            } sayfa)`
+            <div className="flex items-center gap-2">
+              <span>Analiz Et</span>
+              <span className="opacity-75">•</span>
+              <span>{stats.totalWords.toLocaleString()} kelime</span>
+              {detectedDocTypes.length > 0 && (
+                <>
+                  <span className="opacity-75">•</span>
+                  <span className="text-blue-300">{detectedDocTypes.length} doküman</span>
+                </>
+              )}
+            </div>
           )}
         </button>
 

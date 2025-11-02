@@ -240,6 +240,16 @@ export function SimpleDocumentList({
                   {csv.status === 'error' && (
                     <span className="text-red-400">{csv.error || 'Hata'}</span>
                   )}
+                  {csv.status === 'pending' && (
+                    <span className="text-yellow-400">İşlenmeyi bekliyor</span>
+                  )}
+                </div>
+                {/* AI Provider Bilgisi */}
+                <div className="flex items-center gap-1.5 text-xs mt-2">
+                  <span className="text-gray-500">🧠</span>
+                  <span className="text-blue-400 font-medium">Claude Sonnet 4</span>
+                  <span className="text-gray-500">•</span>
+                  <span className="text-gray-400">Tablo analizi</span>
                 </div>
               </div>
 
