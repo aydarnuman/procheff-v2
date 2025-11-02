@@ -377,10 +377,10 @@ export function DocumentPreview({
               <span>Analiz Et</span>
               <span className="opacity-75">•</span>
               <span>{stats.totalWords.toLocaleString()} kelime</span>
-              {detectedDocTypes.length > 0 && (
+              {totalFilesCount > 0 && (
                 <>
                   <span className="opacity-75">•</span>
-                  <span className="text-blue-300">{detectedDocTypes.length} doküman</span>
+                  <span className="text-blue-300">{totalFilesCount} doküman</span>
                 </>
               )}
             </div>
