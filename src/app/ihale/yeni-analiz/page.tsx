@@ -1298,6 +1298,8 @@ export default function IhalePage() {
                       .map(f => f.detectedType!)
                   ))}
                   aiProvider="Gemini + Claude"
+                  totalFilesCount={fileStatuses.filter(f => f.status === 'completed').length + csvFiles.filter(c => c.status === 'completed').length}
+                  csvFilesCount={csvFiles.filter(c => c.status === 'completed').length}
                 />
 
                 {/* CSV Analiz Sonuçları */}

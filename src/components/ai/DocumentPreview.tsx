@@ -42,6 +42,8 @@ interface DocumentPreviewProps {
   isAnalyzing: boolean;
   detectedDocTypes?: string[]; // Detected document types from files
   aiProvider?: string; // Which AI will be used
+  totalFilesCount?: number; // Total number of files (PDF + CSV)
+  csvFilesCount?: number; // Number of CSV files
 }
 
 export function DocumentPreview({
@@ -52,6 +54,8 @@ export function DocumentPreview({
   isAnalyzing,
   detectedDocTypes = [],
   aiProvider = 'Claude Sonnet 4',
+  totalFilesCount = 0,
+  csvFilesCount = 0,
 }: DocumentPreviewProps) {
   const [selectedPage, setSelectedPage] = useState<number | null>(null);
   const [showEmptyPages, setShowEmptyPages] = useState(false);
@@ -338,11 +342,17 @@ export function DocumentPreview({
       {/* Analiz Butonu */}
       <div className="text-center space-y-4">
         {/* AI Provider ve Doküman Bilgisi */}
-        {detectedDocTypes.length > 0 && (
+        {(detectedDocTypes.length > 0 || totalFilesCount > 0) && (
           <div className="flex items-center justify-center gap-4 text-sm">
             <div className="flex items-center gap-2 px-4 py-2 bg-purple-500/10 border border-purple-500/30 rounded-lg">
               <span className="text-purple-400 font-medium">
-                📋 {detectedDocTypes.length} belge türü tespit edildi
+                {totalFilesCount > 0 ? (
+                  <>
+                    📋 {totalFilesCount} dosya ({detectedDocTypes.length} PDF{csvFilesCount > 0 ? `, ${csvFilesCount} CSV` : ''})
+                  </>
+                ) : (
+                  <>📋 {detectedDocTypes.length} belge türü tespit edildi</>
+                )}
               </span>
             </div>
             <div className="flex items-center gap-2 px-4 py-2 bg-blue-500/10 border border-blue-500/30 rounded-lg">
