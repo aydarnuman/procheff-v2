@@ -13,6 +13,8 @@ interface DocumentType {
   description: string;
   acceptedFormats: string;
   isCSV?: boolean;
+  aiProvider?: string; // Hangi AI kullanacak
+  aiIcon?: string; // AI ikonu
 }
 
 interface DocumentUploadCardsProps {
@@ -28,35 +30,45 @@ const DOCUMENT_TYPES: DocumentType[] = [
     icon: '📢',
     label: 'İhale İlanı',
     description: 'İhale tarihi, başvuru şartları, teminat',
-    acceptedFormats: '.pdf, .doc, .docx, .png, .jpg, .jpeg'
+    acceptedFormats: '.pdf, .doc, .docx, .png, .jpg, .jpeg',
+    aiProvider: 'Gemini + Claude',
+    aiIcon: '🤖'
   },
   {
     type: 'teknik_sartname',
     icon: '📋',
     label: 'Teknik Şartname',
     description: 'Menü, gramaj ve kalite standartları',
-    acceptedFormats: '.pdf, .doc, .docx, .png, .jpg, .jpeg'
+    acceptedFormats: '.pdf, .doc, .docx, .png, .jpg, .jpeg',
+    aiProvider: 'Claude Sonnet 4',
+    aiIcon: '🧠'
   },
   {
     type: 'idari_sartname',
     icon: '⚖️',
     label: 'İdari Şartname',
     description: 'İdari kurallar ve değerlendirme kriterleri',
-    acceptedFormats: '.pdf, .doc, .docx, .png, .jpg, .jpeg'
+    acceptedFormats: '.pdf, .doc, .docx, .png, .jpg, .jpeg',
+    aiProvider: 'Gemini Flash',
+    aiIcon: '⚡'
   },
   {
     type: 'sozlesme_tasarisi',
     icon: '📝',
     label: 'Sözleşme Taslağı',
     description: 'Sözleşme maddeleri ve ceza koşulları',
-    acceptedFormats: '.pdf, .doc, .docx, .png, .jpg, .jpeg'
+    acceptedFormats: '.pdf, .doc, .docx, .png, .jpg, .jpeg',
+    aiProvider: 'Claude Sonnet 4',
+    aiIcon: '🧠'
   },
   {
     type: 'fiyat_teklif_mektubu',
     icon: '💰',
     label: 'Fiyat Teklif Mektubu',
     description: 'Fiyat cetveli ve teklif tutarı',
-    acceptedFormats: '.pdf, .doc, .docx, .png, .jpg, .jpeg'
+    acceptedFormats: '.pdf, .doc, .docx, .png, .jpg, .jpeg',
+    aiProvider: 'Gemini Flash',
+    aiIcon: '⚡'
   },
   {
     type: 'csv',
@@ -64,14 +76,18 @@ const DOCUMENT_TYPES: DocumentType[] = [
     label: 'Maliyet Analizi (CSV)',
     description: 'Ürün fiyat listesi ve maliyet hesaplaması',
     acceptedFormats: '.csv',
-    isCSV: true
+    isCSV: true,
+    aiProvider: 'Claude Sonnet 4',
+    aiIcon: '🧠'
   },
   {
     type: 'diger',
     icon: '📎',
     label: 'Diğer Belgeler',
     description: 'Ek belgeler, resmi yazılar, ekler',
-    acceptedFormats: '.pdf, .doc, .docx, .png, .jpg, .jpeg'
+    acceptedFormats: '.pdf, .doc, .docx, .png, .jpg, .jpeg',
+    aiProvider: 'Hybrid AI',
+    aiIcon: '🤖'
   }
 ];
 
@@ -255,9 +271,18 @@ export function DocumentUploadCards({
                     })()}
                   </div>
                 ) : (
-                  <p className="text-xs text-gray-400">
-                    {docType.description}
-                  </p>
+                  <div className="space-y-2">
+                    <p className="text-xs text-gray-400">
+                      {docType.description}
+                    </p>
+                    {/* AI Provider Bilgisi */}
+                    {docType.aiProvider && (
+                      <div className="flex items-center justify-center gap-1.5 text-xs">
+                        <span className="text-gray-500">{docType.aiIcon}</span>
+                        <span className="text-blue-400 font-medium">{docType.aiProvider}</span>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
