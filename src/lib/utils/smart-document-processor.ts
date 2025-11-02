@@ -11,6 +11,8 @@ export interface SmartProcessingResult {
   error?: string;
 }
 
+export type ProgressCallback = (message: string, progress?: number) => void;
+
 export class SmartDocumentProcessor {
   private static readonly SUPPORTED_FORMATS = [
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
@@ -63,7 +65,7 @@ export class SmartDocumentProcessor {
   /**
    * Ana metin çıkarma fonksiyonu - Basit, stabil, OCR'sız
    */
-  static async extractText(file: File): Promise<SmartProcessingResult> {
+  static async extractText(file: File, onProgress?: ProgressCallback): Promise<SmartProcessingResult> {
     const startTime = Date.now();
     const fileName = file.name.toLowerCase();
     const mimeType = file.type.toLowerCase();
@@ -192,7 +194,7 @@ export class SmartDocumentProcessor {
             warnings.push("PDF'den OCR ile metin çıkarılıyor (bu biraz zaman alabilir)");
 
             try {
-              const ocrText = await this.extractTextWithTesseractOCR(file);
+              const ocrText = await this.extractTextWithTesseractOCR(file, onProgress);
               if (ocrText.trim()) {
                 const normalizedText = TurkishNormalizer.normalize(ocrText);
                 console.log(
@@ -418,11 +420,13 @@ export class SmartDocumentProcessor {
    * Tesseract OCR ile PDF'den metin çıkar (taranmış PDF'ler için)
    */
   private static async extractTextWithTesseractOCR(
-    file: File
+    file: File,
+    onProgress?: ProgressCallback
   ): Promise<string> {
     console.log("Tesseract OCR başlatılıyor...");
+    onProgress?.("📄 OCR ile metin çıkarılıyor...", 0);
 
-    const { exec } = await import("child_process");
+    const { exec, spawn } = await import("child_process");
     const { promisify } = await import("util");
     const execAsync = promisify(exec);
     const fs = await import("fs");
@@ -445,7 +449,7 @@ export class SmartDocumentProcessor {
 
       if (sizeInMB > 5) {
         console.log(`[OPTIMIZE] Büyük PDF tespit edildi: ${sizeInMB.toFixed(2)} MB`);
-        console.log(`[OPTIMIZE] PDF optimize ediliyor (Ghostscript)...`);
+        onProgress?.("🔧 Büyük PDF optimize ediliyor...", 5);
 
         const optimizedPdfPath = path.join(tempDir, `ocr_optimized_${timestamp}.pdf`);
         const optimizerScript = path.join(process.cwd(), "scripts/pdf_optimizer.sh");
@@ -466,6 +470,7 @@ export class SmartDocumentProcessor {
             // Orijinal PDF'i sil, optimize edilmiş PDF'i kullan
             fs.unlinkSync(tempPdfPath);
             pdfToProcess = optimizedPdfPath;
+            onProgress?.("✅ PDF optimize edildi", 10);
           }
         } catch (optError) {
           console.warn(`[OPTIMIZE] ⚠️ Optimize işlemi başarısız, orijinal PDF kullanılacak:`, optError);
@@ -473,25 +478,76 @@ export class SmartDocumentProcessor {
         }
       }
 
-      // 2. Bash scripti ile OCR (pdftoppm + tesseract)
+      // 2. Bash scripti ile OCR (pdftoppm + tesseract) - STREAMING ile
       const scriptPath = path.join(
         process.cwd(),
         "scripts/pdf_ocr_tesseract.sh"
       );
       console.log(`OCR scripti çalıştırılıyor: ${scriptPath}`);
+      onProgress?.("📄 OCR başlatılıyor...", 15);
 
-      const { stdout, stderr } = await execAsync(
-        `"${scriptPath}" "${pdfToProcess}" "${tempTxtPath}"`,
-        { timeout: 300000 } // 5 dakika timeout (41 sayfa için yeterli)
-      );
+      // Spawn kullanarak real-time output alalım
+      const ocrProcess = spawn(scriptPath, [pdfToProcess, tempTxtPath]);
 
-      console.log(`OCR stdout: ${stdout}`);
-      if (stderr) console.log(`OCR stderr: ${stderr}`);
+      let totalPages = 0;
+      let currentPage = 0;
+
+      // stdout'dan progress bilgisi oku
+      ocrProcess.stdout.on('data', (data) => {
+        const output = data.toString();
+        console.log(`[OCR] ${output}`);
+
+        // Sayfa sayısını yakala: "[INFO] Created 118 page images"
+        const pageCountMatch = output.match(/Created (\d+) page/);
+        if (pageCountMatch) {
+          totalPages = parseInt(pageCountMatch[1]);
+          console.log(`[OCR] Toplam sayfa: ${totalPages}`);
+          onProgress?.(`📄 ${totalPages} sayfa tespit edildi`, 20);
+        }
+
+        // OCR başladı mesajı: "[INFO] Starting PARALLEL OCR..."
+        if (output.includes('Starting PARALLEL OCR')) {
+          onProgress?.(`⚙️ OCR işleniyor...`, 25);
+        }
+
+        // Birleştirme başladı: "[INFO] Merging results..."
+        if (output.includes('Merging results')) {
+          onProgress?.(`🔗 Sayfalar birleştiriliyor...`, 85);
+        }
+
+        // Başarı mesajı: "[SUCCESS] OCR completed: 274071 characters from 118 pages"
+        const successMatch = output.match(/OCR completed: (\d+) characters from (\d+) pages/);
+        if (successMatch) {
+          const chars = parseInt(successMatch[1]);
+          const pages = parseInt(successMatch[2]);
+          console.log(`[OCR] ✅ Tamamlandı: ${chars} karakter, ${pages} sayfa`);
+          onProgress?.(`✅ OCR tamamlandı (${pages} sayfa)`, 95);
+        }
+      });
+
+      // stderr'den de progress oku (bazı scriptler stderr'e yazar)
+      ocrProcess.stderr.on('data', (data) => {
+        const output = data.toString();
+        console.log(`[OCR stderr] ${output}`);
+      });
+
+      // Process'in bitmesini bekle
+      await new Promise<void>((resolve, reject) => {
+        ocrProcess.on('close', (code) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`OCR script exited with code ${code}`));
+          }
+        });
+        ocrProcess.on('error', reject);
+      });
 
       // 3. OCR çıktısını oku
       if (fs.existsSync(tempTxtPath)) {
         const ocrText = fs.readFileSync(tempTxtPath, "utf-8");
         console.log(`OCR tamamlandı: ${ocrText.length} karakter`);
+        onProgress?.("✅ Metin çıkarıldı", 100);
 
         // Geçici dosyaları temizle
         try {

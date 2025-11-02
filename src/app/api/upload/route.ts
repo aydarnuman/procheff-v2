@@ -123,19 +123,26 @@ export async function POST(request: NextRequest) {
         for (let i = 0; i < files.length; i++) {
           const file = files[i];
           const adimId = `process_${i}`;
-          const progress = Math.round(((i + 1) / files.length) * 100);
+          const fileProgress = Math.round(((i + 1) / files.length) * 100);
 
-          sendProgress(controller, `⚙️ ${file.name} işleniyor... (${i + 1}/${files.length})`, progress);
+          // Dosya işleme başladı (sadece başta dosya adı göster)
+          sendProgress(controller, `📄 ${file.name}`, fileProgress);
 
           logger.progressGuncelle(
             LogKategori.PROCESSING,
             `${file.name} işleniyor...`,
-            progress,
+            fileProgress,
             { dosyaAdi: file.name }
           );
 
           logger.adimBaslat(adimId);
-          const result = await SmartDocumentProcessor.extractText(file);
+
+          // Progress callback oluştur (dosya adı olmadan, sadece işlem adımları)
+          const onProgress = (message: string, subProgress?: number) => {
+            sendProgress(controller, message, subProgress || fileProgress);
+          };
+
+          const result = await SmartDocumentProcessor.extractText(file, onProgress);
 
           if (!result.success) {
             logger.hata(LogKategori.PROCESSING, `${file.name} işlenemedi`, {
@@ -170,7 +177,7 @@ export async function POST(request: NextRequest) {
             karakterSayisi: charCount,
           });
 
-          sendProgress(controller, `✅ ${file.name} tamamlandı (${wordCount.toLocaleString()} kelime)`, progress);
+          sendProgress(controller, `✅ Tamamlandı (${wordCount.toLocaleString()} kelime)`, fileProgress);
         }
 
         logger.basarili(LogKategori.PROCESSING, `${files.length} dosya başarıyla işlendi`, {

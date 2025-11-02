@@ -2,6 +2,10 @@
 # PDF OCR Script using pdftoppm + tesseract
 # Usage: ./pdf_ocr_tesseract.sh <input_pdf> <output_txt> [max_pages]
 
+# UNBUFFERED OUTPUT - Her echo hemen stdout'a yazılsın
+exec 1>&1 2>&2
+set -o pipefail
+
 INPUT_PDF="$1"
 OUTPUT_TXT="$2"
 MAX_PAGES="${3:-999}"  # Default: TÜM SAYFALAR (999 = sınırsız)
