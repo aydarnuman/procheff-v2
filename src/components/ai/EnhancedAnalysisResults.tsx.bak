@@ -1,0 +1,1222 @@
+"use client";
+
+import { useState } from "react";
+import { motion } from "framer-motion";
+import {
+  Eye,
+  Upload,
+  FileText,
+  DollarSign,
+  Shield,
+  BarChart3,
+  Download,
+  Star,
+  Clock,
+  Database,
+  Brain,
+  TrendingUp,
+  AlertTriangle,
+  Clipboard,
+  CheckCircle2,
+  Calendar,
+  Users,
+  ChevronDown,
+} from "lucide-react";
+import { ReportGenerator } from "@/lib/report/pdf-generator";
+import { AIAnalysisResult } from "@/types/ai";
+import { ProposalCards } from "@/components/proposal/ProposalCards";
+import { DeepAnalysis } from "@/components/ai/DeepAnalysis";
+import { DashboardAnalysis } from "@/components/ai/DashboardAnalysis";
+import { MissingDocumentSuggestion } from "@/components/ihale/MissingDocumentSuggestion";
+import { useIhaleStore } from "@/lib/stores/ihale-store";
+
+interface EnhancedAnalysisResultsProps {
+  analysis: AIAnalysisResult;
+  onReturnToView: () => void;
+  onNewAnalysis: () => void;
+}
+
+export function EnhancedAnalysisResults({
+  analysis,
+  onReturnToView,
+  onNewAnalysis,
+}: EnhancedAnalysisResultsProps) {
+  const [activeTab, setActiveTab] = useState<"extraction" | "analysis" | "deep">(
+    "extraction"
+  );
+  const [showProposal, setShowProposal] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editedData, setEditedData] = useState(analysis.extracted_data);
+
+  // Derin analiz cache - sekme değişse bile kaybolmaz
+  const [cachedDeepAnalysis, setCachedDeepAnalysis] = useState<any>(null);
+
+  // Collapsible sections state
+  const [showSources, setShowSources] = useState(false);
+  const [showEvidence, setShowEvidence] = useState(false);
+
+  // Zustand store'dan dosya bilgilerini al
+  const { fileStatuses } = useIhaleStore();
+
+  if (showProposal) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="space-y-6"
+      >
+        {/* Header with back button */}
+        <div className="flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => setShowProposal(false)}
+            className="flex items-center space-x-2 px-4 py-2 bg-platinum-700/50 hover:bg-platinum-700/70 text-surface-primary rounded-xl transition-colors"
+          >
+            <Eye className="w-4 h-4" />
+            <span>Analize Dön</span>
+          </button>
+          <h2 className="text-2xl font-bold text-surface-primary">Teklif Hazırlama</h2>
+          <div className="w-32" /> {/* Spacer for alignment */}
+        </div>
+
+        <ProposalCards analysis={analysis} />
+      </motion.div>
+    );
+  }
+
+  const getConfidenceColor = (confidence: number) => {
+    if (confidence >= 0.8) return "text-green-400";
+    if (confidence >= 0.6) return "text-yellow-400";
+    if (confidence >= 0.4) return "text-orange-400";
+    return "text-red-400";
+  };
+
+  const getRiskColor = (level: string) => {
+    switch (level) {
+      case "dusuk":
+        return "text-green-400 bg-green-500/10";
+      case "orta":
+        return "text-yellow-400 bg-yellow-500/10";
+      case "yuksek":
+        return "text-red-400 bg-red-500/10";
+      default:
+        return "text-gray-400 bg-gray-500/10";
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "yeterli":
+        return "text-green-400 bg-green-500/10";
+      case "sinirda":
+        return "text-yellow-400 bg-yellow-500/10";
+      case "yetersiz":
+        return "text-red-400 bg-red-500/10";
+      default:
+        return "text-gray-400 bg-gray-500/10";
+    }
+  };
+
+  const handleExportPdf = () => {
+    try {
+      // Convert AI analysis to legacy format for PDF
+      const legacyFormat = {
+        generalInfo: {
+          title: "Genel Bilgiler",
+          content: [
+            analysis.extracted_data.kurum,
+            analysis.extracted_data.ihale_turu,
+            `${analysis.extracted_data.kisi_sayisi} kişi`,
+            `${analysis.extracted_data.ogun_sayisi} öğün`,
+            `${analysis.extracted_data.gun_sayisi} gün`,
+          ].filter(Boolean),
+          confidence: analysis.extracted_data.guven_skoru,
+          evidencePassages: Object.values(
+            analysis.extracted_data.kanitlar || {}
+          ).map(String),
+        },
+        cost: {
+          title: "Maliyet Analizi",
+          content: [
+            `Tahmini Bütçe: ${analysis.extracted_data.tahmini_butce?.toLocaleString(
+              "tr-TR"
+            )} TL`,
+            `Maliyet Sapma Riski: %${analysis.contextual_analysis.maliyet_sapma_olasiligi.oran}`,
+          ],
+          confidence: analysis.processing_metadata.confidence_score,
+          evidencePassages: analysis.contextual_analysis.maliyet_sapma_olasiligi.sebepler,
+        },
+        risks: {
+          title: "Risk Analizi",
+          content: analysis.contextual_analysis.operasyonel_riskler.faktorler,
+          confidence: analysis.processing_metadata.confidence_score,
+          evidencePassages:
+            analysis.contextual_analysis.operasyonel_riskler.oneriler,
+        },
+        menu: {
+          title: "Özel Şartlar",
+          content: analysis.extracted_data.ozel_sartlar,
+          confidence: analysis.extracted_data.guven_skoru,
+          evidencePassages: analysis.extracted_data.riskler,
+        },
+        summary: analysis.contextual_analysis.genel_oneri,
+        overallConfidence: analysis.processing_metadata.confidence_score,
+        processingTime: analysis.processing_metadata.processing_time,
+        wordCount: 0,
+        keyTermsFound: [],
+        documentMetrics: {
+          documentHash: "AI-Generated",
+          totalPages: 1,
+          averageQuality: analysis.processing_metadata.confidence_score,
+          ocrPagesProcessed: 0,
+          processingDuration: analysis.processing_metadata.processing_time,
+        },
+      };
+
+      const fileName = `ai-ihale-analiz-${
+        new Date().toISOString().split("T")[0]
+      }.pdf`;
+      const htmlContent = ReportGenerator.generateHtmlReport(
+        legacyFormat,
+        fileName
+      );
+      ReportGenerator.downloadHtmlAsPdf(htmlContent);
+    } catch (error) {
+      console.error("PDF export hatası:", error);
+      alert("PDF export sırasında hata oluştu. Lütfen tekrar deneyin.");
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      className="space-y-6"
+    >
+      {/* Header */}
+      <div className="text-center space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex-1" /> {/* Spacer */}
+          <div className="flex items-center space-x-3">
+            <Brain className="w-8 h-8 text-accent-400" />
+            <h2 className="text-2xl font-bold text-surface-primary">
+              AI Analiz Sonuçları
+            </h2>
+          </div>
+          <div className="flex-1 flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={onNewAnalysis}
+              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors shadow-lg"
+            >
+              <Upload className="w-4 h-4" />
+              <span>Yeni Analiz</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowProposal(true)}
+              className="flex items-center space-x-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl transition-colors shadow-lg"
+            >
+              <Clipboard className="w-4 h-4" />
+              <span>Teklif Hazırla</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-center space-x-6 text-sm">
+          <div className="flex items-center space-x-2">
+            <Clock className="w-4 h-4 text-surface-secondary" />
+            <span className="text-surface-secondary">
+              {analysis.processing_metadata.processing_time}ms
+            </span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Star className="w-4 h-4 text-surface-secondary" />
+            <span
+              className={getConfidenceColor(
+                analysis.processing_metadata.confidence_score
+              )}
+            >
+              {Math.round(analysis.processing_metadata.confidence_score * 100)}%
+              güven
+            </span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Database className="w-4 h-4 text-surface-secondary" />
+            <span className="text-surface-secondary">
+              {analysis.processing_metadata.ai_provider}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Missing Document Suggestion */}
+      <MissingDocumentSuggestion
+        uploadedDocuments={fileStatuses.map(fs => ({
+          fileName: fs.file.name,
+          detectedType: fs.detectedType,
+          confidence: fs.detectedTypeConfidence
+        }))}
+        onUploadClick={(docType) => {
+          // Yeni Analiz sayfasına yönlendir
+          console.log(`Upload requested for: ${docType}`);
+          onNewAnalysis();
+        }}
+      />
+
+      {/* Tab Navigation */}
+      <div className="flex justify-center">
+        <div className="bg-platinum-800/60 rounded-xl p-1 backdrop-blur-sm">
+          <button
+            type="button"
+            onClick={() => setActiveTab("extraction")}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+              activeTab === "extraction"
+                ? "bg-accent-500/20 text-accent-400 shadow-sm"
+                : "text-surface-secondary hover:text-surface-primary"
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              <Database className="w-4 h-4" />
+              <span>Veri Çıkarımı</span>
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("analysis")}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+              activeTab === "analysis"
+                ? "bg-accent-500/20 text-accent-400 shadow-sm"
+                : "text-surface-secondary hover:text-surface-primary"
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              <Brain className="w-4 h-4" />
+              <span>Bağlamsal Analiz</span>
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("deep")}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+              activeTab === "deep"
+                ? "bg-accent-500/20 text-accent-400 shadow-sm"
+                : "text-surface-secondary hover:text-surface-primary"
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              <TrendingUp className="w-4 h-4" />
+              <span>Derin Analiz</span>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {/* Tab Content */}
+      <div className="min-h-[600px]">
+        {activeTab === "extraction" && (
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="space-y-6"
+          >
+            {/* Financial Summary Card - FULL WIDTH TOP */}
+            {analysis.extracted_data.finansal_kontrol && (
+              <div className="bg-gradient-to-br from-blue-900/40 via-platinum-800/60 to-green-900/40 rounded-xl p-6 backdrop-blur-sm border border-platinum-700/30">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center space-x-3">
+                    <DollarSign className="w-6 h-6 text-green-400" />
+                    <h3 className="text-xl font-bold text-surface-primary">
+                      Finansal Durum
+                    </h3>
+                  </div>
+                  {/* Decision Badge */}
+                  <div
+                    className={`px-6 py-2 rounded-full font-bold text-lg ${
+                      analysis.extracted_data.finansal_kontrol.girilir_mi === "EVET"
+                        ? "bg-green-500/20 text-green-300 border-2 border-green-500"
+                        : analysis.extracted_data.finansal_kontrol.girilir_mi === "DİKKATLİ"
+                        ? "bg-yellow-500/20 text-yellow-300 border-2 border-yellow-500"
+                        : "bg-red-500/20 text-red-300 border-2 border-red-500"
+                    }`}
+                  >
+                    {analysis.extracted_data.finansal_kontrol.girilir_mi || "BELİRLENEMEDİ"}
+                  </div>
+                </div>
+
+                {/* Financial Metrics Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
+                  <div className="bg-platinum-900/50 rounded-lg p-4 border border-platinum-700/30">
+                    <span className="text-surface-secondary text-sm">Birim Fiyat</span>
+                    <p className="text-surface-primary font-bold text-xl">
+                      {analysis.extracted_data.finansal_kontrol.birim_fiyat
+                        ? `${analysis.extracted_data.finansal_kontrol.birim_fiyat.toFixed(2)} TL`
+                        : "N/A"}
+                    </p>
+                  </div>
+                  <div className="bg-platinum-900/50 rounded-lg p-4 border border-platinum-700/30">
+                    <span className="text-surface-secondary text-sm">Kâr Marjı</span>
+                    <p className="text-surface-primary font-bold text-xl">
+                      {analysis.extracted_data.finansal_kontrol.kar_marji_tahmin
+                        ? `%${(analysis.extracted_data.finansal_kontrol.kar_marji_tahmin * 100).toFixed(1)}`
+                        : "N/A"}
+                    </p>
+                  </div>
+                  <div className="bg-platinum-900/50 rounded-lg p-4 border border-platinum-700/30">
+                    <span className="text-surface-secondary text-sm">Nakit İhtiyacı</span>
+                    <p className="text-surface-primary font-bold text-xl">
+                      {analysis.extracted_data.finansal_kontrol.nakit_akisi_ihtiyaci
+                        ? `${(analysis.extracted_data.finansal_kontrol.nakit_akisi_ihtiyaci / 1000).toFixed(0)}K TL`
+                        : "N/A"}
+                    </p>
+                  </div>
+                  <div className="bg-platinum-900/50 rounded-lg p-4 border border-platinum-700/30">
+                    <span className="text-surface-secondary text-sm">Et Bağımlılık</span>
+                    <p className="text-surface-primary font-bold text-xl">
+                      {analysis.extracted_data.finansal_kontrol.et_bagimliligi_riski
+                        ? analysis.extracted_data.finansal_kontrol.et_bagimliligi_riski.toUpperCase()
+                        : "N/A"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Reasoning */}
+                {analysis.extracted_data.finansal_kontrol.gerekce && (
+                  <div className="mt-4 p-3 bg-platinum-900/30 rounded-lg border-l-4 border-blue-500">
+                    <p className="text-surface-secondary text-sm">
+                      <span className="font-semibold text-blue-400">Gerekçe:</span>{" "}
+                      {analysis.extracted_data.finansal_kontrol.gerekce}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* YENİ: Veri Havuzu Kartı - FULL WIDTH */}
+            {analysis.extracted_data.veri_havuzu && (
+              <div className="bg-platinum-800/60 rounded-xl p-6 backdrop-blur-sm border border-platinum-700/30">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center space-x-3">
+                    <Database className="w-6 h-6 text-cyan-400" />
+                    <h3 className="text-xl font-bold text-surface-primary">
+                      Veri Havuzu
+                    </h3>
+                    <span className="text-xs text-cyan-300 bg-cyan-500/20 px-2 py-1 rounded-full">
+                      AI Extraction
+                    </span>
+                  </div>
+                </div>
+
+                {/* Ham Metin - Pre-formatted */}
+                <div className="bg-platinum-900/60 rounded-lg p-5 font-mono text-sm text-surface-primary whitespace-pre-wrap leading-relaxed max-h-[600px] overflow-y-auto border border-platinum-700/20">
+                  {analysis.extracted_data.veri_havuzu.ham_metin || "Veri bulunamadı"}
+                </div>
+
+                {/* Kaynaklar - Daraltılabilir */}
+                {analysis.extracted_data.veri_havuzu.kaynaklar &&
+                 Object.keys(analysis.extracted_data.veri_havuzu.kaynaklar).length > 0 && (
+                  <div className="mt-4">
+                    <button
+                      onClick={() => setShowSources(!showSources)}
+                      className="flex items-center space-x-2 text-cyan-400 hover:text-cyan-300 text-sm transition-colors"
+                    >
+                      <ChevronDown
+                        className={`w-4 h-4 transition-transform ${showSources ? "rotate-180" : ""}`}
+                      />
+                      <span>
+                        Kaynak Detayları ({Object.keys(analysis.extracted_data.veri_havuzu.kaynaklar).length})
+                      </span>
+                    </button>
+
+                    {showSources && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.3 }}
+                        className="mt-3 space-y-2"
+                      >
+                        {Object.entries(analysis.extracted_data.veri_havuzu.kaynaklar).map(([key, source]) => (
+                          <div
+                            key={key}
+                            className="bg-platinum-900/40 rounded p-3 text-xs border border-platinum-700/20"
+                          >
+                            <div className="text-cyan-400 font-semibold mb-1">
+                              📌 {source.deger}
+                            </div>
+                            <div className="text-surface-secondary italic mb-1">
+                              📚 Kaynak: "{source.kaynak}"
+                            </div>
+                            <div className="text-surface-secondary/60">
+                              📄 {source.dosya}
+                            </div>
+                          </div>
+                        ))}
+                      </motion.div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* YENİ: Tablolar Bölümü - Her tablo ayrı kart */}
+            {analysis.extracted_data.tablolar &&
+             analysis.extracted_data.tablolar.length > 0 && (
+              <div className="space-y-4">
+                {analysis.extracted_data.tablolar.map((tablo, index) => (
+                  <div
+                    key={index}
+                    className="bg-platinum-800/60 rounded-xl p-6 backdrop-blur-sm border border-platinum-700/30"
+                  >
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center space-x-3">
+                        <BarChart3 className="w-5 h-5 text-green-400" />
+                        <h3 className="text-lg font-semibold text-surface-primary">
+                          {tablo.baslik}
+                        </h3>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs text-green-300 bg-green-500/20 px-2 py-1 rounded-full">
+                          {tablo.satir_sayisi} satır
+                        </span>
+                        <span className="text-xs text-blue-300 bg-blue-500/20 px-2 py-1 rounded-full">
+                          {Math.round(tablo.guven * 100)}% güven
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Tablo İçeriği - Monospace Pre-formatted */}
+                    <div className="bg-black/40 rounded-lg p-4 overflow-x-auto border border-green-500/20">
+                      <pre className="font-mono text-xs text-green-400 whitespace-pre">
+                        {tablo.icerik}
+                      </pre>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ESKİ KARTLAR KALDIRILDI - Veri Havuzu ve Tablolar sistemi aktif */}
+              {/* Basic Info */}
+              <div className="bg-platinum-800/60 rounded-xl p-6 backdrop-blur-sm border border-platinum-700/30">
+                <div className="flex items-center space-x-3 mb-4">
+                  <FileText className="w-5 h-5 text-blue-400" />
+                  <h3 className="text-lg font-semibold text-surface-primary">
+                    Temel Bilgiler
+                  </h3>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <span className="text-surface-secondary text-sm">
+                      Kurum:
+                    </span>
+                    <p className="text-surface-primary font-medium">
+                      {analysis.extracted_data.kurum}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-surface-secondary text-sm">
+                      İhale Türü:
+                    </span>
+                    <p className="text-surface-primary font-medium">
+                      {analysis.extracted_data.ihale_turu || "Belirtilmemiş"}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-surface-secondary text-sm">
+                      Teslim Süresi:
+                    </span>
+                    <p className="text-surface-primary font-medium">
+                      {analysis.extracted_data.teslim_suresi || "Belirtilmemiş"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Dates Card - NEW */}
+              <div className="bg-platinum-800/60 rounded-xl p-6 backdrop-blur-sm border border-platinum-700/30">
+                <div className="flex items-center space-x-3 mb-4">
+                  <Calendar className="w-5 h-5 text-purple-400" />
+                  <h3 className="text-lg font-semibold text-surface-primary">
+                    Tarihler
+                  </h3>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <span className="text-surface-secondary text-sm">
+                      İhale Tarihi:
+                    </span>
+                    <p className="text-surface-primary font-medium">
+                      {analysis.extracted_data.ihale_tarihi || "Belirtilmemiş"}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-surface-secondary text-sm">
+                      Teklif Son Tarihi:
+                    </span>
+                    <p className="text-surface-primary font-medium">
+                      {analysis.extracted_data.teklif_son_tarih || "Belirtilmemiş"}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-surface-secondary text-sm">
+                      İşe Başlama:
+                    </span>
+                    <p className="text-surface-primary font-medium">
+                      {analysis.extracted_data.ise_baslama_tarih || "Belirtilmemiş"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Certifications Card - NEW */}
+              {analysis.extracted_data.sertifikasyon_etiketleri &&
+               analysis.extracted_data.sertifikasyon_etiketleri.length > 0 && (
+                <div className="bg-platinum-800/60 rounded-xl p-6 backdrop-blur-sm border border-platinum-700/30">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <Shield className="w-5 h-5 text-blue-400" />
+                    <h3 className="text-lg font-semibold text-surface-primary">
+                      Gerekli Sertifikalar
+                    </h3>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {analysis.extracted_data.sertifikasyon_etiketleri.map((cert, index) => (
+                      <span
+                        key={index}
+                        className="px-3 py-1.5 bg-blue-500/20 text-blue-300 rounded-full text-sm font-medium border border-blue-500/30"
+                      >
+                        {cert}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Menu Examples Card - NEW */}
+              {analysis.extracted_data.ornek_menu_basliklari &&
+               analysis.extracted_data.ornek_menu_basliklari.length > 0 && (
+                <div className="bg-platinum-800/60 rounded-xl p-6 backdrop-blur-sm border border-platinum-700/30">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <Clipboard className="w-5 h-5 text-orange-400" />
+                    <h3 className="text-lg font-semibold text-surface-primary">
+                      Örnek Menü Öğeleri
+                    </h3>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {analysis.extracted_data.ornek_menu_basliklari.map((item, index) => (
+                      <span
+                        key={index}
+                        className="px-3 py-1.5 bg-orange-500/20 text-orange-300 rounded-full text-sm font-medium border border-orange-500/30"
+                      >
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Numerical Data - EXPANDED */}
+              <div className="bg-platinum-800/60 rounded-xl p-6 backdrop-blur-sm border border-platinum-700/30">
+                <div className="flex items-center space-x-3 mb-4">
+                  <BarChart3 className="w-5 h-5 text-green-400" />
+                  <h3 className="text-lg font-semibold text-surface-primary">
+                    Sayısal Veriler
+                  </h3>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <span className="text-surface-secondary text-sm">
+                      Hizmet Alan Kişi Sayısı:
+                    </span>
+                    <p className="text-surface-primary font-medium text-xl">
+                      {analysis.extracted_data.kisi_sayisi?.toLocaleString(
+                        "tr-TR"
+                      ) || "Belirtilmemiş"} {analysis.extracted_data.kisi_sayisi ? "kişi" : ""}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-surface-secondary text-sm">
+                      Personel Sayısı:
+                    </span>
+                    <p className="text-surface-primary font-medium text-xl">
+                      {analysis.extracted_data.personel_sayisi?.toLocaleString(
+                        "tr-TR"
+                      ) || "Belirtilmemiş"} {analysis.extracted_data.personel_sayisi ? "kişi" : ""}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-surface-secondary text-sm">
+                      Öğün/Gün:
+                    </span>
+                    <p className="text-surface-primary font-medium text-xl">
+                      {analysis.extracted_data.ogun_sayisi || "Belirtilmemiş"} {analysis.extracted_data.ogun_sayisi ? "öğün" : ""}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-surface-secondary text-sm">
+                      Süre (Gün):
+                    </span>
+                    <p className="text-surface-primary font-medium text-xl">
+                      {analysis.extracted_data.gun_sayisi?.toLocaleString(
+                        "tr-TR"
+                      ) || "Belirtilmemiş"} {analysis.extracted_data.gun_sayisi ? "gün" : ""}
+                    </p>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <span className="text-surface-secondary text-sm">
+                      Tahmini Bütçe:
+                    </span>
+                    <p className="text-surface-primary font-medium text-xl">
+                      {analysis.extracted_data.tahmini_butce
+                        ? `${analysis.extracted_data.tahmini_butce.toLocaleString("tr-TR")} TL`
+                        : "Belirtilmemiş"}
+                    </p>
+                  </div>
+                  {analysis.extracted_data.dagitim && (
+                    <div className="sm:col-span-2">
+                      <span className="text-surface-secondary text-sm">
+                        Dağıtım Modeli:
+                      </span>
+                      <p className="text-surface-primary font-medium">
+                        {analysis.extracted_data.dagitim}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Risks and Special Conditions */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-platinum-800/60 rounded-xl p-6 backdrop-blur-sm border border-platinum-700/30">
+                <div className="flex items-center space-x-3 mb-4">
+                  <AlertTriangle className="w-5 h-5 text-red-400" />
+                  <h3 className="text-lg font-semibold text-surface-primary">
+                    Risk Faktörleri
+                  </h3>
+                </div>
+                <div className="space-y-2">
+                  {analysis.extracted_data.riskler.map((risk, index) => (
+                    <div key={index} className="flex items-center space-x-2">
+                      <div className="w-2 h-2 bg-red-400 rounded-full" />
+                      <span className="text-surface-primary text-sm">
+                        {risk}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-platinum-800/60 rounded-xl p-6 backdrop-blur-sm border border-platinum-700/30">
+                <div className="flex items-center space-x-3 mb-4">
+                  <Shield className="w-5 h-5 text-yellow-400" />
+                  <h3 className="text-lg font-semibold text-surface-primary">
+                    Özel Şartlar
+                  </h3>
+                </div>
+                <div className="space-y-2">
+                  {analysis.extracted_data.ozel_sartlar.map((sart, index) => (
+                    <div key={index} className="flex items-center space-x-2">
+                      <div className="w-2 h-2 bg-yellow-400 rounded-full" />
+                      <span className="text-surface-primary text-sm">
+                        {sart}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Source Information - COLLAPSIBLE */}
+            {analysis.extracted_data._sources && Object.keys(analysis.extracted_data._sources).length > 0 && (
+              <div className="bg-gradient-to-br from-blue-500/10 to-purple-500/10 rounded-xl p-6 backdrop-blur-sm border border-blue-500/30">
+                <div
+                  className="flex items-center justify-between cursor-pointer"
+                  onClick={() => setShowSources(!showSources)}
+                >
+                  <div className="flex items-center space-x-3">
+                    <Database className="w-5 h-5 text-blue-400" />
+                    <h3 className="text-lg font-semibold text-surface-primary">
+                      Kaynak Bilgisi
+                    </h3>
+                    <span className="text-xs text-blue-300 bg-blue-500/20 px-2 py-1 rounded-full">
+                      {Object.keys(analysis.extracted_data._sources).length} veri kaynağı
+                    </span>
+                  </div>
+                  <ChevronDown
+                    className={`w-5 h-5 text-blue-400 transition-transform ${
+                      showSources ? "rotate-180" : ""
+                    }`}
+                  />
+                </div>
+
+                {showSources && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    <p className="text-surface-secondary text-sm my-4">
+                      Her bilginin hangi belgeden çıkarıldığını görmek için aşağıdaki listeyi inceleyin:
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {Object.entries(analysis.extracted_data._sources).map(
+                    ([field, source]) => source && (
+                      <div
+                        key={field}
+                        className="bg-platinum-900/40 rounded-lg p-4 border border-blue-500/20"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-blue-300 text-sm font-semibold capitalize">
+                            {field.replace("_", " ")}
+                          </h4>
+                          <FileText className="w-4 h-4 text-blue-400" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <div className="flex items-start space-x-2">
+                            <span className="text-xs text-surface-secondary shrink-0">Dosya:</span>
+                            <span className="text-xs text-surface-primary font-medium break-all">
+                              {source.dosya}
+                            </span>
+                          </div>
+                          {source.sayfa && (
+                            <div className="flex items-start space-x-2">
+                              <span className="text-xs text-surface-secondary shrink-0">Konum:</span>
+                              <span className="text-xs text-surface-primary">
+                                {source.sayfa}
+                              </span>
+                            </div>
+                          )}
+                          {source.kanit && (
+                            <div className="mt-2 pt-2 border-t border-platinum-700/50">
+                              <span className="text-xs text-surface-secondary block mb-1">Kanıt:</span>
+                              <p className="text-xs text-surface-primary/80 italic leading-relaxed">
+                                "{source.kanit}"
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  )}
+                </div>
+                  </motion.div>
+                )}
+              </div>
+            )}
+
+            {/* Evidence - COLLAPSIBLE */}
+            <div className="bg-platinum-800/60 rounded-xl p-6 backdrop-blur-sm border border-platinum-700/30">
+              <div
+                className="flex items-center justify-between cursor-pointer"
+                onClick={() => setShowEvidence(!showEvidence)}
+              >
+                <div className="flex items-center space-x-3">
+                  <Eye className="w-5 h-5 text-purple-400" />
+                  <h3 className="text-lg font-semibold text-surface-primary">
+                    Kanıt Pasajları
+                  </h3>
+                  <span className="text-xs text-purple-300 bg-purple-500/20 px-2 py-1 rounded-full">
+                    {Object.keys(analysis.extracted_data.kanitlar || {}).length} kanıt
+                  </span>
+                </div>
+                <ChevronDown
+                  className={`w-5 h-5 text-purple-400 transition-transform ${
+                    showEvidence ? "rotate-180" : ""
+                  }`}
+                />
+              </div>
+
+              {showEvidence && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="mt-4"
+                >
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {Object.entries(analysis.extracted_data.kanitlar || {}).map(
+                      ([key, value]) => (
+                        <div
+                          key={key}
+                          className="bg-platinum-900/40 rounded-lg p-4"
+                        >
+                          <h4 className="text-accent-400 text-sm font-medium mb-2 capitalize">
+                            {key.replace("_", " ")}
+                          </h4>
+                          <p className="text-surface-secondary text-xs leading-relaxed">
+                            {String(value)}
+                          </p>
+                        </div>
+                      )
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </div>
+          </motion.div>
+        )}
+
+        {activeTab === "analysis" && (
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="space-y-6"
+          >
+            {/* Document Consistency Section - Detailed Version */}
+            {analysis.contextual_analysis.belge_tutarliligi && (
+              <div className={`rounded-lg p-6 border ${
+                analysis.contextual_analysis.belge_tutarliligi.durum === 'tutarli'
+                  ? 'bg-green-500/10 border-green-500/30'
+                  : analysis.contextual_analysis.belge_tutarliligi.durum === 'tek_belge'
+                  ? 'bg-blue-500/10 border-blue-500/30'
+                  : analysis.contextual_analysis.belge_tutarliligi.durum === 'kismi_tutarsizlik'
+                  ? 'bg-yellow-500/10 border-yellow-500/30'
+                  : 'bg-red-500/10 border-red-500/30'
+              }`}>
+                {/* Header */}
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <FileText className={`w-6 h-6 ${
+                      analysis.contextual_analysis.belge_tutarliligi.durum === 'tutarli'
+                        ? 'text-green-400'
+                        : analysis.contextual_analysis.belge_tutarliligi.durum === 'tek_belge'
+                        ? 'text-blue-400'
+                        : analysis.contextual_analysis.belge_tutarliligi.durum === 'kismi_tutarsizlik'
+                        ? 'text-yellow-400'
+                        : 'text-red-400'
+                    }`} />
+                    <h3 className="text-lg font-bold text-surface-primary">
+                      Belge Tutarlılığı Analizi
+                    </h3>
+                  </div>
+                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                    analysis.contextual_analysis.belge_tutarliligi.durum === 'tutarli'
+                      ? 'bg-green-400/20 text-green-300'
+                      : analysis.contextual_analysis.belge_tutarliligi.durum === 'tek_belge'
+                      ? 'bg-blue-400/20 text-blue-300'
+                      : analysis.contextual_analysis.belge_tutarliligi.durum === 'kismi_tutarsizlik'
+                      ? 'bg-yellow-400/20 text-yellow-300'
+                      : 'bg-red-400/20 text-red-300'
+                  }`}>
+                    {analysis.contextual_analysis.belge_tutarliligi.durum === 'tutarli' ? '✓ Tutarlı' :
+                     analysis.contextual_analysis.belge_tutarliligi.durum === 'tek_belge' ? '⚠ Tek Belge' :
+                     analysis.contextual_analysis.belge_tutarliligi.durum === 'kismi_tutarsizlik' ? '⚠ Kısmi Tutarsızlık' :
+                     '✗ Ciddi Tutarsızlık'}
+                  </span>
+                </div>
+
+                {/* Main Description */}
+                <p className="text-surface-secondary mb-4">
+                  {analysis.contextual_analysis.belge_tutarliligi.aciklama}
+                </p>
+
+                {/* Problems Section - if exists */}
+                {analysis.contextual_analysis.belge_tutarliligi.sorunlar &&
+                 analysis.contextual_analysis.belge_tutarliligi.sorunlar.length > 0 && (
+                  <div className="mb-4">
+                    <h4 className="text-sm font-semibold text-surface-primary mb-2 flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-400" />
+                      Tespit Edilen Sorunlar:
+                    </h4>
+                    <ul className="space-y-1.5 ml-6">
+                      {analysis.contextual_analysis.belge_tutarliligi.sorunlar.map((sorun, idx) => (
+                        <li key={idx} className="text-sm text-surface-secondary list-disc">
+                          {sorun}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Recommendations Section - if exists */}
+                {analysis.contextual_analysis.belge_tutarliligi.oneriler &&
+                 analysis.contextual_analysis.belge_tutarliligi.oneriler.length > 0 && (
+                  <div className="mb-4">
+                    <h4 className="text-sm font-semibold text-surface-primary mb-2 flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-blue-400" />
+                      Öneriler:
+                    </h4>
+                    <ul className="space-y-1.5 ml-6">
+                      {analysis.contextual_analysis.belge_tutarliligi.oneriler.map((oneri, idx) => (
+                        <li key={idx} className="text-sm text-surface-secondary list-disc">
+                          {oneri}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Warning + Action Button - Tek Belge durumunda */}
+                {analysis.contextual_analysis.belge_tutarliligi.durum === 'tek_belge' && (
+                  <div className="space-y-3 mt-4 pt-4 border-t border-surface-border">
+                    {/* Uyarı Mesajı */}
+                    <div className="flex items-start gap-3 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                      <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-medium text-amber-200 mb-1">
+                          Dikkat: Eksik Belgeler
+                        </p>
+                        <p className="text-xs text-amber-300/80">
+                          Eksik belgeler analiz doğruluğunu etkileyebilir. Daha kesin sonuçlar için eksik belgeleri eklemenizi öneririz.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Buton */}
+                    <button
+                      onClick={onNewAnalysis}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                    >
+                      <Upload className="w-5 h-5" />
+                      Eksik Belgeleri Ekle
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Analysis Overview */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="rounded-xl p-4 border border-surface-border bg-surface-card">
+                <div className="flex items-center space-x-3 mb-2">
+                  <DollarSign className="w-5 h-5" />
+                  <span className="font-medium">Maliyet Sapması</span>
+                </div>
+                <p className="text-xl font-bold">
+                  %{analysis.contextual_analysis.maliyet_sapma_olasiligi.oran}
+                </p>
+                <p className="text-sm opacity-80">
+                  Risk oranı
+                </p>
+              </div>
+
+              <div
+                className={`rounded-xl p-4 border ${getRiskColor(
+                  analysis.contextual_analysis.operasyonel_riskler.seviye
+                )}`}
+              >
+                <div className="flex items-center space-x-3 mb-2">
+                  <Shield className="w-5 h-5" />
+                  <span className="font-medium">Risk</span>
+                </div>
+                <p className="text-xl font-bold capitalize">
+                  {analysis.contextual_analysis.operasyonel_riskler.seviye}
+                </p>
+                <p className="text-sm opacity-80">
+                  {
+                    analysis.contextual_analysis.operasyonel_riskler.faktorler
+                      .length
+                  }{" "}
+                  faktör
+                </p>
+              </div>
+
+              <div className="bg-platinum-800/60 rounded-xl p-4 border border-orange-500/30 text-orange-400">
+                <div className="flex items-center space-x-3 mb-2">
+                  <TrendingUp className="w-5 h-5" />
+                  <span className="font-medium">Sapma</span>
+                </div>
+                <p className="text-xl font-bold">
+                  %{analysis.contextual_analysis.maliyet_sapma_olasiligi.oran}
+                </p>
+                <p className="text-sm opacity-80">Maliyet sapması</p>
+              </div>
+
+              <div
+                className={`rounded-xl p-4 border ${getStatusColor(
+                  analysis.contextual_analysis.zaman_uygunlugu.durum
+                )}`}
+              >
+                <div className="flex items-center space-x-3 mb-2">
+                  <Clock className="w-5 h-5" />
+                  <span className="font-medium">Zaman</span>
+                </div>
+                <p className="text-xl font-bold capitalize">
+                  {analysis.contextual_analysis.zaman_uygunlugu.durum}
+                </p>
+                <p className="text-sm opacity-80">Süre değerlendirmesi</p>
+              </div>
+            </div>
+
+            {/* Detailed Analysis */}
+            <div className="space-y-4">
+              {/* Cost Deviation Analysis */}
+              <div className="bg-platinum-800/60 rounded-xl p-6 backdrop-blur-sm border border-platinum-700/30">
+                <h3 className="text-lg font-semibold text-surface-primary mb-4">
+                  Maliyet Sapma Analizi
+                </h3>
+                <div className="space-y-3">
+                  <div>
+                    <h4 className="text-surface-primary font-medium mb-2">Sapma Sebepleri:</h4>
+                    <ul className="space-y-1">
+                      {analysis.contextual_analysis.maliyet_sapma_olasiligi.sebepler.map((sebep, idx) => (
+                        <li key={idx} className="text-surface-secondary text-sm flex items-start space-x-2">
+                          <div className="w-1.5 h-1.5 bg-yellow-400 rounded-full mt-1.5" />
+                          <span>{sebep}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 className="text-surface-primary font-medium mb-2">Önlem Önerileri:</h4>
+                    <ul className="space-y-1">
+                      {analysis.contextual_analysis.maliyet_sapma_olasiligi.onlem_oneriler.map((onlem, idx) => (
+                        <li key={idx} className="text-surface-secondary text-sm flex items-start space-x-2">
+                          <div className="w-1.5 h-1.5 bg-green-400 rounded-full mt-1.5" />
+                          <span>{onlem}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* Risk Assessment */}
+              <div className="bg-platinum-800/60 rounded-xl p-6 backdrop-blur-sm border border-platinum-700/30">
+                <h3 className="text-lg font-semibold text-surface-primary mb-4">
+                  Risk Değerlendirmesi
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <h4 className="text-surface-primary font-medium mb-2">
+                      Risk Faktörleri:
+                    </h4>
+                    <ul className="space-y-1">
+                      {analysis.contextual_analysis.operasyonel_riskler.faktorler.map(
+                        (faktor, index) => (
+                          <li
+                            key={index}
+                            className="text-surface-secondary text-sm flex items-center space-x-2"
+                          >
+                            <div className="w-1.5 h-1.5 bg-red-400 rounded-full" />
+                            <span>{faktor}</span>
+                          </li>
+                        )
+                      )}
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 className="text-surface-primary font-medium mb-2">
+                      Öneriler:
+                    </h4>
+                    <ul className="space-y-1">
+                      {analysis.contextual_analysis.operasyonel_riskler.oneriler.map(
+                        (oneri, index) => (
+                          <li
+                            key={index}
+                            className="text-surface-secondary text-sm flex items-center space-x-2"
+                          >
+                            <div className="w-1.5 h-1.5 bg-green-400 rounded-full" />
+                            <span>{oneri}</span>
+                          </li>
+                        )
+                      )}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* Cost Variation */}
+              <div className="bg-platinum-800/60 rounded-xl p-6 backdrop-blur-sm border border-platinum-700/30">
+                <h3 className="text-lg font-semibold text-surface-primary mb-4">
+                  Maliyet Sapma Analizi
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <h4 className="text-surface-primary font-medium mb-2">
+                      Sapma Sebepleri:
+                    </h4>
+                    <ul className="space-y-1">
+                      {analysis.contextual_analysis.maliyet_sapma_olasiligi.sebepler.map(
+                        (sebep, index) => (
+                          <li
+                            key={index}
+                            className="text-surface-secondary text-sm flex items-center space-x-2"
+                          >
+                            <div className="w-1.5 h-1.5 bg-orange-400 rounded-full" />
+                            <span>{sebep}</span>
+                          </li>
+                        )
+                      )}
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 className="text-surface-primary font-medium mb-2">
+                      Önlem Önerileri:
+                    </h4>
+                    <ul className="space-y-1">
+                      {analysis.contextual_analysis.maliyet_sapma_olasiligi.onlem_oneriler.map(
+                        (onlem, index) => (
+                          <li
+                            key={index}
+                            className="text-surface-secondary text-sm flex items-center space-x-2"
+                          >
+                            <div className="w-1.5 h-1.5 bg-blue-400 rounded-full" />
+                            <span>{onlem}</span>
+                          </li>
+                        )
+                      )}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* General Recommendation */}
+              <div className="bg-linear-to-r from-accent-500/10 to-purple-500/10 rounded-xl p-6 border border-accent-500/30">
+                <h3 className="text-lg font-semibold text-surface-primary mb-4">
+                  Genel Öneri
+                </h3>
+                <p className="text-surface-primary leading-relaxed">
+                  {analysis.contextual_analysis.genel_oneri}
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {activeTab === "deep" && (
+          <DeepAnalysis
+            analysis={analysis}
+            cachedResult={cachedDeepAnalysis}
+            onAnalysisComplete={setCachedDeepAnalysis}
+          />
+        )}
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex flex-col sm:flex-row items-center justify-between space-y-4 sm:space-y-0 sm:space-x-4 pt-6 border-t border-platinum-700/30">
+        <div className="flex space-x-3">
+          <button
+            type="button"
+            onClick={onReturnToView}
+            className="flex items-center space-x-2 px-4 py-2 bg-platinum-700/50 hover:bg-platinum-700/70 text-surface-primary rounded-xl transition-colors"
+          >
+            <Eye className="w-4 h-4" />
+            <span>Önizlemeye Dön</span>
+          </button>
+          <button
+            type="button"
+            onClick={onNewAnalysis}
+            className="flex items-center space-x-2 px-4 py-2 bg-platinum-700/50 hover:bg-platinum-700/70 text-surface-primary rounded-xl transition-colors"
+          >
+            <Upload className="w-4 h-4" />
+            <span>Yeni Analiz</span>
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleExportPdf}
+          className="flex items-center space-x-2 px-6 py-2 bg-accent-500/20 hover:bg-accent-500/30 text-accent-400 rounded-xl transition-colors"
+        >
+          <Download className="w-4 h-4" />
+          <span>PDF İndir</span>
+        </button>
+      </div>
+    </motion.div>
+  );
+}

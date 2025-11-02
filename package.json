@@ -6,22 +6,43 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "clean": "rm -rf .next .turbo node_modules/.cache dist out build",
+    "fresh": "npm run clean && npm install && npm run dev",
+    "test:smoke": "npx tsx tests/smoke-test.ts",
+    "test:ai": "npx tsx tests/ai-extraction-test.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.68.0",
+    "@google/generative-ai": "^0.24.1",
+    "@supabase/supabase-js": "^2.78.0",
+    "@tailwindcss/line-clamp": "^0.4.4",
+    "@types/multer": "^2.0.0",
+    "formidable": "^3.5.4",
+    "framer-motion": "^12.23.24",
+    "jspdf": "^3.0.3",
+    "lucide-react": "^0.548.0",
+    "mammoth": "^1.11.0",
+    "multer": "^2.0.2",
+    "next": "16.0.1",
+    "next-themes": "^0.4.6",
+    "pdf-lib": "^1.17.1",
+    "pdf2json": "^4.0.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "next": "16.0.1"
+    "textract": "^2.5.0",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
-    "babel-plugin-react-compiler": "1.0.0",
-    "typescript": "^5",
+    "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pdf-parse": "^1.1.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@tailwindcss/postcss": "^4",
-    "tailwindcss": "^4",
+    "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
-    "eslint-config-next": "16.0.1"
+    "eslint-config-next": "16.0.1",
+    "tailwindcss": "^4",
+    "typescript": "^5"
   }
 }

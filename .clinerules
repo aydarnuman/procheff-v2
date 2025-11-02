@@ -1,7 +1,9 @@
 # Procheff-v2 - Claude Talimatları
 
 ## 🎯 Proje Hakkında
+
 Bu proje, ihale dokümanlarını (PDF, DOCX, CSV) yükleyip AI ile analiz eden bir Next.js uygulamasıdır.
+
 - Dosya upload ve işleme
 - Claude AI ve Gemini ile doküman analizi
 - Supabase backend
@@ -12,17 +14,20 @@ Bu proje, ihale dokümanlarını (PDF, DOCX, CSV) yükleyip AI ile analiz eden b
 ## 🛠️ Teknoloji Stack
 
 ### Core
+
 - **Framework**: Next.js 16.0.1 (App Router)
 - **React**: 19.2.0
 - **TypeScript**: Zorunlu, strict mode
 - **Styling**: Tailwind CSS 4
 
 ### State & Data
+
 - **State Management**: Zustand (global state için)
 - **Database**: Supabase
 - **API**: Next.js API Routes
 
 ### AI & File Processing
+
 - **AI Models**:
   - Anthropic Claude SDK (@anthropic-ai/sdk)
   - Google Generative AI
@@ -33,6 +38,7 @@ Bu proje, ihale dokümanlarını (PDF, DOCX, CSV) yükleyip AI ile analiz eden b
   - Extraction: textract
 
 ### UI & Animation
+
 - **Icons**: lucide-react
 - **Animation**: framer-motion
 - **Theme**: next-themes (dark/light mode)
@@ -42,13 +48,16 @@ Bu proje, ihale dokümanlarını (PDF, DOCX, CSV) yükleyip AI ile analiz eden b
 ## 📝 Kod Stili Kuralları
 
 ### TypeScript
+
 ✅ **YAPILMASI GEREKENLER:**
+
 - Her zaman TypeScript kullan, JavaScript yazma
 - Strict mode aktif
 - Type'ları explicit tanımla
 - Interface ve type'ları net isimlendirme
 
 ❌ **YAPILMAMASI GEREKENLER:**
+
 - `any` type kullanma (unknown veya proper type kullan)
 - Type assertion yerine type guard kullan
 - `@ts-ignore` yazma
@@ -66,13 +75,16 @@ const result: any = await analyze();
 ```
 
 ### React Components
+
 ✅ **YAPILMASI GEREKENLER:**
+
 - Fonksiyonel componentler (React 19)
 - Arrow function syntax: `const Component = () => {}`
 - TypeScript ile prop typing
 - Named exports (default export yerine)
 
 ❌ **YAPILMAMASI GEREKENLER:**
+
 - Class componentler yazma
 - Inline styles kullanma (Tailwind kullan)
 - Direct DOM manipulation
@@ -90,17 +102,20 @@ export const Button = ({ onClick, children }: ButtonProps) => {
 
 // ❌ Kötü
 export default function Button(props: any) {
-  return <button style={{ color: 'red' }}>{props.children}</button>;
+  return <button style={{ color: "red" }}>{props.children}</button>;
 }
 ```
 
 ### Async/Await
+
 ✅ **YAPILMASI GEREKENLER:**
+
 - async/await kullan
 - Try-catch ile error handling
 - Loading ve error state'leri yönet
 
 ❌ **YAPILMAMASI GEREKENLER:**
+
 - `.then().catch()` zincirleme
 - Error handling yapmamak
 
@@ -108,27 +123,27 @@ export default function Button(props: any) {
 // ✅ İyi
 const analyzeDocument = async (file: File): Promise<AnalysisResult> => {
   try {
-    const response = await fetch('/api/analyze', {
-      method: 'POST',
-      body: formData
+    const response = await fetch("/api/analyze", {
+      method: "POST",
+      body: formData,
     });
 
     if (!response.ok) {
-      throw new Error('Analysis failed');
+      throw new Error("Analysis failed");
     }
 
     return await response.json();
   } catch (error) {
-    console.error('Analysis error:', error);
+    console.error("Analysis error:", error);
     throw error;
   }
 };
 
 // ❌ Kötü
 const analyzeDocument = (file) => {
-  return fetch('/api/analyze')
-    .then(res => res.json())
-    .catch(err => console.log(err));
+  return fetch("/api/analyze")
+    .then((res) => res.json())
+    .catch((err) => console.log(err));
 };
 ```
 
@@ -151,6 +166,7 @@ const analyzeDocument = (file) => {
 ```
 
 ### Dosya Organizasyonu
+
 - Components: `/components` (shared) veya `/app/components` (page-specific)
 - Utils: `/lib` altında kategorize et
 - Types: `/types` klasöründe global type'lar
@@ -161,13 +177,16 @@ const analyzeDocument = (file) => {
 ## 🎨 Styling Kuralları
 
 ### Tailwind CSS
+
 ✅ **YAPILMASI GEREKENLER:**
+
 - Tailwind utility classes kullan
 - Responsive design: `sm:`, `md:`, `lg:` breakpoints
 - Dark mode support: `dark:` prefix
 - Framer Motion ile animasyonlar
 
 ❌ **YAPILMAMASI GEREKENLER:**
+
 - Inline styles yazma
 - CSS dosyaları oluşturma (globals.css hariç)
 - !important kullanma
@@ -191,7 +210,9 @@ const analyzeDocument = (file) => {
 ## 🔐 API & Backend
 
 ### API Routes
+
 ✅ **YAPILMASI GEREKENLER:**
+
 - Next.js 16 App Router API routes kullan
 - Error handling ve status codes
 - Request validation
@@ -199,27 +220,24 @@ const analyzeDocument = (file) => {
 
 ```typescript
 // /app/api/analyze/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
-    const file = formData.get('file') as File;
+    const file = formData.get("file") as File;
 
     if (!file) {
-      return NextResponse.json(
-        { error: 'File required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "File required" }, { status: 400 });
     }
 
     // Process file...
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
-    console.error('API error:', error);
+    console.error("API error:", error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: "Internal server error" },
       { status: 500 }
     );
   }
@@ -227,7 +245,9 @@ export async function POST(request: NextRequest) {
 ```
 
 ### Supabase
+
 ✅ **YAPILMASI GEREKENLER:**
+
 - Client-side: `createClient` from `@supabase/supabase-js`
 - Server-side: Server component'lerde kullan
 - Type-safe queries
@@ -238,7 +258,9 @@ export async function POST(request: NextRequest) {
 ## 🤖 AI Integration
 
 ### Claude & Gemini
+
 ✅ **YAPILMASI GEREKENLER:**
+
 - Environment variables ile API keys
 - Streaming responses destekle
 - Token limitlerine dikkat et
@@ -246,27 +268,29 @@ export async function POST(request: NextRequest) {
 
 ```typescript
 // ✅ İyi
-import Anthropic from '@anthropic-ai/sdk';
+import Anthropic from "@anthropic-ai/sdk";
 
 const analyzeWithClaude = async (content: string) => {
   try {
     const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY
+      apiKey: process.env.ANTHROPIC_API_KEY,
     });
 
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+      model: "claude-sonnet-4-5-20250929",
       max_tokens: 4096,
-      messages: [{
-        role: 'user',
-        content: `Analyze this document: ${content}`
-      }]
+      messages: [
+        {
+          role: "user",
+          content: `Analyze this document: ${content}`,
+        },
+      ],
     });
 
     return message.content;
   } catch (error) {
-    console.error('Claude API error:', error);
-    throw new Error('AI analysis failed');
+    console.error("Claude API error:", error);
+    throw new Error("AI analysis failed");
   }
 };
 ```
@@ -276,28 +300,35 @@ const analyzeWithClaude = async (content: string) => {
 ## 📤 File Upload & Processing
 
 ### File Handling
+
 ✅ **YAPILMASI GEREKENLER:**
+
 - Multer veya formidable ile upload
 - File type validation
 - Size limits
 - Error handling
 
 ❌ **YAPILMAMASI GEREKENLER:**
+
 - File'ları direkt memory'de tutma
 - Validation atlama
 
 ```typescript
 // ✅ İyi - File validation
 const validateFile = (file: File) => {
-  const allowedTypes = ['application/pdf', 'text/csv', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+  const allowedTypes = [
+    "application/pdf",
+    "text/csv",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ];
   const maxSize = 10 * 1024 * 1024; // 10MB
 
   if (!allowedTypes.includes(file.type)) {
-    throw new Error('Invalid file type');
+    throw new Error("Invalid file type");
   }
 
   if (file.size > maxSize) {
-    throw new Error('File too large');
+    throw new Error("File too large");
   }
 };
 ```
@@ -307,14 +338,16 @@ const validateFile = (file: File) => {
 ## 🎯 State Management (Zustand)
 
 ### Store Yapısı
+
 ✅ **YAPILMASI GEREKENLER:**
+
 - Küçük, focused store'lar oluştur
 - TypeScript ile type et
 - Immer middleware kullan (gerekirse)
 
 ```typescript
 // ✅ İyi
-import { create } from 'zustand';
+import { create } from "zustand";
 
 interface AnalysisStore {
   isAnalyzing: boolean;
@@ -333,7 +366,7 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
   setAnalyzing: (value) => set({ isAnalyzing: value }),
   setResult: (result) => set({ result, error: null }),
   setError: (error) => set({ error, isAnalyzing: false }),
-  reset: () => set({ isAnalyzing: false, result: null, error: null })
+  reset: () => set({ isAnalyzing: false, result: null, error: null }),
 }));
 ```
 
@@ -342,10 +375,12 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
 ## ✅ Testing
 
 ### Test Scripts
+
 - `npm run test:smoke` - Smoke tests
 - `npm run test:ai` - AI extraction tests
 
 ✅ **YAPILMASI GEREKENLER:**
+
 - Critical flow'ları test et
 - API endpoint'leri test et
 - File processing'i test et
@@ -355,6 +390,7 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
 ## 🚫 Genel Yasaklar
 
 ❌ **ASLA YAPMA:**
+
 1. `console.log()` production code'da bırakma (development için ok)
 2. `any` type kullanma
 3. Inline styles yazma
@@ -371,18 +407,21 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
 ## 🎯 Best Practices
 
 ### Performance
+
 - Server Component'leri default olarak kullan
 - Client Component'leri sadece gerektiğinde kullan (`'use client'`)
 - Dynamic import ile code splitting
 - Image optimization (next/image)
 
 ### Security
+
 - Environment variables ile sensitive data
 - Input validation her zaman
 - File upload güvenliği
 - API rate limiting
 
 ### Code Quality
+
 - ESLint kurallarına uy
 - Meaningful variable names
 - Functions: tek sorumluluk prensibi
@@ -393,6 +432,7 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
 ## 🔄 Development Workflow
 
 ### Scripts
+
 ```bash
 npm run dev          # Development server
 npm run build        # Production build
@@ -404,6 +444,7 @@ npm run test:ai      # AI tests
 ```
 
 ### Git
+
 - Meaningful commit messages
 - Feature branch'ler kullan
 - PR'den önce test et
@@ -424,11 +465,200 @@ npm run test:ai      # AI tests
 ## 💡 Özel Notlar
 
 Bu proje için:
+
 1. **AI analiz kalitesi** kritik - her zaman error handling yap
 2. **File processing** güvenli olmalı - validation asla atlama
 3. **Performance** önemli - large files için streaming kullan
 4. **User experience** öncelik - loading states ve error messages net olsun
 5. **Type safety** her yerde - TypeScript'in gücünü kullan
+
+---
+
+## 👤 KİŞİSEL TALİMATLAR
+
+### Dil ve İletişim Tercihleri
+
+✅ **Yorum Satırları**: Türkçe
+✅ **Değişken İsimleri**: Türkçe (örn: `kullaniciAdi`, `dosyaYukle`, `analizSonucu`)
+✅ **Açıklama Tarzı**: Kısa ve öz - gereksiz detaya girme, sadece gerekeni söyle
+
+```typescript
+// ✅ İyi - Türkçe değişkenler ve yorumlar
+const dosyaYukle = async (dosya: File) => {
+  // Dosya tipini kontrol et
+  if (!izinVerilenTipler.includes(dosya.type)) {
+    throw new Error("Geçersiz dosya tipi");
+  }
+};
+
+// ❌ Kötü - İngilizce değişkenler
+const uploadFile = async (file: File) => {
+  // Check file type
+  if (!allowedTypes.includes(file.type)) {
+    throw new Error("Invalid file type");
+  }
+};
+```
+
+### İş Akışı Kuralları
+
+#### 1. ÖNCE TARTIŞALIM, SONRA KODLAYALIM 🗣️
+
+❌ **HEMEN KOD YAZMA!**
+✅ **Önce şunları yap:**
+
+**ADIM 1**: Durumu analiz et ve seçenekler sun:
+
+```
+"Bu işi 3 farklı şekilde yapabiliriz:
+
+Seçenek A: [Yöntem 1]
+  ✅ Avantajları: ...
+  ❌ Dezavantajları: ...
+
+Seçenek B: [Yöntem 2]
+  ✅ Avantajları: ...
+  ❌ Dezavantajları: ...
+
+Seçenek C: [Yöntem 3]
+  ✅ Avantajları: ...
+  ❌ Dezavantajları: ...
+
+Bence [X] seçeneği daha iyi çünkü [sebep].
+Sizce hangisini kullanalım?"
+```
+
+**ADIM 2**: Kullanıcı seçimi yaptıktan SONRA kodla
+
+**ADIM 3**: Kod yazarken proaktif öneriler sun:
+
+```
+"Bu kodu yazarken şunu fark ettim:
+❗ Bunu [şu şekilde] yapsak daha iyi olur çünkü [sebep]
+❗ Bunun yerine [alternatif] kullanırsak [fayda] sağlarız
+Ne dersiniz?"
+```
+
+#### 2. Test ve Kalite Kontrol 🧪
+
+✅ **Her değişiklikte MUTLAKA:**
+
+1. Test kodu yaz
+2. Kodu çalıştır/test et
+3. Hata varsa düzelt
+4. Sonucu bildir
+
+```
+"✅ Kod yazıldı
+✅ Test yazıldı
+✅ Test çalıştırıldı
+❌ Hata bulundu: [hata açıklaması]
+✅ Hata düzeltildi
+✅ Yeniden test edildi - başarılı"
+```
+
+#### 3. İyileştirme ve Optimizasyon 💡
+
+**Sürekli daha iyisini ara ve öner:**
+
+Her kodda şunları sorgula:
+
+- 🔍 "Bu daha performanslı yapılabilir mi?"
+- 🔍 "Daha temiz bir yöntem var mı?"
+- 🔍 "Güvenlik açığı var mı?"
+- 🔍 "Daha iyi bir kütüphane/yöntem var mı?"
+
+**Proaktif uyarılar:**
+
+```
+⚠️ "Bu yaklaşım çalışır ama şunu fark ettim: [sorun]
+💡 Bunun yerine [alternatif] kullanırsak:
+   ✅ [Fayda 1]
+   ✅ [Fayda 2]
+   ✅ [Fayda 3]
+Ne dersiniz, değiştirelim mi?"
+```
+
+#### 4. Kod Yazma Sırası 📋
+
+```
+1. Önce seçenekleri sun ve tartış
+2. Seçim yapıldıktan sonra kod yaz
+3. Test yaz
+4. Çalıştır ve test et
+5. Hata varsa düzelt
+6. İyileştirme önerileri sun
+7. Kullanıcı onayladıktan sonra finalize et
+```
+
+### Özel Durumlar
+
+#### Acil Durumlar 🚨
+
+Sadece şu durumlarda hemen kod yaz (tartışma atlama):
+
+- "Acil" kelimesi kullanıldıysa
+- "Hızlı" kelimesi kullanıldıysa
+- "Şimdi yap" denildiyse
+
+Ama yine de kısa bir uyarı ver:
+
+```
+"Hemen yapıyorum ama şunu bilmenizi isterim: [önemli not]"
+```
+
+#### Belirsiz İstekler ❓
+
+Eğer istek belirsizse:
+
+```
+"Bunu birkaç farklı şekilde anlayabiliyorum:
+
+1. [Yorum 1] - Bu mu demek istediniz?
+2. [Yorum 2] - Yoksa bu mu?
+3. [Yorum 3] - Ya da bu mu?
+
+Hangisi doğru? Ya da başka bir şey mi?"
+```
+
+### Örnekler
+
+#### ❌ KÖTÜ Yaklaşım (Yapmayacağım):
+
+```
+Kullanıcı: "Bir upload componenti yap"
+Claude: [Hemen 100 satır kod yazar]
+```
+
+#### ✅ İYİ Yaklaşım (Yapacağım):
+
+```
+Kullanıcı: "Bir upload componenti yap"
+
+Claude: "Upload component için 3 yaklaşım var:
+
+A) Basit drag-drop:
+   ✅ Hızlı implementasyon
+   ❌ Sınırlı özellik
+
+B) Multi-file + preview:
+   ✅ Daha kullanıcı dostu
+   ❌ Biraz daha karmaşık
+
+C) Advanced (progress bar, pause/resume):
+   ✅ En iyi UX
+   ❌ En karmaşık
+
+Projeniz için B seçeneği yeterli ve kullanıcı dostu olur.
+Hangisini istersiniz?"
+
+[Kullanıcı seçim yapar]
+
+Claude: "B seçeneği için kodluyorum.
+💡 Bu arada: React-dropzone yerine native input kullanırsak
+bundle size 50KB azalır. React-dropzone kullanalım mı
+yoksa native ile mi gidelim?"
+```
 
 ---
 

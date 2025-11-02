@@ -1,0 +1,12 @@
+[
+  {
+    "key": "cmd+shift+r",
+    "command": "workbench.action.tasks.runTask",
+    "args": "🧹 Clean Restart"
+  },
+  {
+    "key": "cmd+shift+k",
+    "command": "workbench.action.tasks.runTask",
+    "args": "🛑 Kill All Servers"
+  }
+]

@@ -1,0 +1,9 @@
+{
+    "webhint.disable": true,
+    "css.lint.validProperties": [],
+    "css.lint.unknownProperties": "ignore",
+    "html.validate.styles": false,
+    "typescript.preferences.includePackageJsonAutoImports": "off",
+    "claudeCode.useTerminal": true,
+    "terminal.integrated.allowChords": false
+}

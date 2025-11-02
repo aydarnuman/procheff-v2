@@ -1,26 +1,300 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Light Theme Surface Colors */
+  --surface-primary: #18181b; /* platinum-900 text */
+  --surface-secondary: #71717a; /* platinum-500 text */
+  --surface-tertiary: #a1a1aa; /* platinum-400 text */
+  --surface-accent: #3b82f6; /* accent-500 */
+  --surface-hover: #f4f4f5; /* platinum-100 hover */
+  --surface-border: #e4e4e7; /* platinum-200 border */
+
+  /* Background */
+  --background: #fafafa; /* platinum-50 */
+  --foreground: #18181b; /* platinum-900 */
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* Dark Theme */
+.dark {
+  --surface-primary: #fafafa; /* platinum-50 text */
+  --surface-secondary: #a1a1aa; /* platinum-400 text */
+  --surface-tertiary: #71717a; /* platinum-500 text */
+  --surface-accent: #60a5fa; /* accent-400 */
+  --surface-hover: #27272a; /* platinum-800 hover */
+  --surface-border: #3f3f46; /* platinum-700 border */
+
+  /* Background */
+  --background: #18181b; /* platinum-900 */
+  --foreground: #fafafa; /* platinum-50 */
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Professional Theme */
+.theme-professional {
+  --surface-primary: #1e293b; /* slate-800 text */
+  --surface-secondary: #64748b; /* slate-500 text */
+  --surface-tertiary: #94a3b8; /* slate-400 text */
+  --surface-accent: #2563eb; /* blue-600 */
+  --surface-hover: #f1f5f9; /* slate-100 hover */
+  --surface-border: #e2e8f0; /* slate-200 border */
+
+  /* Background */
+  --background: #f8fafc; /* slate-50 */
+  --foreground: #1e293b; /* slate-800 */
 }
 
+.theme-professional.dark {
+  --surface-primary: #f8fafc; /* slate-50 text */
+  --surface-secondary: #94a3b8; /* slate-400 text */
+  --surface-tertiary: #64748b; /* slate-500 text */
+  --surface-accent: #3b82f6; /* blue-500 */
+  --surface-hover: #1e293b; /* slate-800 hover */
+  --surface-border: #334155; /* slate-700 border */
+
+  /* Background */
+  --background: #0f172a; /* slate-900 */
+  --foreground: #f8fafc; /* slate-50 */
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  font-variation-settings: normal;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f4f4f5;
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #27272a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #a1a1aa;
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #52525b;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #71717a;
+}
+
+/* Focus Styles */
+*:focus {
+  outline: 2px solid var(--surface-accent);
+  outline-offset: 2px;
+}
+
+/* Selection Styles */
+::selection {
+  background: #bfdbfe;
+  color: #1e3a8a;
+}
+
+/* Custom Analysis Card Components */
+.summary-card {
+  background: rgba(39, 39, 42, 0.6);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s;
+}
+
+.summary-card:hover {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+.summary-card .card-icon {
+  color: #60a5fa;
+}
+
+.requirements-card {
+  background: rgba(39, 39, 42, 0.6);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s;
+}
+
+.requirements-card:hover {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+.requirements-card .card-icon {
+  color: #4ade80;
+}
+
+.requirements-card .bullet-point {
+  width: 0.375rem;
+  height: 0.375rem;
+  background: #4ade80;
+  border-radius: 50%;
+  margin-top: 0.5rem;
+  margin-right: 0.75rem;
+  flex-shrink: 0;
+}
+
+.risk-card {
+  background: rgba(39, 39, 42, 0.6);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s;
+}
+
+.risk-card:hover {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+.risk-card .card-icon {
+  color: #fbbf24;
+}
+
+.risk-card .bullet-point {
+  width: 0.375rem;
+  height: 0.375rem;
+  background: #fbbf24;
+  border-radius: 50%;
+  margin-top: 0.5rem;
+  margin-right: 0.75rem;
+  flex-shrink: 0;
+}
+
+.recommendations-card {
+  background: rgba(39, 39, 42, 0.6);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s;
+}
+
+.recommendations-card:hover {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+.recommendations-card .card-icon {
+  color: #a78bfa;
+}
+
+.recommendations-card .bullet-point {
+  width: 0.375rem;
+  height: 0.375rem;
+  background: #a78bfa;
+  border-radius: 50%;
+  margin-top: 0.5rem;
+  margin-right: 0.75rem;
+  flex-shrink: 0;
+}
+
+.cost-card {
+  background: linear-gradient(
+    to right,
+    rgba(34, 197, 94, 0.2),
+    rgba(22, 163, 74, 0.2)
+  );
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s;
+}
+
+.cost-card:hover {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+.cost-card .card-title {
+  font-weight: 600;
+  color: #4ade80;
+  margin-bottom: 0.5rem;
+}
+
+.cost-card .card-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--surface-primary);
+}
+
+.time-card {
+  background: linear-gradient(
+    to right,
+    rgba(59, 130, 246, 0.2),
+    rgba(37, 99, 235, 0.2)
+  );
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s;
+}
+
+.time-card:hover {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+.time-card .card-title {
+  font-weight: 600;
+  color: #60a5fa;
+  margin-bottom: 0.5rem;
+}
+
+.time-card .card-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--surface-primary);
+}
+
+/* Analysis Progress Bar */
+.analysis-progress {
+  width: 100%;
+  background: #3f3f46;
+  border-radius: 9999px;
+  height: 0.75rem;
+  margin-bottom: 1rem;
+  overflow: hidden;
+}
+
+.analysis-progress .progress-fill {
+  height: 100%;
+  background: linear-gradient(to right, #3b82f6, #8b5cf6);
+  border-radius: 9999px;
+  transition: all 0.5s ease-out;
+}
+
+/* Progress Animation */
+@keyframes progressBar {
+  0% {
+    width: 0%;
+  }
+  100% {
+    width: 100%;
+  }
+}
+
+.progress-animated {
+  animation: progressBar 3s linear forwards;
 }
