@@ -23,17 +23,17 @@ fi
 TEMP_DIR=$(mktemp -d)
 trap "rm -rf $TEMP_DIR" EXIT
 
-echo "[INFO] Starting FULL OCR for: $INPUT_PDF"
-echo "[INFO] Temp directory: $TEMP_DIR"
-echo "[INFO] Max pages: $MAX_PAGES (TÜM SAYFALAR)"
+echo "[INFO] Starting FULL OCR for: $INPUT_PDF" >&2
+echo "[INFO] Temp directory: $TEMP_DIR" >&2
+echo "[INFO] Max pages: $MAX_PAGES (TÜM SAYFALAR)" >&2
 
 # Convert PDF to PNG images (200 DPI - balance between speed and quality)
-echo "[INFO] Converting PDF to images (200 DPI)..."
+echo "[INFO] Converting PDF to images (200 DPI)..." >&2
 pdftoppm -png -r 200 -l "$MAX_PAGES" "$INPUT_PDF" "$TEMP_DIR/page" 2>/dev/null
 
 # Count how many pages were created
 PAGE_COUNT=$(find "$TEMP_DIR" -name "page-*.png" 2>/dev/null | wc -l | tr -d ' ')
-echo "[INFO] Created $PAGE_COUNT page images"
+echo "[INFO] Created $PAGE_COUNT page images" >&2
 
 if [ "$PAGE_COUNT" -eq 0 ]; then
     echo "[ERROR] No pages extracted from PDF"
@@ -41,7 +41,7 @@ if [ "$PAGE_COUNT" -eq 0 ]; then
 fi
 
 # OCR each page with Tesseract (Turkish + English)
-echo "[INFO] Starting PARALLEL OCR..."
+echo "[INFO] Starting PARALLEL OCR..." >&2
 > "$OUTPUT_TXT"  # Clear output file
 
 # Paralel işleme için geçici dosyalar
@@ -83,7 +83,7 @@ done
 wait
 
 # Merge results in order
-echo "[INFO] Merging results..."
+echo "[INFO] Merging results..." >&2
 for png_file in "$TEMP_DIR"/page-*.png; do
     [ -f "$png_file" ] || continue
 
@@ -99,8 +99,8 @@ done
 
 # Get final character count
 CHAR_COUNT=$(wc -c < "$OUTPUT_TXT" | tr -d ' ')
-echo "[SUCCESS] OCR completed: $CHAR_COUNT characters from $PAGE_COUNT pages"
-echo "[SUCCESS] Output saved to: $OUTPUT_TXT"
+echo "[SUCCESS] OCR completed: $CHAR_COUNT characters from $PAGE_COUNT pages" >&2
+echo "[SUCCESS] Output saved to: $OUTPUT_TXT" >&2
 
 # Show first 500 characters for debugging
 if [ "$CHAR_COUNT" -gt 0 ]; then

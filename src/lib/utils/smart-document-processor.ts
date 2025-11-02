@@ -486,8 +486,11 @@ export class SmartDocumentProcessor {
       console.log(`OCR scripti çalıştırılıyor: ${scriptPath}`);
       onProgress?.("📄 OCR başlatılıyor...", 15);
 
-      // Spawn kullanarak real-time output alalım
-      const ocrProcess = spawn(scriptPath, [pdfToProcess, tempTxtPath]);
+      // Spawn kullanarak real-time output alalım (unbuffered)
+      const ocrProcess = spawn('bash', [scriptPath, pdfToProcess, tempTxtPath], {
+        stdio: ['ignore', 'pipe', 'pipe'], // stdin ignore, stdout/stderr pipe
+        env: { ...process.env, PYTHONUNBUFFERED: '1' } // Unbuffered output
+      });
 
       let totalPages = 0;
       let currentPage = 0;
