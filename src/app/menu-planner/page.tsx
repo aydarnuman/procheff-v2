@@ -2,11 +2,13 @@
 
 import { useState, useMemo, Fragment } from "react";
 import { Search, Plus, Loader2, ChefHat, Clock, Users, DollarSign, X, Building2, School, Factory, Landmark, Shield, Upload, FileText } from "lucide-react";
-import { useMenuStore } from "@/lib/store/menu-store";
+import { useMenuStore } from "@/lib/stores/menu-store";
 import type { Recipe, DishSuggestion, InstitutionType } from "@/types/menu";
 
 export default function MenuPoolPage() {
   const [searchQuery, setSearchQuery] = useState("");
+  const [filterQuery, setFilterQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [isFetchingRecipe, setIsFetchingRecipe] = useState(false);
   const [suggestion, setSuggestion] = useState<DishSuggestion | null>(null);
@@ -14,6 +16,7 @@ export default function MenuPoolPage() {
   const [isEditingGramaj, setIsEditingGramaj] = useState(false);
   const [editedRecipe, setEditedRecipe] = useState<Recipe | null>(null);
   const [showBulkAddModal, setShowBulkAddModal] = useState(false);
+  const [showAddDishModal, setShowAddDishModal] = useState(false);
   const [bulkText, setBulkText] = useState("");
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
   const [bulkInputMode, setBulkInputMode] = useState<"text" | "file">("text");
@@ -39,16 +42,33 @@ export default function MenuPoolPage() {
     { id: "askeri", label: "Askeri" },
   ];
 
-  // Görüntülenecek tarifler
+  // Görüntülenecek tarifler (filtreleme ile)
   const displayedRecipes = useMemo(() => {
+    let filtered = recipes;
+
+    // Kurum filtreleme
     if (selectedInstitution === null) {
-      // Özel Havuz: Sadece kuruma atanmamış tarifler
-      return recipes.filter(recipe => !recipe.institutions || recipe.institutions.length === 0);
+      filtered = filtered.filter(recipe => !recipe.institutions || recipe.institutions.length === 0);
     } else {
-      // Kurum Menüsü: Sadece o kuruma eklenmiş tarifler
-      return recipes.filter(recipe => recipe.institutions?.includes(selectedInstitution));
+      filtered = filtered.filter(recipe => recipe.institutions?.includes(selectedInstitution));
     }
-  }, [recipes, selectedInstitution]);
+
+    // Kategori filtreleme
+    if (selectedCategory) {
+      filtered = filtered.filter(recipe => recipe.category === selectedCategory);
+    }
+
+    // Arama filtreleme
+    if (filterQuery.trim()) {
+      const query = filterQuery.toLowerCase().trim();
+      filtered = filtered.filter(recipe =>
+        recipe.name.toLowerCase().includes(query) ||
+        recipe.category.toLowerCase().includes(query)
+      );
+    }
+
+    return filtered;
+  }, [recipes, selectedInstitution, selectedCategory, filterQuery]);
 
   // Yemek arama ve öneri
   const handleSearch = async () => {
@@ -58,6 +78,20 @@ export default function MenuPoolPage() {
     setSuggestion(null);
 
     try {
+      // Önce mevcut tariflerde ara (case-insensitive)
+      const query = searchQuery.toLowerCase().trim();
+      const existingMatch = recipes.find(r =>
+        r.name.toLowerCase().includes(query) ||
+        query.includes(r.name.toLowerCase())
+      );
+
+      if (existingMatch) {
+        // Mevcut tarif bulundu, direkt reçete getir
+        await handleGetRecipe(existingMatch.name);
+        return;
+      }
+
+      // Bulunamadı, AI'ya sor
       const response = await fetch("/api/ai/suggest-dish", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -136,7 +170,7 @@ export default function MenuPoolPage() {
   const categoryLabels = {
     corba: "Çorba",
     ana_yemek: "Ana Yemek",
-    pilav: "Pilav",
+    pilav: "Yardımcı Yemek",
     salata: "Salata",
     tatli: "Tatlı",
     icecek: "İçecek",
@@ -208,101 +242,187 @@ export default function MenuPoolPage() {
         </div>
       </div>
 
-      {/* Search Bar */}
-      <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4 mb-6 shadow-lg">
-        <div className="flex gap-2">
-          <div className="flex-1 relative">
-            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              placeholder="Yemek adı yazın..."
-              lang="tr"
-              spellCheck="true"
-              autoComplete="off"
-              className="w-full pl-12 pr-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white/15 transition-all"
-              disabled={isSearching || isFetchingRecipe}
-            />
-          </div>
+      {/* Kategori Filtreleme */}
+      <div className="mb-4">
+        <div className="flex flex-wrap gap-2">
           <button
-            onClick={handleSearch}
-            disabled={isSearching || isFetchingRecipe || !searchQuery.trim()}
-            className="px-6 py-3 bg-primary-600 hover:bg-primary-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-all flex items-center gap-2 shadow-lg hover:shadow-primary-500/50"
+            onClick={() => setSelectedCategory(null)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              selectedCategory === null
+                ? "bg-primary-600 text-white"
+                : "bg-white/5 text-gray-400 hover:bg-white/10 border border-white/10"
+            }`}
           >
-            {isSearching ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                <span className="hidden sm:inline">Aranıyor...</span>
-              </>
-            ) : (
-              <>
-                <Search className="w-5 h-5" />
-                <span className="hidden sm:inline">Ara</span>
-              </>
-            )}
+            Tümü ({recipes.filter(r => selectedInstitution === null ? (!r.institutions || r.institutions.length === 0) : r.institutions?.includes(selectedInstitution)).length})
           </button>
+          {Object.entries(categoryLabels).map(([key, label]) => {
+            const count = recipes.filter(r => {
+              const institutionMatch = selectedInstitution === null
+                ? (!r.institutions || r.institutions.length === 0)
+                : r.institutions?.includes(selectedInstitution);
+              return institutionMatch && r.category === key;
+            }).length;
+
+            return (
+              <button
+                key={key}
+                onClick={() => setSelectedCategory(key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  selectedCategory === key
+                    ? "bg-primary-600 text-white"
+                    : "bg-white/5 text-gray-400 hover:bg-white/10 border border-white/10"
+                }`}
+              >
+                {label} ({count})
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Filter Bar + Action Button */}
+      <div className="flex items-center gap-3 mb-6">
+        {/* Compact Filter Input */}
+        <div className="flex-1 relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            placeholder="Yemek ara..."
+            className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+          />
         </div>
 
-        {/* AI Suggestion */}
-        {suggestion && (
-          <div className="mt-3 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-            <p className="text-sm text-blue-200 mb-2">
-              <strong>"{suggestion.original}"</strong> yerine{" "}
-              <strong>"{suggestion.suggested}"</strong> mi demek istediniz?
-              {suggestion.confidence && (
-                <span className="ml-2 text-xs text-blue-300">
-                  (%{suggestion.confidence} emin)
-                </span>
-              )}
-            </p>
-            <div className="flex gap-2">
+        {/* Yeni Yemek Ekle Butonu */}
+        <button
+          type="button"
+          onClick={() => setShowAddDishModal(true)}
+          className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium text-sm transition-all flex items-center gap-2 shadow-lg hover:shadow-primary-500/50 whitespace-nowrap"
+        >
+          <Plus className="w-4 h-4" />
+          Yeni Yemek
+        </button>
+      </div>
+
+      {/* Yeni Yemek Ekle Modal */}
+      {showAddDishModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1a1f2e] border border-white/10 rounded-xl p-6 max-w-md w-full shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-white">Yeni Yemek Ekle</h3>
               <button
-                onClick={() => handleGetRecipe(suggestion.suggested)}
-                disabled={isFetchingRecipe}
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
+                onClick={() => {
+                  setShowAddDishModal(false);
+                  setSearchQuery("");
+                  setSuggestion(null);
+                }}
+                className="text-gray-400 hover:text-white transition-colors"
               >
-                {isFetchingRecipe ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Getiriliyor...
-                  </>
-                ) : (
-                  <>
-                    <Plus className="w-3.5 h-3.5" />
-                    Evet, Getir
-                  </>
-                )}
-              </button>
-              <button
-                onClick={() => setSuggestion(null)}
-                className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-gray-300 rounded-lg text-xs font-medium transition-colors"
-              >
-                Hayır
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            {suggestion.alternatives && suggestion.alternatives.length > 0 && (
-              <div className="mt-2 pt-2 border-t border-blue-500/20">
-                <p className="text-xs text-blue-300 mb-1.5">Diğer öneriler:</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {suggestion.alternatives.map((alt, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleGetRecipe(alt)}
-                      disabled={isFetchingRecipe}
-                      className="px-2 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 rounded text-xs transition-colors"
-                    >
-                      {alt}
-                    </button>
-                  ))}
-                </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Yemek Adı
+                </label>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                  placeholder="Örn: Kuru Fasulye"
+                  className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  disabled={isSearching || isFetchingRecipe}
+                />
               </div>
-            )}
+
+              <button
+                onClick={handleSearch}
+                disabled={isSearching || isFetchingRecipe || !searchQuery.trim()}
+                className="w-full px-4 py-3 bg-primary-600 hover:bg-primary-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-all flex items-center justify-center gap-2"
+              >
+                {isSearching ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    AI İşliyor...
+                  </>
+                ) : isFetchingRecipe ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Reçete Getiriliyor...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-5 h-5" />
+                    Yemek Ekle
+                  </>
+                )}
+              </button>
+
+              {/* AI Suggestion */}
+              {suggestion && (
+                <div className="mt-3 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                  <p className="text-sm text-blue-200 mb-2">
+                    <strong>"{suggestion.original}"</strong> yerine{" "}
+                    <strong>"{suggestion.suggested}"</strong> mi demek istediniz?
+                    {suggestion.confidence && (
+                      <span className="ml-2 text-xs text-blue-300">
+                        (%{suggestion.confidence} emin)
+                      </span>
+                    )}
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleGetRecipe(suggestion.suggested)}
+                      disabled={isFetchingRecipe}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
+                    >
+                      {isFetchingRecipe ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          Getiriliyor...
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="w-3.5 h-3.5" />
+                          Evet, Getir
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => setSuggestion(null)}
+                      className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-gray-300 rounded-lg text-xs font-medium transition-colors"
+                    >
+                      Hayır
+                    </button>
+                  </div>
+
+                  {suggestion.alternatives && suggestion.alternatives.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-blue-500/20">
+                      <p className="text-xs text-blue-300 mb-1.5">Diğer öneriler:</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {suggestion.alternatives.map((alt, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => handleGetRecipe(alt)}
+                            disabled={isFetchingRecipe}
+                            className="px-2 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 rounded text-xs transition-colors"
+                          >
+                            {alt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Recipe List - Clean Grid Cards */}
       <div>

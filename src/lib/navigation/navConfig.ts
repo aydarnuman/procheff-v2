@@ -12,7 +12,9 @@ export type IconName =
   | "LayoutDashboard"
   | "Plus"
   | "List"
-  | "GitCompare";
+  | "GitCompare"
+  | "Target"
+  | "Bell";
 
 export interface NavItem {
   label: string;
@@ -44,6 +46,7 @@ export const navItems: NavItem[] = [
       { label: "Yeni Analiz", href: "/ihale/yeni-analiz", icon: "Plus" },
       { label: "İhale Listesi", href: "/ihale/liste", icon: "List" },
       { label: "Karşılaştırma", href: "/ihale/karsilastirma", icon: "GitCompare" },
+      { label: "🆕 İhale Takip (Otomatik)", href: "/ihale-takip", icon: "Target" },
     ],
   },
   {

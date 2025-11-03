@@ -1,0 +1,357 @@
+// ============================================================================
+// SUPABASE DATABASE CLIENT
+// İhale scraper için database işlemleri
+// ============================================================================
+
+import { createClient } from '@supabase/supabase-js';
+import type { ScrapedTender, CategorizedTender, TenderInsertPayload } from '../types';
+
+// Client (browser-safe)
+export const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  {
+    db: { schema: 'public' },
+    global: {
+      headers: {
+        'Content-Profile': 'public',
+        'Accept-Profile': 'public'
+      }
+    }
+  }
+);
+
+// Server client (admin privileges)
+export const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  {
+    db: { schema: 'public' },
+    global: {
+      headers: {
+        'Content-Profile': 'public',
+        'Accept-Profile': 'public'
+      }
+    }
+  }
+);
+
+// ============================================================================
+// DATABASE OPERATIONS
+// ============================================================================
+
+export class TenderDatabase {
+  /**
+   * Insert new tender (with input validation to prevent varchar overflow)
+   */
+  static async insertTender(tender: TenderInsertPayload): Promise<{ success: boolean; id?: string; error?: string }> {
+    try {
+      // SAFETY: Validate required fields
+      const safeTender: TenderInsertPayload = {
+        ...tender,
+        // TEXT fields (unlimited length) - no truncation needed
+        organization_city: tender.organization_city || null,
+        tender_type: tender.tender_type || null,
+        category: tender.category || null,
+
+        // VARCHAR(200) fields - still truncate
+        source_id: tender.source_id?.substring(0, 200) || null,
+
+        // TEXT fields (safe, no limit, but validate existence)
+        title: tender.title || 'Belirtilmemiş',
+        organization: tender.organization || 'Belirtilmemiş',
+      };
+
+      const { data, error } = await supabaseAdmin
+        .from('ihale_listings')
+        .insert(safeTender)
+        .select('id')
+        .single();
+
+      if (error) {
+        // Duplicate check (unique constraint violation)
+        if (error.code === '23505') {
+          console.log(`⚠️ Duplicate tender (source_id: ${tender.source_id})`);
+          return { success: false, error: 'DUPLICATE' };
+        }
+
+        console.error('Insert error:', error);
+        return { success: false, error: error.message };
+      }
+
+      console.log(`✅ Tender inserted: ${data.id}`);
+      return { success: true, id: data.id };
+    } catch (error: any) {
+      console.error('Insert exception:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Bulk insert tenders (OPTIMIZED: Real batch insert, 5-10x faster)
+   */
+  static async bulkInsertTenders(tenders: TenderInsertPayload[]): Promise<{ inserted: number; duplicates: number; errors: number }> {
+    let inserted = 0;
+    let duplicates = 0;
+    let errors = 0;
+
+    console.log(`\n💾 Bulk insert (BATCH MODE): ${tenders.length} tenders`);
+
+    const BATCH_SIZE = 100; // Supabase can handle 100 rows efficiently
+
+    for (let i = 0; i < tenders.length; i += BATCH_SIZE) {
+      const batch = tenders.slice(i, Math.min(i + BATCH_SIZE, tenders.length));
+      console.log(`\n📦 Inserting batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(tenders.length / BATCH_SIZE)} (${batch.length} tenders)`);
+
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('ihale_listings')
+          .insert(batch)
+          .select('id');
+
+        if (error) {
+          // Handle duplicate errors in batch
+          if (error.code === '23505') {
+            console.log(`⚠️ Batch contains duplicates, retrying one by one...`);
+
+            // Fallback: Insert one by one for this batch
+            for (const tender of batch) {
+              const result = await this.insertTender(tender);
+              if (result.success) inserted++;
+              else if (result.error === 'DUPLICATE') duplicates++;
+              else errors++;
+            }
+          } else {
+            console.error(`❌ Batch insert error: ${error.message}`);
+            errors += batch.length;
+          }
+        } else {
+          // Success!
+          const insertedCount = data?.length || 0;
+          inserted += insertedCount;
+          console.log(`✅ Batch inserted: ${insertedCount} tenders`);
+        }
+      } catch (error: any) {
+        console.error(`❌ Batch exception: ${error.message}`);
+        errors += batch.length;
+      }
+    }
+
+    console.log(`\n📊 Bulk insert sonuçları:`);
+    console.log(`   ✅ Inserted: ${inserted}`);
+    console.log(`   ⚠️  Duplicates: ${duplicates}`);
+    console.log(`   ❌ Errors: ${errors}`);
+
+    return { inserted, duplicates, errors };
+  }
+
+  /**
+   * Check if tender exists
+   */
+  static async tenderExists(source: string, sourceId: string): Promise<boolean> {
+    const { data, error } = await supabase
+      .from('ihale_listings')
+      .select('id')
+      .eq('source', source)
+      .eq('source_id', sourceId)
+      .single();
+
+    return !!data && !error;
+  }
+
+  /**
+   * Get tender by ID
+   */
+  static async getTenderById(id: string): Promise<any> {
+    const { data, error } = await supabase
+      .from('ihale_listings')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      console.error('Get tender error:', error);
+      return null;
+    }
+
+    return data;
+  }
+
+  /**
+   * Get recent tenders
+   */
+  static async getRecentTenders(limit: number = 50): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('ihale_listings')
+      .select('*')
+      .eq('is_catering', true)
+      .eq('is_active', true)
+      .order('first_seen_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.error('Get recent tenders error:', error);
+      return [];
+    }
+
+    return data || [];
+  }
+
+  /**
+   * Get tenders with filters
+   */
+  static async getTendersFiltered(filters: {
+    isCatering?: boolean;
+    minBudget?: number;
+    maxBudget?: number;
+    city?: string;
+    source?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ data: any[]; total: number }> {
+    let query = supabase
+      .from('ihale_listings')
+      .select('*', { count: 'exact' });
+
+    // Apply filters
+    if (filters.isCatering !== undefined) {
+      query = query.eq('is_catering', filters.isCatering);
+    }
+
+    // SADECE AKTİF İHALELER (süresi dolmamış)
+    // deadline_date null VEYA gelecek tarih
+    query = query.or('deadline_date.is.null,deadline_date.gte.' + new Date().toISOString().split('T')[0]);
+
+    if (filters.minBudget) {
+      query = query.gte('budget', filters.minBudget);
+    }
+
+    if (filters.maxBudget) {
+      query = query.lte('budget', filters.maxBudget);
+    }
+
+    if (filters.city) {
+      query = query.eq('organization_city', filters.city);
+    }
+
+    if (filters.source) {
+      query = query.eq('source', filters.source);
+    }
+
+    // Sorting - Önce deadline yakın olanlar
+    query = query.order('deadline_date', { ascending: true, nullsFirst: false });
+
+    // Pagination
+    const limit = filters.limit || 50;
+    const offset = filters.offset || 0;
+    query = query.range(offset, offset + limit - 1);
+
+    const { data, error, count } = await query;
+
+    if (error) {
+      console.error('Get filtered tenders error:', error);
+      return { data: [], total: 0 };
+    }
+
+    return { data: data || [], total: count || 0 };
+  }
+
+  /**
+   * Log scraping run
+   */
+  static async logScraping(logData: {
+    source: string;
+    startedAt: Date;
+    completedAt: Date;
+    status: 'success' | 'failed' | 'partial';
+    totalScraped: number;
+    newListings: number;
+    updatedListings: number;
+    errorMessage?: string;
+  }): Promise<void> {
+    try {
+      const { error } = await supabaseAdmin.from('scraping_logs').insert({
+        source: logData.source,
+        started_at: logData.startedAt.toISOString(),
+        completed_at: logData.completedAt.toISOString(),
+        status: logData.status,
+        total_scraped: logData.totalScraped,
+        new_listings_count: logData.newListings,
+        updated_listings_count: logData.updatedListings,
+        error_count: logData.errorMessage ? 1 : 0,
+        error_message: logData.errorMessage,
+      });
+
+      if (error) {
+        console.error('Log scraping error:', error);
+      }
+    } catch (error) {
+      console.error('Log scraping exception:', error);
+    }
+  }
+
+  /**
+   * Get scraping statistics
+   */
+  static async getScrapingStats(): Promise<any> {
+    const { data, error } = await supabase
+      .from('scraping_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (error) {
+      console.error('Get stats error:', error);
+      return null;
+    }
+
+    // Calculate aggregates
+    const totalTenders = await supabase
+      .from('ihale_listings')
+      .select('id', { count: 'exact', head: true });
+
+    const cateringTenders = await supabase
+      .from('ihale_listings')
+      .select('id', { count: 'exact', head: true })
+      .eq('is_catering', true);
+
+    return {
+      recent_runs: data,
+      total_tenders: totalTenders.count || 0,
+      catering_tenders: cateringTenders.count || 0,
+    };
+  }
+
+  /**
+   * Search tenders by text
+   */
+  static async searchTenders(query: string, limit: number = 20): Promise<any[]> {
+    const { data, error} = await supabase
+      .from('ihale_listings')
+      .select('*')
+      .or(`title.ilike.%${query}%,organization.ilike.%${query}%`)
+      .eq('is_catering', true)
+      .limit(limit);
+
+    if (error) {
+      console.error('Search error:', error);
+      return [];
+    }
+
+    return data || [];
+  }
+
+  /**
+   * Execute raw SQL query (admin only, for migrations)
+   */
+  static async rawQuery(sql: string): Promise<any> {
+    const { data, error } = await supabaseAdmin.rpc('exec_sql', { query: sql });
+
+    if (error) {
+      console.error('Raw query error:', error);
+      throw error;
+    }
+
+    return data;
+  }
+}

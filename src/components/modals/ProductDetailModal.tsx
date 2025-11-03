@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { X, Plus, RefreshCw, Edit2, Trash2, History } from "lucide-react";
-import { usePriceStore } from "@/lib/store/price-store";
+import { usePriceStore } from "@/lib/stores/price-store";
 import type { ProductCard, PriceEntry } from "@/types/price";
 import {
   formatPrice,

@@ -58,13 +58,23 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("=== PRODUCT DETECTION ERROR ===", error);
 
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error occurred";
+    let userFriendlyMessage = "Ürün bilgisi alınamadı";
+
+    if (error instanceof Error) {
+      // Quota hatası kontrolü
+      if (error.message.includes("quota") || error.message.includes("429") || error.message.includes("Too Many Requests")) {
+        userFriendlyMessage = "AI API günlük kullanım limiti doldu. Lütfen yarın tekrar deneyin veya manuel olarak ürün ekleyin.";
+      } else if (error.message.includes("API key")) {
+        userFriendlyMessage = "AI API anahtarı geçersiz. Lütfen yöneticinize başvurun.";
+      } else {
+        userFriendlyMessage = `Ürün bilgisi alınamadı: ${error.message}`;
+      }
+    }
 
     return NextResponse.json(
       {
         success: false,
-        error: errorMessage,
+        error: userFriendlyMessage,
       },
       { status: 500 }
     );

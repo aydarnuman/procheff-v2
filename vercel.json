@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/delete-tenders",
+      "schedule": "50 9 * * *"
+    },
+    {
+      "path": "/api/cron/scrape-tenders",
+      "schedule": "0 10 * * *"
+    }
+  ]
+}

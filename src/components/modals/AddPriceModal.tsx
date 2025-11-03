@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { X, Sparkles } from "lucide-react";
-import { usePriceStore } from "@/lib/store/price-store";
+import { usePriceStore } from "@/lib/stores/price-store";
 import type { PriceCategory, ProductCard } from "@/types/price";
 import { calculateUnitPrice } from "@/lib/utils/price-utils";
 
@@ -131,11 +131,12 @@ export function AddPriceModal({
           : [result.suggestion];
         setSuggestions(suggestionList);
       } else {
-        alert(`Ürün bulunamadı: ${result.error || "Lütfen farklı bir isim deneyin"}`);
+        const errorMsg = result.error || "Lütfen farklı bir isim deneyin";
+        alert(errorMsg);
       }
     } catch (error) {
       console.error("AI add error:", error);
-      alert("Ürün eklenirken bir hata oluştu");
+      alert("Ürün eklenirken bir hata oluştu. Lütfen daha sonra tekrar deneyin.");
     } finally {
       setIsFetchingPrice(false);
     }

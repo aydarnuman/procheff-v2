@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { Plus, Search, X, Trash2 } from "lucide-react";
-import { usePriceStore } from "@/lib/store/price-store";
+import { usePriceStore } from "@/lib/stores/price-store";
 import type { PriceCategory, ProductCard } from "@/types/price";
 import { AddPriceModal } from "@/components/modals/AddPriceModal";
 import { ProductDetailModal } from "@/components/modals/ProductDetailModal";
@@ -98,16 +98,16 @@ export default function PriceFeedPage() {
       </div>
 
       {/* Search & Actions */}
-      <div className="mb-6 flex gap-3 flex-wrap">
-        {/* Search Bar */}
-        <div className="flex-1 min-w-[250px] relative">
+      <div className="mb-4 flex gap-3 items-center">
+        {/* Compact Search Bar */}
+        <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             type="text"
             placeholder="Ürün ara..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-10 py-2 bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="w-full pl-10 pr-10 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
           />
           {searchQuery && (
             <button
@@ -124,22 +124,23 @@ export default function PriceFeedPage() {
         <button
           type="button"
           onClick={() => setIsAddModalOpen(true)}
-          className="px-4 py-2 bg-white/5 backdrop-blur-sm border border-white/10 hover:bg-white/10 text-white rounded-lg font-medium text-sm transition-all flex items-center gap-2"
+          className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium text-sm transition-all flex items-center gap-2 shadow-lg hover:shadow-primary-500/50 whitespace-nowrap"
         >
           <Plus className="w-4 h-4" />
+          Yeni Ürün
         </button>
       </div>
 
       {/* Category Tabs */}
       <div className="mb-6">
-        <div className="flex flex-wrap gap-2 bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-2">
+        <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => setSelectedCategory(null)}
-            className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
+            className={`px-3 py-1.5 rounded-lg font-medium text-xs transition-all ${
               selectedCategory === null
-                ? "bg-primary-600 text-white shadow-lg"
-                : "bg-white/5 text-gray-300 hover:bg-white/10"
+                ? "bg-primary-600 text-white"
+                : "bg-white/5 text-gray-400 hover:bg-white/10 border border-white/10"
             }`}
           >
             Tümü ({productCards.length})
@@ -152,10 +153,10 @@ export default function PriceFeedPage() {
                 key={cat.id}
                 type="button"
                 onClick={() => setSelectedCategory(cat.id)}
-                className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
+                className={`px-3 py-1.5 rounded-lg font-medium text-xs transition-all flex items-center gap-1.5 ${
                   selectedCategory === cat.id
-                    ? "bg-primary-600 text-white shadow-lg"
-                    : "bg-white/5 text-gray-300 hover:bg-white/10"
+                    ? "bg-primary-600 text-white"
+                    : "bg-white/5 text-gray-400 hover:bg-white/10 border border-white/10"
                 }`}
               >
                 <span>{cat.icon}</span>
