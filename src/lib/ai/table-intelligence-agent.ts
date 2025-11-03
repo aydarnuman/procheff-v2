@@ -184,14 +184,20 @@ export class TableIntelligenceAgent {
       tableDescriptions.push(`\n### ${category.toUpperCase()} (${tables.length} tablo)\n`);
 
       tables.forEach((table, idx) => {
-        const sampleRows = table.rows.slice(0, 3).map(row =>
-          row.slice(0, 6).join(" | ")
+        // DAHA FAZLA SATIR: 3 yerine 8 satır göster (daha iyi veri örnekleri için)
+        const sampleRows = table.rows.slice(0, 8).map(row =>
+          // TÜM SÜTUNLAR: Artık sütun sınırı yok, tüm veriyi göster
+          row.join(" | ")
         ).join("\n     ");
 
-        tableDescriptions.push(`${idx + 1}. "${table.baslik}"
-   Sütunlar: [${table.headers.slice(0, 8).join(", ")}${table.headers.length > 8 ? "..." : ""}]
+        // BOŞ TABLO KONTROLÜ: Boş tabloları tespit et
+        const isEmpty = !sampleRows.trim() || table.satir_sayisi === 0;
+        const emptyWarning = isEmpty ? " ⚠️ BOŞ TABLO - VERİ YOK" : "";
+
+        tableDescriptions.push(`${idx + 1}. "${table.baslik}"${emptyWarning}
+   Sütunlar: [${table.headers.join(", ")}] (${table.headers.length} sütun)
    Örnek veri (${table.satir_sayisi} satır):
-     ${sampleRows}
+     ${sampleRows || "     [BOŞ - VERİ BULUNAMADI]"}
 `);
       });
     });
@@ -226,8 +232,12 @@ ${tableDescriptions.join("\n")}
 4. **KURULUŞLAR** (organization kategorisinden)
    - Kuruluş adları (Huzurevi, Bakımevi vb.)
    - Her kuruluştaki kişi sayısı
-   - Öğün dağılımı (Kahvaltı, Öğle, Akşam)
-   - Toplam öğün sayısı
+   - ⚡ ÇOK ÖNEMLİ - Öğün dağılımı (Kahvaltı, Öğle, Akşam):
+     * Tablolarda "Kahvaltı", "Öğle", "Akşam" sütunlarını DİKKATLE ara
+     * Her kuruluş için ayrı ayrı öğün sayılarını çıkar
+     * Boş veya eksik değerleri atla, sadece kesin sayıları al
+     * Format: {"kahvalti": 120, "ogle": 120, "aksam": 120, "toplam": 360}
+   - Toplam öğün sayısı (kahvaltı + öğle + akşam)
 
 5. **MALİYET VERİLERİ** (financial kategorisinden)
    - Tahmini bütçe (varsa)
@@ -236,25 +246,33 @@ ${tableDescriptions.join("\n")}
 
 ⚡ ÖNEMLİ KURALLAR:
 
-1. **Veri varsa çıkar, yoksa boş bırak**
+1. **BOŞ TABLOLARI ATLA**
+   - "⚠️ BOŞ TABLO" işaretli tabloları yoksay
+   - Sadece veri içeren tablolardan çıkarım yap
+   - Boş tablolar için tahmin yapma
+
+2. **Veri varsa çıkar, yoksa boş bırak**
    - Tahmin yapma, sadece tablolarda gördüğün verileri kullan
    - Belirsiz verileri atlama
+   - Eksik öğün dağılımlarını (kahvalti/ogle/aksam) boş bırak
 
-2. **Sayısal değerleri doğru çıkar**
+3. **Sayısal değerleri doğru çıkar**
    - Kişi sayıları, miktarlar, fiyatlar kesin olmalı
    - Toplamları kontrol et (varsa)
+   - Öğün sayılarını DİKKATLE çıkar (0 olabilir, null ile karıştırma)
 
-3. **Kategori bazlı analiz yap**
+4. **Kategori bazlı analiz yap**
    - personnel → personel_detaylari
    - materials/technical → ekipman_listesi
    - meals/quantities → menu_analizi
-   - organization → kuruluslar
+   - organization → kuruluslar (ÖĞün dağılımı burada!)
    - financial → maliyet_verileri
 
-4. **Özetleme yap**
+5. **Özetleme yap**
    - Her tabloyu ayrı ayrı döndürme
    - Benzer verileri birleştir
    - Yapılandırılmış format kullan
+   - Öğün dağılımlarını tüm kuruluşlar için topla
 
 📋 CEVAP FORMATI (SADECE JSON):
 
