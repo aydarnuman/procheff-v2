@@ -642,66 +642,168 @@ export function EnhancedAnalysisResults({
           >
             {/* Belge Tutarlılığı Analizi Kaldırıldı */}
 
-            {/* Analysis Overview */}
+            {/* Kritik İş Metrikleri - İş Değerlendirmesi için En Önemli Bilgiler */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="rounded-xl p-4 border border-surface-border bg-surface-card">
-                <div className="flex items-center space-x-3 mb-2">
-                  <DollarSign className="w-5 h-5" />
-                  <span className="font-medium">Maliyet Sapması</span>
+              {/* 1. İnsan Odaklı Metrikler */}
+              <div className="rounded-xl p-4 border border-blue-500/30 bg-blue-500/10">
+                <div className="flex items-center space-x-3 mb-3">
+                  <Users className="w-5 h-5 text-blue-400" />
+                  <span className="font-medium text-blue-400">İnsan Metrikleri</span>
                 </div>
-                <p className="text-xl font-bold">
-                  %{analysis.contextual_analysis.maliyet_sapma_olasiligi.oran}
-                </p>
-                <p className="text-sm opacity-80">
-                  Risk oranı
-                </p>
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-2xl font-bold text-white">
+                      {analysis.extracted_data.kisi_sayisi?.toLocaleString('tr-TR') || 'N/A'}
+                    </p>
+                    <p className="text-xs text-gray-400">Kişi Sayısı</p>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-400">Süre:</span>
+                    <span className="text-white font-medium">{analysis.extracted_data.gun_sayisi || 'N/A'} gün</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-400">Günlük:</span>
+                    <span className="text-white font-medium">
+                      {analysis.extracted_data.kisi_sayisi && analysis.extracted_data.ogun_sayisi
+                        ? (analysis.extracted_data.kisi_sayisi * analysis.extracted_data.ogun_sayisi).toLocaleString('tr-TR')
+                        : 'N/A'} porsiyon
+                    </span>
+                  </div>
+                </div>
               </div>
 
-              <div
-                className={`rounded-xl p-4 border ${getRiskColor(
-                  analysis.contextual_analysis.operasyonel_riskler.seviye
-                )}`}
-              >
-                <div className="flex items-center space-x-3 mb-2">
-                  <Shield className="w-5 h-5" />
-                  <span className="font-medium">Risk</span>
+              {/* 2. Finansal Özet */}
+              <div className="rounded-xl p-4 border border-green-500/30 bg-green-500/10">
+                <div className="flex items-center space-x-3 mb-3">
+                  <DollarSign className="w-5 h-5 text-green-400" />
+                  <span className="font-medium text-green-400">Finansal Özet</span>
                 </div>
-                <p className="text-xl font-bold capitalize">
-                  {analysis.contextual_analysis.operasyonel_riskler.seviye}
-                </p>
-                <p className="text-sm opacity-80">
-                  {
-                    analysis.contextual_analysis.operasyonel_riskler.faktorler
-                      .length
-                  }{" "}
-                  faktör
-                </p>
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-2xl font-bold text-white">
+                      {analysis.extracted_data.tahmini_butce
+                        ? `${(analysis.extracted_data.tahmini_butce / 1_000_000).toFixed(1)}M ₺`
+                        : 'N/A'}
+                    </p>
+                    <p className="text-xs text-gray-400">Tahmini Bütçe</p>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-400">Kişi Başı:</span>
+                    <span className="text-white font-medium">
+                      {analysis.extracted_data.tahmini_butce && analysis.extracted_data.kisi_sayisi
+                        ? `${(analysis.extracted_data.tahmini_butce / analysis.extracted_data.kisi_sayisi).toLocaleString('tr-TR', { maximumFractionDigits: 0 })} ₺`
+                        : 'N/A'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-400">Risk:</span>
+                    <span className={`font-medium ${
+                      analysis.contextual_analysis.operasyonel_riskler.seviye === 'dusuk' ? 'text-green-400' :
+                      analysis.contextual_analysis.operasyonel_riskler.seviye === 'orta' ? 'text-yellow-400' :
+                      'text-red-400'
+                    }`}>
+                      {analysis.contextual_analysis.operasyonel_riskler.seviye === 'dusuk' ? 'Düşük' :
+                       analysis.contextual_analysis.operasyonel_riskler.seviye === 'orta' ? 'Orta' : 'Yüksek'}
+                    </span>
+                  </div>
+                </div>
               </div>
 
-              <div className="bg-platinum-800/60 rounded-xl p-4 border border-orange-500/30 text-orange-400">
-                <div className="flex items-center space-x-3 mb-2">
-                  <TrendingUp className="w-5 h-5" />
-                  <span className="font-medium">Sapma</span>
+              {/* 3. Öğün Dağılımı */}
+              <div className="rounded-xl p-4 border border-purple-500/30 bg-purple-500/10">
+                <div className="flex items-center space-x-3 mb-3">
+                  <FileText className="w-5 h-5 text-purple-400" />
+                  <span className="font-medium text-purple-400">Öğün Dağılımı</span>
                 </div>
-                <p className="text-xl font-bold">
-                  %{analysis.contextual_analysis.maliyet_sapma_olasiligi.oran}
-                </p>
-                <p className="text-sm opacity-80">Maliyet sapması</p>
+                <div className="space-y-2">
+                  {(() => {
+                    const kahvalti = analysis.extracted_data.detayli_veri?.ogun_dagilimi?.kahvalti;
+                    const ogle = analysis.extracted_data.detayli_veri?.ogun_dagilimi?.ogle;
+                    const aksam = analysis.extracted_data.detayli_veri?.ogun_dagilimi?.aksam;
+                    const toplam = analysis.extracted_data.kisi_sayisi && analysis.extracted_data.gun_sayisi
+                      ? analysis.extracted_data.kisi_sayisi * analysis.extracted_data.ogun_sayisi! * analysis.extracted_data.gun_sayisi
+                      : null;
+
+                    if (kahvalti && ogle && aksam) {
+                      return (
+                        <>
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-400">☀️ Kahvaltı:</span>
+                            <span className="text-white font-medium">{kahvalti.toLocaleString('tr-TR')}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-400">🌞 Öğle:</span>
+                            <span className="text-white font-medium">{ogle.toLocaleString('tr-TR')}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-400">🌙 Akşam:</span>
+                            <span className="text-white font-medium">{aksam.toLocaleString('tr-TR')}</span>
+                          </div>
+                        </>
+                      );
+                    } else if (toplam) {
+                      // Eğer öğün dağılımı yoksa, öğün sayısını göster
+                      return (
+                        <>
+                          <div>
+                            <p className="text-2xl font-bold text-white">
+                              {(analysis.extracted_data.ogun_sayisi || 0).toLocaleString('tr-TR')}
+                            </p>
+                            <p className="text-xs text-gray-400">Günlük Öğün</p>
+                          </div>
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-400">Toplam:</span>
+                            <span className="text-white font-medium">{toplam.toLocaleString('tr-TR')} porsiyon</span>
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            Öğün dağılımı belirtilmemiş
+                          </div>
+                        </>
+                      );
+                    } else {
+                      return (
+                        <div className="text-sm text-gray-500">
+                          Öğün bilgisi bulunamadı
+                        </div>
+                      );
+                    }
+                  })()}
+                </div>
               </div>
 
-              <div
-                className={`rounded-xl p-4 border ${getStatusColor(
-                  analysis.contextual_analysis.zaman_uygunlugu.durum
-                )}`}
-              >
-                <div className="flex items-center space-x-3 mb-2">
-                  <Clock className="w-5 h-5" />
-                  <span className="font-medium">Zaman</span>
+              {/* 4. Kritik Tarihler & Durum */}
+              <div className="rounded-xl p-4 border border-orange-500/30 bg-orange-500/10">
+                <div className="flex items-center space-x-3 mb-3">
+                  <Calendar className="w-5 h-5 text-orange-400" />
+                  <span className="font-medium text-orange-400">Tarihler</span>
                 </div>
-                <p className="text-xl font-bold capitalize">
-                  {analysis.contextual_analysis.zaman_uygunlugu.durum}
-                </p>
-                <p className="text-sm opacity-80">Süre değerlendirmesi</p>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-400">Son Teklif:</span>
+                    <span className="text-white font-medium">
+                      {analysis.extracted_data.teklif_son_tarih || 'Belirtilmemiş'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-400">İşe Başlama:</span>
+                    <span className="text-white font-medium">
+                      {analysis.extracted_data.ise_baslama_tarih || 'Belirtilmemiş'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-400">Teslim:</span>
+                    <span className="text-white font-medium">
+                      {analysis.extracted_data.teslim_suresi || 'N/A'}
+                    </span>
+                  </div>
+                  <div className={`text-xs font-medium mt-2 px-2 py-1 rounded ${getStatusColor(
+                    analysis.contextual_analysis.zaman_uygunlugu.durum
+                  )}`}>
+                    {analysis.contextual_analysis.zaman_uygunlugu.durum === 'yeterli' ? '✓ Zaman Yeterli' :
+                     analysis.contextual_analysis.zaman_uygunlugu.durum === 'sinirda' ? '⚠ Sınırda' :
+                     '✗ Yetersiz'}
+                  </div>
+                </div>
               </div>
             </div>
 
