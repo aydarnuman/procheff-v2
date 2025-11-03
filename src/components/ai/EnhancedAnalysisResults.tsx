@@ -78,6 +78,11 @@ export function EnhancedAnalysisResults({
   const [veriCikarimTab, setVeriCikarimTab] = useState<"ham-veri" | "tablolar">("ham-veri"); // Tab state
   const [showEvidence, setShowEvidence] = useState(false);
 
+  // CSV analizlerinden toplam maliyeti hesapla
+  const csvTotalCost = analysis.csv_analyses?.reduce((total, csv) => {
+    return total + (csv.analysis?.summary?.total_cost || 0);
+  }, 0) || 0;
+
   // Zustand store'dan dosya bilgilerini al
   const { fileStatuses, csvFiles } = useIhaleStore();
 
@@ -681,30 +686,48 @@ export function EnhancedAnalysisResults({
                 <div className="space-y-2">
                   <div>
                     <p className="text-2xl font-bold text-white">
-                      {analysis.extracted_data.tahmini_butce
-                        ? `${(analysis.extracted_data.tahmini_butce / 1_000_000).toFixed(1)}M ₺`
-                        : 'N/A'}
+                      {csvTotalCost > 0
+                        ? `${(csvTotalCost / 1_000_000).toFixed(1)}M ₺`
+                        : analysis.extracted_data.tahmini_butce
+                          ? `${(analysis.extracted_data.tahmini_butce / 1_000_000).toFixed(1)}M ₺`
+                          : 'N/A'}
                     </p>
-                    <p className="text-xs text-gray-400">Tahmini Bütçe</p>
+                    <p className="text-xs text-gray-400">
+                      {csvTotalCost > 0 ? 'Gerçek Maliyet (CSV)' : 'Tahmini Bütçe'}
+                    </p>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-gray-400">Kişi Başı:</span>
                     <span className="text-white font-medium">
-                      {analysis.extracted_data.tahmini_butce && analysis.extracted_data.kisi_sayisi
-                        ? `${(analysis.extracted_data.tahmini_butce / analysis.extracted_data.kisi_sayisi).toLocaleString('tr-TR', { maximumFractionDigits: 0 })} ₺`
+                      {(csvTotalCost > 0 || analysis.extracted_data.tahmini_butce) && analysis.extracted_data.kisi_sayisi
+                        ? `${((csvTotalCost > 0 ? csvTotalCost : analysis.extracted_data.tahmini_butce!) / analysis.extracted_data.kisi_sayisi).toLocaleString('tr-TR', { maximumFractionDigits: 0 })} ₺`
                         : 'N/A'}
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-400">Risk:</span>
-                    <span className={`font-medium ${
-                      analysis.contextual_analysis.operasyonel_riskler.seviye === 'dusuk' ? 'text-green-400' :
-                      analysis.contextual_analysis.operasyonel_riskler.seviye === 'orta' ? 'text-yellow-400' :
-                      'text-red-400'
-                    }`}>
-                      {analysis.contextual_analysis.operasyonel_riskler.seviye === 'dusuk' ? 'Düşük' :
-                       analysis.contextual_analysis.operasyonel_riskler.seviye === 'orta' ? 'Orta' : 'Yüksek'}
-                    </span>
+                    {csvTotalCost > 0 && analysis.extracted_data.tahmini_butce ? (
+                      <>
+                        <span className="text-gray-400">Fark:</span>
+                        <span className={`font-medium ${
+                          csvTotalCost > analysis.extracted_data.tahmini_butce ? 'text-red-400' : 'text-green-400'
+                        }`}>
+                          {csvTotalCost > analysis.extracted_data.tahmini_butce ? '+' : ''}
+                          {((csvTotalCost - analysis.extracted_data.tahmini_butce) / 1_000_000).toFixed(1)}M ₺
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-gray-400">Risk:</span>
+                        <span className={`font-medium ${
+                          analysis.contextual_analysis.operasyonel_riskler.seviye === 'dusuk' ? 'text-green-400' :
+                          analysis.contextual_analysis.operasyonel_riskler.seviye === 'orta' ? 'text-yellow-400' :
+                          'text-red-400'
+                        }`}>
+                          {analysis.contextual_analysis.operasyonel_riskler.seviye === 'dusuk' ? 'Düşük' :
+                           analysis.contextual_analysis.operasyonel_riskler.seviye === 'orta' ? 'Orta' : 'Yüksek'}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>

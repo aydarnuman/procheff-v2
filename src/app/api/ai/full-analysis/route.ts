@@ -154,7 +154,7 @@ function getDocumentMessages(docType: string) {
 }
 
 // Streaming response handler
-async function createStreamingResponse(text: string, startTime: number) {
+async function createStreamingResponse(text: string, csvAnalyses: any[] | undefined, startTime: number) {
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -353,6 +353,7 @@ async function createStreamingResponse(text: string, startTime: number) {
             confidence_score: overallConfidence,
           },
           validation_warnings: validationResult.warnings.length > 0 ? validationResult.warnings : undefined,
+          csv_analyses: csvAnalyses, // CSV analizlerini ekle
         };
 
         // Send completion
@@ -400,7 +401,7 @@ export async function POST(request: NextRequest) {
   try {
     console.log("=== AI FULL ANALYSIS BAŞLADI ===");
 
-    const { text } = await request.json();
+    const { text, csvAnalyses } = await request.json();
 
     if (!text || typeof text !== "string") {
       return NextResponse.json(
@@ -425,6 +426,14 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`Metin uzunluğu: ${text.length} karakter`);
+
+    // CSV analizleri varsa log yaz
+    if (csvAnalyses && csvAnalyses.length > 0) {
+      console.log(`📊 ${csvAnalyses.length} CSV analizi alındı`);
+      csvAnalyses.forEach((csv: any, i: number) => {
+        console.log(`   ${i + 1}. ${csv.fileName}: ${csv.analysis.summary.total_items} ürün, ${csv.analysis.summary.total_cost.toLocaleString('tr-TR')} TL`);
+      });
+    }
 
     // 💾 CACHE CHECK - Aynı metin daha önce analiz edildi mi?
     const textHash = await ServerAnalysisCache.generateHash(text);
@@ -458,7 +467,7 @@ export async function POST(request: NextRequest) {
 
     // If streaming mode, use ReadableStream
     if (streamMode) {
-      return createStreamingResponse(text, startTime);
+      return createStreamingResponse(text, csvAnalyses, startTime);
     }
 
     // 🚀 HYBRID MODE: Select optimal provider for extraction
@@ -604,6 +613,7 @@ export async function POST(request: NextRequest) {
         confidence_score: overallConfidence,
       },
       validation_warnings: validationResult.warnings.length > 0 ? validationResult.warnings : undefined,
+      csv_analyses: csvAnalyses, // CSV analizlerini ekle
     };
 
     console.log("=== AI FULL ANALYSIS TAMAMLANDI ===");

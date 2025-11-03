@@ -293,6 +293,11 @@ export interface AIAnalysisResult {
   status?: IhaleStatus;
   // Derin analiz sonuçları (opsiyonel - kullanıcı derin analiz yaptıysa)
   deep_analysis?: DeepAnalysisResult;
+  // CSV maliyet analizleri (opsiyonel - kullanıcı CSV yüklemişse)
+  csv_analyses?: Array<{
+    fileName: string;
+    analysis: any;
+  }>;
 }
 
 // Deep Analysis Types

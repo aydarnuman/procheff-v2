@@ -611,6 +611,16 @@ export default function IhalePage() {
         let result: any = null;
         const analysisStartTime = Date.now();
 
+        // CSV analizlerini hazırla
+        const completedCSVAnalyses = csvFiles
+          .filter(csv => csv.status === 'completed' && csv.analysis)
+          .map(csv => ({
+            fileName: csv.fileMetadata.name,
+            analysis: csv.analysis
+          }));
+
+        console.log(`📊 ${completedCSVAnalyses.length} CSV analizi API'ye gönderiliyor`);
+
         try {
           // EventSource ile gerçek zamanlı progress takibi
           const response = await fetch("/api/ai/full-analysis?stream=true", {
@@ -618,7 +628,10 @@ export default function IhalePage() {
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ text: fullText }),
+            body: JSON.stringify({
+              text: fullText,
+              csvAnalyses: completedCSVAnalyses.length > 0 ? completedCSVAnalyses : undefined
+            }),
           });
 
           if (!response.ok) {
@@ -1302,21 +1315,34 @@ export default function IhalePage() {
                   csvFilesCount={csvFiles.filter(c => c.status === 'completed').length}
                 />
 
-                {/* CSV Analiz Sonuçları */}
+                {/* CSV Bilgi Mesajı - Artık ana analizde gösteriliyor */}
                 {csvFiles.length > 0 && csvFiles.some(csv => csv.status === 'completed') && (
-                  <div className="mt-6 space-y-4">
-                    <h3 className="text-lg font-semibold text-white mb-4">
-                      📊 Maliyet Analizi
-                    </h3>
-                    {csvFiles
-                      .filter(csv => csv.status === 'completed' && csv.analysis)
-                      .map((csv, index) => (
-                        <CSVCostAnalysis
-                          key={index}
-                          analysis={csv.analysis!}
-                          fileName={csv.fileMetadata.name}
-                        />
-                      ))}
+                  <div className="mt-6 bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0">
+                        <div className="w-8 h-8 bg-emerald-500/20 rounded-lg flex items-center justify-center">
+                          <span className="text-emerald-400 text-lg">📊</span>
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="text-sm font-semibold text-emerald-400 mb-1">
+                          Maliyet Verileri Hazır
+                        </h4>
+                        <p className="text-xs text-gray-300">
+                          {csvFiles.filter(c => c.status === 'completed').length} CSV dosyası analiz edildi.
+                          Maliyet verileri "Analiz Et" butonuna bastığınızda ana analiz sonuçlarına entegre edilecek.
+                        </p>
+                        <div className="flex items-center gap-2 mt-2 text-xs text-gray-400">
+                          {csvFiles
+                            .filter(csv => csv.status === 'completed' && csv.analysis)
+                            .map((csv, index) => (
+                              <span key={index} className="px-2 py-1 bg-emerald-500/10 rounded">
+                                {csv.fileMetadata.name}
+                              </span>
+                            ))}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
               </motion.div>
