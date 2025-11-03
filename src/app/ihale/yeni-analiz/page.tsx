@@ -128,6 +128,39 @@ export default function IhalePage() {
     }
   }, [currentAnalysis, currentStep, setCurrentStep]);
 
+  // 💾 Stage 2 Persistence - documentPages ve documentStats'ı localStorage'da tut
+  useEffect(() => {
+    // Restore from localStorage on mount
+    if (typeof window !== 'undefined') {
+      const savedPages = localStorage.getItem('ihale_document_pages');
+      const savedStats = localStorage.getItem('ihale_document_stats');
+      const savedStep = localStorage.getItem('ihale_current_step');
+
+      if (savedPages && savedStats && savedStep === 'view') {
+        try {
+          const pages = JSON.parse(savedPages);
+          const stats = JSON.parse(savedStats);
+          setDocumentPages(pages);
+          setDocumentStats(stats);
+          setCurrentStep('view');
+          console.log('📥 Stage 2 data restored from localStorage');
+        } catch (error) {
+          console.error('Failed to restore Stage 2 data:', error);
+        }
+      }
+    }
+  }, []);
+
+  // Save to localStorage whenever documentPages or documentStats changes
+  useEffect(() => {
+    if (typeof window !== 'undefined' && documentPages.length > 0 && documentStats) {
+      localStorage.setItem('ihale_document_pages', JSON.stringify(documentPages));
+      localStorage.setItem('ihale_document_stats', JSON.stringify(documentStats));
+      localStorage.setItem('ihale_current_step', currentStep);
+      console.log('💾 Stage 2 data saved to localStorage');
+    }
+  }, [documentPages, documentStats, currentStep]);
+
   // 🔥 Otomatik Derin Analiz - 5 saniye bekleme YOK, direkt başla
   const [autoDeepAnalysisTriggered, setAutoDeepAnalysisTriggered] = useState(false);
 
@@ -510,7 +543,7 @@ export default function IhalePage() {
       }];
 
       const stats = {
-        totalPages: 1,
+        totalPages: completedFiles.length, // Her dosya bir "sayfa" olarak sayılıyor
         emptyPages: 0,
         lowQualityPages: 0,
         totalWords: totalWordCount,
@@ -1235,7 +1268,10 @@ export default function IhalePage() {
                           className="flex-1 px-6 py-3.5 bg-green-600/90 hover:bg-green-600 text-white rounded-xl transition-all font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-green-500/25"
                         >
                           <Brain className="w-5 h-5" />
-                          <span>Analiz Et ({fileStatuses.filter(fs => fs.status === 'completed').length})</span>
+                          <span>
+                            Analiz Et ({fileStatuses.filter(fs => fs.status === 'completed').length} PDF/DOC
+                            {csvFiles.filter(c => c.status === 'completed').length > 0 && ` + ${csvFiles.filter(c => c.status === 'completed').length} CSV`})
+                          </span>
                         </button>
                       )}
                     </div>
@@ -1313,6 +1349,10 @@ export default function IhalePage() {
                   aiProvider="Gemini + Claude"
                   totalFilesCount={fileStatuses.filter(f => f.status === 'completed').length + csvFiles.filter(c => c.status === 'completed').length}
                   csvFilesCount={csvFiles.filter(c => c.status === 'completed').length}
+                  onAddFiles={() => {
+                    // Navigate back to upload step to add more files
+                    setCurrentStep("upload");
+                  }}
                 />
 
                 {/* CSV Bilgi Mesajı - Artık ana analizde gösteriliyor */}

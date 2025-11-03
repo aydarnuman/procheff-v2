@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { ClaudeProvider } from "@/lib/ai/claude-provider";
 import { GeminiExtractionProvider } from "@/lib/ai/gemini-extraction-provider";
 import { AIProviderFactory } from "@/lib/ai/provider-factory";
-import { AIAnalysisResult } from "@/types/ai";
+import { AIAnalysisResult, ExtractedTable } from "@/types/ai";
 import { DataValidator } from "@/lib/ai/data-validator";
 import { calculateFinancialControl } from "@/lib/utils/financial-calculator";
 import { TurkishContextAnalyzer } from "@/lib/utils/turkish-context-analyzer";
 import { DualAPIOrchestrator } from "@/lib/ai/dual-api-orchestrator";
+import { categorizeTables } from "@/lib/ai/table-categorizer";
+import { CSVCostAnalysis } from "@/lib/csv/csv-parser";
 
 // 💾 CACHE MANAGER
 class ServerAnalysisCache {
@@ -86,6 +88,61 @@ function sendCompleteEvent(
 ) {
   const data = JSON.stringify({ type: 'complete', result });
   controller.enqueue(`data: ${data}\n\n`);
+}
+
+// Helper: Convert CSV cost analysis to ExtractedTable format
+function convertCSVToTables(csvAnalyses: any[]): ExtractedTable[] {
+  if (!csvAnalyses || csvAnalyses.length === 0) return [];
+
+  console.log(`\n📊 CSV → TABLO DÖNÜŞÜMÜ: ${csvAnalyses.length} CSV dosyası`);
+
+  const tables: ExtractedTable[] = [];
+
+  csvAnalyses.forEach((csv: any, csvIndex: number) => {
+    const analysis: CSVCostAnalysis = csv.analysis;
+    const fileName = csv.fileName || `CSV-${csvIndex + 1}`;
+
+    // Her CSV'den bir maliyet tablosu oluştur
+    const headers = ["Ürün Adı", "Miktar", "Birim", "Birim Fiyat (TL)", "Toplam Fiyat (TL)", "Kategori"];
+    const rows: string[][] = [];
+
+    analysis.items.forEach(item => {
+      rows.push([
+        item.urun_adi,
+        item.miktar?.toString() || "-",
+        item.birim || "-",
+        item.birim_fiyat?.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "-",
+        item.toplam_fiyat?.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "-",
+        item.kategori || "Diğer"
+      ]);
+    });
+
+    // Toplam satırı ekle
+    rows.push([
+      "TOPLAM",
+      analysis.summary.total_items.toString() + " ürün",
+      "-",
+      "-",
+      analysis.summary.total_cost.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " TL",
+      "-"
+    ]);
+
+    const table: ExtractedTable = {
+      baslik: `Maliyet Tablosu - ${fileName}`,
+      headers,
+      rows,
+      sutun_sayisi: headers.length,
+      satir_sayisi: rows.length,
+      category: "financial" // CSV maliyet verileri -> financial category
+    };
+
+    tables.push(table);
+
+    console.log(`   ✅ ${fileName}: ${rows.length - 1} ürün, Toplam: ${analysis.summary.total_cost.toLocaleString('tr-TR')} TL → [financial]`);
+  });
+
+  console.log(`📊 ${tables.length} CSV tablosu oluşturuldu\n`);
+  return tables;
 }
 
 // Helper: Detect document types from combined text
@@ -246,6 +303,31 @@ async function createStreamingResponse(text: string, csvAnalyses: any[] | undefi
             details: `Güven skoru: ${Math.round(rawExtractedData.guven_skoru * 100)}%`,
             timestamp: Date.now()
           })}\n\n`));
+
+          // 📊 CSV TABLOLARINI ENTEGRE ET
+          if (csvAnalyses && csvAnalyses.length > 0) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              type: 'progress',
+              stage: '📊 CSV maliyet verileri entegre ediliyor...',
+              progress: 52,
+              timestamp: Date.now()
+            })}\n\n`));
+
+            const csvTables = convertCSVToTables(csvAnalyses);
+
+            // CSV tablolarını mevcut tablolarla birleştir
+            if (!rawExtractedData.tablolar) {
+              rawExtractedData.tablolar = [];
+            }
+            rawExtractedData.tablolar.push(...csvTables);
+
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              type: 'progress',
+              stage: `✅ ${csvTables.length} CSV tablosu eklendi`,
+              progress: 55,
+              timestamp: Date.now()
+            })}\n\n`));
+          }
         } catch (error) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({
             type: 'progress',
@@ -497,6 +579,22 @@ export async function POST(request: NextRequest) {
       rawExtractedData = await orchestrator.extractWithFallback(text);
 
       console.log("✅ Dual API extraction tamamlandı!");
+
+      // 📊 CSV TABLOLARINI ENTEGRE ET
+      if (csvAnalyses && csvAnalyses.length > 0) {
+        console.log("\n📊 CSV → TABLO ENTEGRASYONu başlıyor...");
+        const csvTables = convertCSVToTables(csvAnalyses);
+
+        // CSV tablolarını mevcut tablolarla birleştir
+        if (!rawExtractedData.tablolar) {
+          rawExtractedData.tablolar = [];
+        }
+
+        const totalBeforeCSV = rawExtractedData.tablolar.length;
+        rawExtractedData.tablolar.push(...csvTables);
+
+        console.log(`✅ ${csvTables.length} CSV tablosu eklendi (Toplam: ${totalBeforeCSV} PDF + ${csvTables.length} CSV = ${rawExtractedData.tablolar.length} tablo)`);
+      }
     } catch (error) {
       console.error(`Dual API extraction failed, falling back to single provider...`);
       console.error(error);

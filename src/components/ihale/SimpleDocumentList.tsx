@@ -75,45 +75,53 @@ export function SimpleDocumentList({
 
   return (
     <div className="w-full max-w-4xl mx-auto space-y-4">
+      {/* Stage Indicator - Outside Card */}
+      <div className="flex items-center gap-4">
+        <div className="relative">
+          <div className="absolute inset-0 bg-blue-500/30 blur-lg rounded-xl"></div>
+          <div className="relative px-4 py-2 bg-gradient-to-r from-blue-500/30 to-blue-600/20 border border-blue-400/50 rounded-xl shadow-lg shadow-blue-500/20">
+            <span className="text-blue-300 font-bold text-base tracking-wide">1️⃣ İLK AŞAMA</span>
+          </div>
+        </div>
+        <div className="h-8 w-px bg-gradient-to-b from-transparent via-slate-600 to-transparent"></div>
+        <h3 className="text-2xl font-bold text-white tracking-tight">Dosya İşleme (OCR)</h3>
+        <div className="flex-1"></div>
+        <p className="text-sm text-gray-400 font-medium">
+          📁 {fileStatuses.length} PDF/DOC {csvFiles.length > 0 && `+ ${csvFiles.length} CSV`} • ✅ {fileStatuses.filter(f => f.status === 'completed').length + csvFiles.filter(c => c.status === 'completed').length} işlendi
+        </p>
+      </div>
+
       {/* Upload Section */}
       <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-xl font-bold text-white">Belgeler</h3>
-            <p className="text-sm text-gray-400 mt-1">
-              {fileStatuses.length} dosya • {fileStatuses.filter(f => f.status === 'completed').length} işlendi
-            </p>
-          </div>
-          <div className="flex gap-3">
+        <div className="flex items-center justify-end gap-3 mb-4">
+          <label className="cursor-pointer">
+            <input
+              type="file"
+              multiple
+              accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+              onChange={handleFileInput}
+              className="hidden"
+            />
+            <div className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2 font-medium">
+              <Upload className="w-5 h-5" />
+              Belge Ekle
+            </div>
+          </label>
+
+          {onCSVSelect && (
             <label className="cursor-pointer">
               <input
                 type="file"
                 multiple
-                accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
-                onChange={handleFileInput}
+                accept=".csv"
+                onChange={handleCSVInput}
                 className="hidden"
               />
-              <div className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2 font-medium">
-                <Upload className="w-5 h-5" />
-                Belge Ekle
+              <div className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center gap-2 font-medium">
+                📊 CSV Ekle
               </div>
             </label>
-
-            {onCSVSelect && (
-              <label className="cursor-pointer">
-                <input
-                  type="file"
-                  multiple
-                  accept=".csv"
-                  onChange={handleCSVInput}
-                  className="hidden"
-                />
-                <div className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center gap-2 font-medium">
-                  📊 CSV Ekle
-                </div>
-              </label>
-            )}
-          </div>
+          )}
         </div>
 
         {/* File List */}

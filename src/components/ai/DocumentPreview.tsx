@@ -8,9 +8,10 @@ import {
   EyeOff,
   AlertCircle,
   CheckCircle,
-  Search,
   BarChart3,
   Clock,
+  Upload,
+  Plus,
 } from "lucide-react";
 
 interface DocumentPage {
@@ -44,6 +45,7 @@ interface DocumentPreviewProps {
   aiProvider?: string; // Which AI will be used
   totalFilesCount?: number; // Total number of files (PDF + CSV)
   csvFilesCount?: number; // Number of CSV files
+  onAddFiles?: () => void; // Callback to add more files in Stage 2
 }
 
 export function DocumentPreview({
@@ -56,10 +58,10 @@ export function DocumentPreview({
   aiProvider = 'Claude Sonnet 4',
   totalFilesCount = 0,
   csvFilesCount = 0,
+  onAddFiles,
 }: DocumentPreviewProps) {
   const [selectedPage, setSelectedPage] = useState<number | null>(null);
   const [showEmptyPages, setShowEmptyPages] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
   const [filterQuality, setFilterQuality] = useState<"all" | "high" | "low">(
     "all"
   );
@@ -72,14 +74,6 @@ export function DocumentPreview({
     // Kalite filtresi
     if (filterQuality === "high" && page.quality < 0.7) return false;
     if (filterQuality === "low" && page.quality >= 0.7) return false;
-
-    // Arama filtresi
-    if (
-      searchTerm &&
-      !page.content.toLowerCase().includes(searchTerm.toLowerCase())
-    ) {
-      return false;
-    }
 
     return true;
   });
@@ -98,37 +92,71 @@ export function DocumentPreview({
 
   return (
     <div className="space-y-6">
+      {/* Stage Indicator - Outside Card */}
+      <div className="flex items-center gap-4">
+        <div className="relative">
+          <div className="absolute inset-0 bg-green-500/30 blur-lg rounded-xl"></div>
+          <div className="relative px-4 py-2 bg-gradient-to-r from-green-500/30 to-emerald-600/20 border border-green-400/50 rounded-xl shadow-lg shadow-green-500/20">
+            <span className="text-green-300 font-bold text-base tracking-wide">2️⃣ İKİNCİ AŞAMA</span>
+          </div>
+        </div>
+        <div className="h-8 w-px bg-gradient-to-b from-transparent via-slate-600 to-transparent"></div>
+        <h3 className="text-2xl font-bold text-white tracking-tight">AI Analizi Hazır</h3>
+        <div className="flex-1"></div>
+        <p className="text-sm text-gray-300 font-medium">
+          ✅ Dosyalarınız işlendi ve analiz için hazır
+        </p>
+      </div>
+
       {/* İstatistikler */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-platinum-800/60 rounded-xl p-4 border border-platinum-600">
-          <div className="text-2xl font-bold text-accent-400">
-            {stats.totalPages}
+        <div className="bg-gradient-to-br from-purple-500/10 to-purple-600/5 rounded-xl p-5 border border-purple-500/30 hover:border-purple-500/50 transition-all shadow-lg hover:shadow-purple-500/20">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-3xl font-bold text-purple-400">
+              {stats.totalPages}
+            </div>
+            <FileText className="w-8 h-8 text-purple-400/50" />
           </div>
-          <div className="text-sm text-surface-secondary">Toplam Sayfa</div>
+          <div className="text-sm text-gray-400 font-medium">Toplam Sayfa</div>
         </div>
-        <div className="bg-platinum-800/60 rounded-xl p-4 border border-platinum-600">
-          <div className="text-2xl font-bold text-green-400">
-            {stats.totalWords}
+
+        <div className="bg-gradient-to-br from-green-500/10 to-green-600/5 rounded-xl p-5 border border-green-500/30 hover:border-green-500/50 transition-all shadow-lg hover:shadow-green-500/20">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-3xl font-bold text-green-400">
+              {stats.totalWords.toLocaleString()}
+            </div>
+            <span className="text-2xl">📝</span>
           </div>
-          <div className="text-sm text-surface-secondary">Toplam Kelime</div>
+          <div className="text-sm text-gray-400 font-medium">Toplam Kelime</div>
         </div>
-        <div className="bg-platinum-800/60 rounded-xl p-4 border border-platinum-600">
-          <div className="flex items-center space-x-2">
-            <div className="text-2xl font-bold text-blue-400">
+
+        <div className="bg-gradient-to-br from-blue-500/10 to-blue-600/5 rounded-xl p-5 border border-blue-500/30 hover:border-blue-500/50 transition-all shadow-lg hover:shadow-blue-500/20">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-3xl font-bold text-blue-400">
               {Math.round(stats.averageQuality * 100)}%
             </div>
-            <BarChart3 className="w-5 h-5 text-blue-400" />
+            <BarChart3 className="w-8 h-8 text-blue-400/50" />
           </div>
-          <div className="text-sm text-surface-secondary">Ortalama Kalite</div>
+          <div className="text-sm text-gray-400 font-medium">Ortalama Kalite</div>
         </div>
-        <div className="bg-platinum-800/60 rounded-xl p-4 border border-platinum-600">
-          <div className="flex items-center space-x-2">
-            <div className="text-2xl font-bold text-purple-400">
-              {Math.round(stats.processingTime / 1000)}s
+
+        <div className="bg-gradient-to-br from-amber-500/10 to-amber-600/5 rounded-xl p-5 border border-amber-500/30 hover:border-amber-500/50 transition-all shadow-lg hover:shadow-amber-500/20">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-3xl font-bold text-amber-400">
+              {totalFilesCount || stats.totalPages}
             </div>
-            <Clock className="w-5 h-5 text-purple-400" />
+            <span className="text-3xl">📁</span>
           </div>
-          <div className="text-sm text-surface-secondary">İşleme Süresi</div>
+          <div className="text-sm text-gray-400 font-medium">
+            {totalFilesCount > 0 ? (
+              <>
+                {totalFilesCount - (csvFilesCount || 0)} PDF/DOC
+                {csvFilesCount > 0 && ` + ${csvFilesCount} CSV`}
+              </>
+            ) : (
+              'Toplam Dosya'
+            )}
+          </div>
         </div>
       </div>
 
@@ -156,16 +184,16 @@ export function DocumentPreview({
 
       {/* Filtreler */}
       <div className="flex flex-wrap gap-4 items-center">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-platinum-400" />
-          <input
-            type="text"
-            placeholder="Sayfa içeriğinde ara..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 pr-4 py-2 bg-platinum-800/60 border border-platinum-600 rounded-lg text-surface-primary placeholder-platinum-400 focus:border-accent-400 focus:outline-none"
-          />
-        </div>
+        {/* Add More Files Button */}
+        {onAddFiles && (
+          <button
+            onClick={onAddFiles}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all font-medium flex items-center gap-2 shadow-md hover:shadow-blue-500/30"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Ek Dosya Ekle</span>
+          </button>
+        )}
 
         <select
           value={filterQuality}
@@ -200,10 +228,11 @@ export function DocumentPreview({
             key={page.pageNumber}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className={`p-4 rounded-xl border transition-all cursor-pointer ${
+            whileHover={{ scale: 1.02 }}
+            className={`p-5 rounded-xl border transition-all cursor-pointer shadow-md ${
               selectedPage === page.pageNumber
-                ? "border-accent-400 bg-accent-500/10"
-                : `border-platinum-600 bg-platinum-800/40 hover:border-platinum-500 ${getQualityBg(
+                ? "border-accent-400 bg-gradient-to-br from-accent-500/20 to-accent-600/10 shadow-accent-500/30"
+                : `border-slate-600 bg-gradient-to-br from-slate-800/80 to-slate-900/40 hover:border-slate-500 hover:shadow-lg ${getQualityBg(
                     page.quality
                   )}`
             }`}
@@ -213,52 +242,60 @@ export function DocumentPreview({
               )
             }
           >
-            <div className="flex items-center justify-between mb-3">
+            {/* Başlık Bölümü */}
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-700">
               <div className="flex items-center space-x-2">
-                <FileText className="w-4 h-4 text-platinum-400" />
-                <span className="font-semibold text-surface-primary">
+                <div className="p-2 bg-slate-700/50 rounded-lg">
+                  <FileText className="w-4 h-4 text-blue-400" />
+                </div>
+                <span className="font-bold text-white text-base">
                   Sayfa {page.pageNumber}
                 </span>
               </div>
               <div className="flex items-center space-x-2">
                 {page.isEmpty ? (
-                  <AlertCircle className="w-4 h-4 text-red-400" />
+                  <AlertCircle className="w-5 h-5 text-red-400" />
                 ) : (
-                  <CheckCircle className="w-4 h-4 text-green-400" />
+                  <CheckCircle className="w-5 h-5 text-green-400" />
                 )}
                 <span
-                  className={`text-sm font-medium ${getQualityColor(
-                    page.quality
-                  )}`}
+                  className={`text-base font-bold px-2 py-1 rounded-lg ${
+                    page.quality >= 0.8 ? 'bg-green-500/20 text-green-400' :
+                    page.quality >= 0.5 ? 'bg-yellow-500/20 text-yellow-400' :
+                    'bg-red-500/20 text-red-400'
+                  }`}
                 >
                   {Math.round(page.quality * 100)}%
                 </span>
               </div>
             </div>
 
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between text-surface-secondary">
-                <span>Kelime sayısı:</span>
-                <span className="font-medium">{page.wordCount}</span>
+            {/* İçerik */}
+            <div className="space-y-3 text-sm">
+              <div className="flex items-center justify-between bg-slate-700/30 rounded-lg px-3 py-2">
+                <span className="text-gray-400 flex items-center gap-2">
+                  <span>📝</span> Kelime sayısı:
+                </span>
+                <span className="font-bold text-white">{page.wordCount.toLocaleString()}</span>
               </div>
 
               {page.keyTerms.length > 0 && (
                 <div>
-                  <div className="text-surface-secondary mb-1">
-                    Anahtar terimler:
+                  <div className="text-gray-400 mb-2 text-xs font-medium">
+                    🏷️ Anahtar terimler:
                   </div>
-                  <div className="flex flex-wrap gap-1">
+                  <div className="flex flex-wrap gap-1.5">
                     {page.keyTerms.slice(0, 3).map((term, index) => (
                       <span
                         key={index}
-                        className="px-2 py-1 bg-accent-500/20 text-accent-400 rounded text-xs"
+                        className="px-2.5 py-1 bg-blue-500/20 text-blue-300 rounded-lg text-xs font-medium border border-blue-500/30"
                       >
                         {term}
                       </span>
                     ))}
                     {page.keyTerms.length > 3 && (
-                      <span className="text-xs text-surface-secondary">
-                        +{page.keyTerms.length - 3}
+                      <span className="px-2.5 py-1 bg-slate-700/50 text-gray-400 rounded-lg text-xs">
+                        +{page.keyTerms.length - 3} daha
                       </span>
                     )}
                   </div>
@@ -266,12 +303,13 @@ export function DocumentPreview({
               )}
 
               {page.isEmpty && (
-                <div className="text-red-400 text-xs font-medium">
-                  ⚠ Bu sayfa boş veya okunamadı
+                <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 text-red-400 text-xs font-medium">
+                  ⚠️ Bu sayfa boş veya okunamadı
                 </div>
               )}
 
-              <div className="flex items-center justify-between pt-2">
+              {/* Önizle Butonu */}
+              <div className="pt-2">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -279,17 +317,17 @@ export function DocumentPreview({
                       selectedPage === page.pageNumber ? null : page.pageNumber
                     );
                   }}
-                  className="flex items-center space-x-1 text-accent-400 hover:text-accent-300 transition-colors"
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-accent-500/20 hover:bg-accent-500/30 border border-accent-500/30 rounded-lg text-accent-400 hover:text-accent-300 transition-all font-medium text-sm"
                 >
                   {selectedPage === page.pageNumber ? (
                     <>
-                      <EyeOff className="w-3 h-3" />
-                      <span className="text-xs">Gizle</span>
+                      <EyeOff className="w-4 h-4" />
+                      <span>Gizle</span>
                     </>
                   ) : (
                     <>
-                      <Eye className="w-3 h-3" />
-                      <span className="text-xs">Önizle</span>
+                      <Eye className="w-4 h-4" />
+                      <span>İçeriği Görüntüle</span>
                     </>
                   )}
                 </button>
@@ -340,58 +378,102 @@ export function DocumentPreview({
       </AnimatePresence>
 
       {/* Analiz Butonu */}
-      <div className="text-center space-y-4">
-        {/* AI Provider ve Doküman Bilgisi */}
+      <div className="space-y-6">
+        {/* AI Provider ve Doküman Bilgisi - Modernized */}
         {(detectedDocTypes.length > 0 || totalFilesCount > 0) && (
-          <div className="flex items-center justify-center gap-4 text-sm">
-            <div className="flex items-center gap-2 px-4 py-2 bg-purple-500/10 border border-purple-500/30 rounded-lg">
-              <span className="text-purple-400 font-medium">
-                {totalFilesCount > 0 ? (
-                  <>
-                    📋 {totalFilesCount} dosya ({detectedDocTypes.length} PDF{csvFilesCount > 0 ? `, ${csvFilesCount} CSV` : ''})
-                  </>
-                ) : (
-                  <>📋 {detectedDocTypes.length} belge türü tespit edildi</>
-                )}
-              </span>
-            </div>
-            <div className="flex items-center gap-2 px-4 py-2 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-              <span className="text-gray-400">🧠</span>
-              <span className="text-blue-400 font-medium">AI: {aiProvider}</span>
+          <div className="bg-gradient-to-r from-slate-800/50 via-slate-800/30 to-slate-800/50 border border-slate-700 rounded-2xl p-6">
+            <div className="flex items-center justify-between">
+              {/* Sol: Dosya Bilgisi */}
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-purple-500/20 rounded-xl border border-purple-500/30">
+                  <span className="text-2xl">📋</span>
+                </div>
+                <div>
+                  <div className="text-sm text-gray-400 mb-1">Yüklenecek Dökümanlar</div>
+                  <div className="flex items-center gap-2">
+                    {totalFilesCount > 0 ? (
+                      <>
+                        <span className="text-lg font-bold text-white">
+                          {totalFilesCount - (csvFilesCount || 0)} PDF/DOC
+                        </span>
+                        {csvFilesCount > 0 && (
+                          <>
+                            <span className="text-gray-500">+</span>
+                            <span className="text-lg font-bold text-emerald-400">
+                              {csvFilesCount} CSV
+                            </span>
+                          </>
+                        )}
+                        <span className="text-sm text-gray-500 ml-1">
+                          ({totalFilesCount} toplam)
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-white font-medium">
+                        {detectedDocTypes.length} belge türü
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Orta: Separator */}
+              <div className="h-12 w-px bg-gradient-to-b from-transparent via-slate-600 to-transparent"></div>
+
+              {/* Sağ: AI Provider */}
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-blue-500/20 rounded-xl border border-blue-500/30">
+                  <span className="text-2xl">🧠</span>
+                </div>
+                <div>
+                  <div className="text-sm text-gray-400 mb-1">AI Motoru</div>
+                  <div className="text-lg font-bold text-blue-400">{aiProvider}</div>
+                </div>
+              </div>
             </div>
           </div>
         )}
 
-        <button
-          onClick={onAnalyze}
-          disabled={isAnalyzing || filteredPages.length === 0}
-          className="px-8 py-3 bg-linear-to-r from-accent-500 to-accent-600 hover:from-accent-600 hover:to-accent-700 disabled:from-platinum-600 disabled:to-platinum-700 text-white font-semibold rounded-xl transition-all duration-300 shadow-lg disabled:shadow-none"
-        >
-          {isAnalyzing ? (
-            <div className="flex items-center space-x-2">
-              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              <span>Analiz Ediliyor...</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <span>Analiz Et</span>
-              <span className="opacity-75">•</span>
-              <span>{stats.totalWords.toLocaleString()} kelime</span>
-              {totalFilesCount > 0 && (
-                <>
+        {/* Analiz Et Butonu - Improved */}
+        <div className="text-center">
+          <button
+            onClick={onAnalyze}
+            disabled={isAnalyzing || filteredPages.length === 0}
+            className="px-12 py-5 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:from-platinum-600 disabled:to-platinum-700 text-white font-bold rounded-2xl transition-all duration-300 shadow-2xl hover:shadow-green-500/50 disabled:shadow-none hover:scale-105 disabled:scale-100 transform"
+          >
+            {isAnalyzing ? (
+              <div className="flex items-center gap-3">
+                <div className="w-6 h-6 border-3 border-white/30 border-t-white rounded-full animate-spin" />
+                <span className="text-lg">Analiz Ediliyor...</span>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-center gap-3 text-xl">
+                  <span>🚀</span>
+                  <span>Analiz Et</span>
+                </div>
+                <div className="flex items-center justify-center gap-3 text-sm opacity-90 font-normal">
+                  <span className="px-3 py-1 bg-white/20 rounded-lg">
+                    {totalFilesCount - (csvFilesCount || 0)} PDF/DOC
+                  </span>
+                  {csvFilesCount > 0 && (
+                    <span className="px-3 py-1 bg-white/20 rounded-lg">
+                      {csvFilesCount} CSV
+                    </span>
+                  )}
                   <span className="opacity-75">•</span>
-                  <span className="text-blue-300">{totalFilesCount} doküman</span>
-                </>
-              )}
-            </div>
-          )}
-        </button>
+                  <span className="font-medium">{stats.totalWords.toLocaleString()} kelime</span>
+                </div>
+              </div>
+            )}
+          </button>
 
-        {filteredPages.length === 0 && (
-          <p className="text-sm text-surface-secondary mt-2">
-            Analize uygun sayfa bulunamadı. Filtreleri kontrol edin.
-          </p>
-        )}
+          {filteredPages.length === 0 && (
+            <p className="text-sm text-surface-secondary mt-4">
+              Analize uygun sayfa bulunamadı. Filtreleri kontrol edin.
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -1,10 +1,10 @@
 import { AIConfig, ExtractedData, ContextualAnalysis } from "@/types/ai";
-import { TableIntelligenceProvider } from "./table-intelligence-provider";
+import { TableIntelligenceAgent } from "./table-intelligence-agent";
 
 export class ClaudeProvider {
   private apiKey: string;
   private config: AIConfig;
-  private tableIntelligenceProvider: TableIntelligenceProvider;
+  private tableIntelligenceAgent: TableIntelligenceAgent;
 
   constructor() {
     this.apiKey =
@@ -67,8 +67,8 @@ Mevcut durum:
       console.warn("Geçerli modeller:", validModels.join(", "));
     }
 
-    // Initialize table intelligence provider
-    this.tableIntelligenceProvider = new TableIntelligenceProvider();
+    // Initialize table intelligence agent (kategori-aware)
+    this.tableIntelligenceAgent = new TableIntelligenceAgent();
   }
 
   /**
@@ -82,17 +82,61 @@ Mevcut durum:
   }
 
   /**
-   * Uzun metinleri chunk'lara böl (max 60000 karakter per chunk - Claude Sonnet 4 için optimize)
+   * 🚀 DİNAMİK BATCH SIZE HESAPLAMA
+   * Büyük şartnameler için agresif paralel işleme stratejisi
+   * Maliyet önemsiz, hız kritik
    */
-  private chunkText(text: string, maxChunkSize: number = 60000): string[] {
+  private calculateOptimalBatchSize(totalChunks: number): number {
+    // Chunk sayısına göre dinamik batch size
+    if (totalChunks <= 5) {
+      return 3;  // Küçük işler: 3 paralel (güvenli)
+    } else if (totalChunks <= 15) {
+      return 5;  // Orta işler: 5 paralel (dengeli)
+    } else if (totalChunks <= 30) {
+      return 7;  // Büyük işler: 7 paralel (agresif)
+    } else {
+      return 10; // Çok büyük işler: 10 paralel (maksimum hız)
+    }
+
+    // NOT: Claude API rate limits (Enterprise tier varsayımı):
+    // - Tier 2: 50 request/min = 0.83 req/sec
+    // - Tier 3: 100 request/min = 1.66 req/sec
+    // - Tier 4: 200 request/min = 3.33 req/sec
+    //
+    // Batch size 10 + 2-3 saniye inter-batch delay ile:
+    // - Dakikada ~20 batch x 10 chunk = ~200 chunk işlenebilir
+    // - Bu da Tier 4 limitlerine uygun
+  }
+
+  /**
+   * Uzun metinleri chunk'lara böl - BÜYÜK VE KARMAŞIK ŞARTNAMELER İÇİN OPTİMİZE
+   *
+   * Gelişmiş özellikler:
+   * - Akıllı chunk boyutu (80K default - Claude limit: 200K token ~150K char safe)
+   * - Overlap stratejisi: Son 2000 karakter sonraki chunk'a kopyalanır (context preservation)
+   * - Sayfa sınırlarını tercih et ama zorla bölmeye de hazır
+   * - Token tahmin kontrolü
+   */
+  private chunkText(text: string, maxChunkSize: number = 80000): string[] {
+    const OVERLAP_SIZE = 2000; // Context korunması için overlap
+    const SAFE_TOKEN_LIMIT = 120000; // Claude 200K limit, güvenli marj
+
+    console.log(`📊 Chunking başlıyor: ${text.length} karakter, max chunk: ${maxChunkSize}`);
+
     const pages = this.splitIntoPages(text);
     const chunks: string[] = [];
     let currentChunk = "";
 
+    // Önce sayfa bazlı chunk'lama dene
     for (const page of pages) {
-      if (currentChunk.length + page.length > maxChunkSize && currentChunk) {
+      const potentialLength = currentChunk.length + page.length;
+
+      if (potentialLength > maxChunkSize && currentChunk) {
         chunks.push(currentChunk);
-        currentChunk = page;
+
+        // Overlap ekle: önceki chunk'ın son kısmını yeni chunk'a ekle
+        const overlapText = currentChunk.slice(-OVERLAP_SIZE);
+        currentChunk = overlapText + "\n\n" + page;
       } else {
         currentChunk += (currentChunk ? "\n\n" : "") + page;
       }
@@ -102,8 +146,59 @@ Mevcut durum:
       chunks.push(currentChunk);
     }
 
-    console.log(`Toplam ${chunks.length} chunk oluşturuldu`);
-    return chunks;
+    // ⚠️ GÜVENLİK KATMANI: Çok büyük chunk'ları zorla böl
+    // Bu katman sayfa işaretleyicisi olmayan veya çok büyük belgeler için kritik
+    const safeChunks: string[] = [];
+    let oversizedCount = 0;
+
+    for (const chunk of chunks) {
+      if (chunk.length <= maxChunkSize) {
+        safeChunks.push(chunk);
+      } else {
+        // Chunk çok büyük - akıllı bölme stratejisi
+        oversizedCount++;
+        console.warn(`⚠️ Oversized chunk tespit edildi: ${chunk.length} chars (${Math.ceil(chunk.length / maxChunkSize)} parçaya bölünecek)`);
+
+        let pos = 0;
+        let subChunkIndex = 0;
+
+        while (pos < chunk.length) {
+          const end = Math.min(pos + maxChunkSize, chunk.length);
+          let subChunk = chunk.substring(pos, end);
+
+          // Overlap ekle (ilk sub-chunk hariç)
+          if (pos > 0 && pos >= OVERLAP_SIZE) {
+            const overlapText = chunk.substring(pos - OVERLAP_SIZE, pos);
+            subChunk = overlapText + subChunk;
+          }
+
+          safeChunks.push(subChunk);
+          subChunkIndex++;
+          pos += maxChunkSize;
+        }
+
+        console.log(`  ✂️ ${oversizedCount}. oversized chunk → ${subChunkIndex} alt parçaya bölündü`);
+      }
+    }
+
+    // Token tahmini ve uyarı
+    const totalChunkTokens = safeChunks.reduce((sum, chunk) => {
+      return sum + Math.ceil(chunk.length * 0.75);
+    }, 0);
+    const avgTokensPerChunk = Math.round(totalChunkTokens / safeChunks.length);
+
+    console.log(`✅ Chunking tamamlandı:`);
+    console.log(`   📦 Toplam chunk: ${safeChunks.length}`);
+    console.log(`   📏 Ortalama chunk boyutu: ${Math.round(text.length / safeChunks.length)} char`);
+    console.log(`   🎯 Oversized chunk sayısı: ${oversizedCount}`);
+    console.log(`   🔢 Tahmini token kullanımı: ~${totalChunkTokens.toLocaleString()} tokens (chunk başına ~${avgTokensPerChunk})`);
+
+    if (avgTokensPerChunk > SAFE_TOKEN_LIMIT) {
+      console.warn(`⚠️ UYARI: Chunk başına token kullanımı çok yüksek! (${avgTokensPerChunk} > ${SAFE_TOKEN_LIMIT})`);
+      console.warn(`   💡 Öneri: maxChunkSize'ı ${Math.round(maxChunkSize * 0.7)} karaktere düşürün`);
+    }
+
+    return safeChunks;
   }
 
   async extractStructuredData(text: string): Promise<ExtractedData> {
@@ -311,7 +406,7 @@ Mevcut durum:
     chunkIndex: number,
     totalChunks: number,
     maxRetries = 3
-  ): Promise<Partial<ExtractedData> | null> {
+  ): Promise<{ data: Partial<ExtractedData>; inputTokens: number; outputTokens: number } | null> {
     const chunkStart = Date.now(); // ⏱️ MONITORING: Chunk süresi
 
     // 🔁 RETRY LOOP
@@ -379,9 +474,10 @@ Mevcut durum:
         const result = await response.json();
 
         // ⏱️ MONITORING: Token usage + maliyet + süre
+        const inputTokens = result.usage?.input_tokens || 0;
+        const outputTokens = result.usage?.output_tokens || 0;
+
         if (result.usage) {
-          const inputTokens = result.usage.input_tokens || 0;
-          const outputTokens = result.usage.output_tokens || 0;
           const totalTokens = inputTokens + outputTokens;
           const estimatedCost = (inputTokens * 0.003 + outputTokens * 0.015) / 1000;
 
@@ -409,7 +505,7 @@ Mevcut durum:
             console.log(`✅ Chunk ${chunkIndex + 1}/${totalChunks} başarıyla işlendi`);
             console.log(`   ⏱️ Toplam Süre: ${chunkDuration}ms (${Math.round(chunkDuration / 1000)}s)`);
 
-            return chunkData;
+            return { data: chunkData, inputTokens, outputTokens };
           } catch (parseError: any) {
             console.warn(`⚠️ Chunk ${chunkIndex + 1} - JSON parse hatası (attempt ${attemptNumber})`);
 
@@ -456,21 +552,39 @@ Mevcut durum:
    * Uzun metinleri chunk'lara böl ve paralel işle (HIZLI!)
    */
   private async extractFromChunks(text: string): Promise<ExtractedData> {
-    // Chunk boyutunu küçülttük: 60K karakter (~45K tokens)
-    // Claude prompt ~5K karakter + 60K text = 65K karakter = ~49K tokens (200K limit içinde)
-    const chunks = this.chunkText(text, 60000);
-    console.log(`⚠️ Text too long (${text.length} chars), chunking into ${chunks.length} chunks of 60K chars each`);
-    console.log("⚡ PARALEL İŞLEME AKTIF - 3 chunk aynı anda işleniyor");
+    // 🚀 OPTİMİZE CHUNK BOYUTU: 80K karakter (~60K tokens)
+    // Claude Sonnet 4 limiti: 200K token (150K safe)
+    // Overlap eklendiğinden chunk'lar biraz daha büyüyebilir ama safe limit içinde
+    // Prompt ~5K karakter + 80K text + 2K overlap = 87K karakter = ~65K tokens (güvenli)
+    const chunks = this.chunkText(text, 80000);
+    console.log(`⚠️ Text too long (${text.length} chars), chunking into ${chunks.length} chunks`);
 
-    const BATCH_SIZE = 3; // Aynı anda 3 chunk işle (rate limit için güvenli)
+    // 🚀 DİNAMİK BATCH SIZE - Büyük şartnameler için agresif paralel işleme
+    // Claude API limit: 50 request/min (Tier 2), 100 request/min (Tier 3)
+    // Maliyet önemsiz olduğundan maksimum hız öncelik
+    const DYNAMIC_BATCH_SIZE = this.calculateOptimalBatchSize(chunks.length);
+    const INTER_BATCH_DELAY = chunks.length > 20 ? 2000 : 3000; // Büyük işlemlerde daha az bekleme
+
+    console.log(`⚡ PARALEL İŞLEME AKTIF - ${DYNAMIC_BATCH_SIZE} chunk aynı anda işleniyor`);
+    console.log(`📊 Toplam ${Math.ceil(chunks.length / DYNAMIC_BATCH_SIZE)} batch işlenecek`);
+
     const allExtractedData: Partial<ExtractedData>[] = [];
+    const batchTimings: number[] = [];
+    const overallStart = Date.now();
+
+    // 💰 Maliyet tracking
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
 
     // Chunk'ları batch'lere böl ve paralel işle
-    for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
-      const batchChunks = chunks.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < chunks.length; i += DYNAMIC_BATCH_SIZE) {
+      const batchChunks = chunks.slice(i, i + DYNAMIC_BATCH_SIZE);
       const batchStartIndex = i;
+      const batchNumber = Math.floor(i / DYNAMIC_BATCH_SIZE) + 1;
+      const totalBatches = Math.ceil(chunks.length / DYNAMIC_BATCH_SIZE);
 
-      console.log(`\n📦 Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batchChunks.length} chunk paralel işleniyor...`);
+      const batchStart = Date.now();
+      console.log(`\n📦 Batch ${batchNumber}/${totalBatches}: ${batchChunks.length} chunk paralel işleniyor...`);
 
       // Bu batch'teki tüm chunk'ları paralel işle
       const batchPromises = batchChunks.map((chunk, idx) =>
@@ -478,25 +592,57 @@ Mevcut durum:
       );
 
       const batchResults = await Promise.all(batchPromises);
+      const batchDuration = Date.now() - batchStart;
+      batchTimings.push(batchDuration);
 
-      // Başarılı sonuçları ekle
+      // Başarılı sonuçları ekle ve token kullanımını topla
+      const successCount = batchResults.filter(r => r !== null).length;
       batchResults.forEach((result) => {
         if (result) {
-          allExtractedData.push(result);
+          allExtractedData.push(result.data);
+          totalInputTokens += result.inputTokens;
+          totalOutputTokens += result.outputTokens;
         }
       });
 
-      // Sonraki batch'e geçmeden önce kısa bekleme (rate limit)
-      if (i + BATCH_SIZE < chunks.length) {
-        console.log("⏱️  Sonraki batch için 3 saniye bekleniyor...");
-        await new Promise(resolve => setTimeout(resolve, 3000));
+      console.log(`✅ Batch ${batchNumber} tamamlandı (${batchDuration}ms, ${Math.round(batchDuration / 1000)}s)`);
+      console.log(`   Başarılı: ${successCount}/${batchChunks.length} chunk`);
+
+      // İlerleme tahmini
+      if (batchNumber < totalBatches) {
+        const avgBatchTime = batchTimings.reduce((a, b) => a + b, 0) / batchTimings.length;
+        const remainingBatches = totalBatches - batchNumber;
+        const estimatedRemainingTime = Math.round((avgBatchTime * remainingBatches + INTER_BATCH_DELAY * remainingBatches) / 1000);
+        console.log(`⏱️  Tahmini kalan süre: ~${estimatedRemainingTime} saniye`);
+      }
+
+      // Sonraki batch'e geçmeden önce kısa bekleme (rate limit protection)
+      if (i + DYNAMIC_BATCH_SIZE < chunks.length) {
+        console.log(`⏳ Sonraki batch için ${INTER_BATCH_DELAY}ms bekleniyor (rate limit koruması)...`);
+        await new Promise(resolve => setTimeout(resolve, INTER_BATCH_DELAY));
       }
     }
 
+    const overallDuration = Date.now() - overallStart;
+    const avgChunkTime = Math.round(overallDuration / chunks.length);
+
+    // 💰 TOPLAM MALİYET HESAPLAMA
+    const totalTokens = totalInputTokens + totalOutputTokens;
+    const totalCost = (totalInputTokens * 0.003 + totalOutputTokens * 0.015) / 1000;
+
     console.log(`\n✅ Toplam ${allExtractedData.length}/${chunks.length} chunk başarıyla işlendi`);
+    console.log(`⏱️  Toplam süre: ${Math.round(overallDuration / 1000)} saniye (chunk başına ~${avgChunkTime}ms)`);
+    console.log(`\n💰 TOPLAM MALİYET ANALİZİ:`);
+    console.log(`   📄 Belge boyutu: ${text.length.toLocaleString()} karakter`);
+    console.log(`   📊 Input tokens: ${totalInputTokens.toLocaleString()}`);
+    console.log(`   📊 Output tokens: ${totalOutputTokens.toLocaleString()}`);
+    console.log(`   📊 Toplam tokens: ${totalTokens.toLocaleString()}`);
+    console.log(`   💵 Input maliyet: $${((totalInputTokens * 0.003) / 1000).toFixed(4)}`);
+    console.log(`   💵 Output maliyet: $${((totalOutputTokens * 0.015) / 1000).toFixed(4)}`);
+    console.log(`   💰 TOPLAM MALİYET: $${totalCost.toFixed(4)}`);
 
     // Tüm chunk sonuçlarını birleştir
-    console.log("Chunk sonuçları birleştiriliyor...");
+    console.log("\nChunk sonuçları birleştiriliyor...");
     const mergedData = this.mergeChunkResults(allExtractedData);
 
     return this.validateExtractedData(mergedData as ExtractedData);
@@ -608,11 +754,11 @@ Mevcut durum:
   async analyzeContext(
     extractedData: ExtractedData
   ): Promise<ContextualAnalysis> {
-    // 🧠 YENİ: Tablolar varsa, önce Table Intelligence çalıştır
+    // 🧠 YENİ: Tablolar varsa, önce Table Intelligence çalıştır (KATEGORİ-AWARE)
     if (extractedData.tablolar && extractedData.tablolar.length > 0) {
-      console.log("\n🧠 Tablo Intelligence çalıştırılıyor (Bağlamsal Analiz fazında)...");
+      console.log("\n🧠 Tablo Intelligence çalıştırılıyor (KATEGORİ BAZLI ANALİZ)...");
       try {
-        const intelligence = await this.tableIntelligenceProvider.extractIntelligence(
+        const intelligence = await this.tableIntelligenceAgent.analyzeTableIntelligence(
           extractedData.tablolar
         );
 

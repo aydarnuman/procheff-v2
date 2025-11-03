@@ -2,6 +2,7 @@ import { TextExtractionProvider } from "./text-extraction-provider";
 import { TableExtractionProvider } from "./table-extraction-provider";
 import { TableDetector } from "../utils/table-detector";
 import { ExtractedData } from "@/types/ai";
+import { categorizeTables } from "./table-categorizer";
 
 /**
  * Dual API Orchestrator - İki API'yi koordine eder
@@ -114,12 +115,18 @@ export class DualAPIOrchestrator {
     if (tableData) {
       console.log("  ✅ Table API verileri ekleniyor...");
 
-      // YENİ: Tablolar array'ini ekle (Table Intelligence bağlamsal analizde çalışacak)
+      // YENİ: Tablolar array'ini ekle VE KATEGORİZE ET
       if (tableData.tablolar && Array.isArray(tableData.tablolar)) {
-        merged.tablolar = tableData.tablolar;
-        console.log(`    - tablolar: ${tableData.tablolar.length} adet tablo bulundu`);
-        tableData.tablolar.forEach((tablo: any, i: number) => {
-          console.log(`      Tablo ${i + 1}: ${tablo.baslik} (${tablo.satir_sayisi} satır, güven: ${Math.round(tablo.guven * 100)}%)`);
+        console.log(`    - ${tableData.tablolar.length} adet tablo bulundu, kategorize ediliyor...`);
+
+        // 🚀 TABLO KATEGORİZASYONU - AI ile akıllı kategorizasyon
+        const categorizedTables = await categorizeTables(tableData.tablolar);
+        merged.tablolar = categorizedTables;
+
+        // Kategorizasyon sonuçlarını logla
+        console.log(`    ✅ Tablolar kategorize edildi:`);
+        categorizedTables.forEach((tablo: any, i: number) => {
+          console.log(`      Tablo ${i + 1}: [${tablo.category}] ${tablo.baslik} (${tablo.satir_sayisi} satır, güven: ${Math.round(tablo.guven * 100)}%)`);
         });
       }
 
