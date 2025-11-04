@@ -109,6 +109,210 @@ export default function IhalePage() {
   const [analysisStage, setAnalysisStage] = useState("");
   const [useOCR, setUseOCR] = useState(true); // Varsayılan olarak açık
 
+  // İhale Takip entegrasyonu
+  const [showTenderSelection, setShowTenderSelection] = useState(false);
+  const [tenders, setTenders] = useState<any[]>([]);
+  const [loadingTenders, setLoadingTenders] = useState(false);
+  const [selectedTender, setSelectedTender] = useState<any>(null);
+  const [fetchingTenderContent, setFetchingTenderContent] = useState(false);
+  const [tenderSearchQuery, setTenderSearchQuery] = useState('');
+
+  // İhale listesini çek
+  const fetchTenders = async () => {
+    try {
+      setLoadingTenders(true);
+      const response = await fetch('/api/ihale-scraper/list?limit=500');
+      const data = await response.json();
+
+      if (data.success && data.data) {
+        setTenders(data.data);
+        setShowTenderSelection(true);
+      } else {
+        alert('İhaleler yüklenemedi: ' + (data.error || 'Bilinmeyen hata'));
+      }
+    } catch (error) {
+      console.error('Tender fetch error:', error);
+      alert('İhaleler yüklenirken hata oluştu');
+    } finally {
+      setLoadingTenders(false);
+    }
+  };
+
+  // İhale seçildiğinde dokümanları çek ve analiz et
+  const handleTenderSelect = async (tender: any) => {
+    try {
+      setFetchingTenderContent(true);
+      setSelectedTender(tender);
+
+      console.log('🔍 İhale seçildi:', tender.title);
+      console.log('📡 URL:', tender.source_url);
+
+      // İhale içeriğini AI ile çek
+      const response = await fetch('/api/ihale-scraper/fetch-full-content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: tender.source_url,
+          tenderId: tender.id // 🆕 Veritabanına kaydetmek için tender ID'si
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'İçerik çekilemedi');
+      }
+
+      console.log('✅ İhale içeriği çekildi:', result.data);
+
+      // Modal'ı kapat
+      setShowTenderSelection(false);
+
+      // Dokümanları indir ve sisteme yükle
+      const documents = result.data.documents || [];
+      console.log(`📥 ${documents.length} doküman indiriliyor...`);
+
+      const downloadedFiles: File[] = [];
+
+      for (const doc of documents) {
+        try {
+          console.log(`📄 İndiriliyor: ${doc.title}`);
+
+          // Dokümanı indir
+          const downloadResponse = await fetch(`/api/ihale-scraper/download-document?url=${encodeURIComponent(doc.url)}`);
+
+          if (!downloadResponse.ok) {
+            console.error(`❌ ${doc.title} indirilemedi:`, downloadResponse.statusText);
+            continue;
+          }
+
+          // Blob'a çevir
+          const blob = await downloadResponse.blob();
+
+          // Dosya adını belirle (content-disposition header'ından al)
+          const contentDisposition = downloadResponse.headers.get('content-disposition');
+          let filename = doc.title || 'document.pdf';
+
+          if (contentDisposition) {
+            const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+            if (filenameMatch && filenameMatch[1]) {
+              filename = decodeURIComponent(filenameMatch[1].replace(/['"]/g, ''));
+            }
+          }
+
+          // Eğer uzantı yoksa .pdf ekle
+          if (!filename.includes('.')) {
+            filename += '.pdf';
+          }
+
+          // File objesi oluştur
+          const file = new File([blob], filename, { type: blob.type });
+          downloadedFiles.push(file);
+
+          console.log(`✅ ${filename} indirildi (${(blob.size / 1024).toFixed(1)} KB)`);
+        } catch (docError) {
+          console.error(`❌ ${doc.title} indirilirken hata:`, docError);
+        }
+      }
+
+      // İndirilen dosyaları sisteme ekle
+      if (downloadedFiles.length > 0) {
+        console.log(`📂 ${downloadedFiles.length} dosya sisteme ekleniyor...`);
+
+        // Dosyaları store'a ekle
+        for (const file of downloadedFiles) {
+          // File objesini Map'e ekle
+          fileObjectsMapRef.current.set(file.name, file);
+
+          // Metadata'yı store'a ekle
+          addFileStatus({
+            fileMetadata: {
+              name: file.name,
+              size: file.size,
+              type: file.type,
+              lastModified: file.lastModified,
+            },
+            status: 'pending',
+            progress: 'İhale Takip\'ten eklendi - İşlenmeyi bekliyor...'
+          });
+        }
+
+        console.log(`✅ ${downloadedFiles.length} dosya başarıyla eklendi!`);
+
+        // 🆕 1) Malzeme listesi varsa CSV olarak ekle (AI'dan gelen)
+        if (result.data.itemsList) {
+          const itemsBlob = new Blob([result.data.itemsList], { type: 'text/csv' });
+          const itemsFile = new File(
+            [itemsBlob],
+            `ihale_malzeme_listesi_${tender.id || Date.now()}.csv`,
+            { type: 'text/csv' }
+          );
+
+          fileObjectsMapRef.current.set(itemsFile.name, itemsFile);
+
+          addCSVFile({
+            fileMetadata: {
+              name: itemsFile.name,
+              size: itemsFile.size,
+              type: itemsFile.type,
+              lastModified: itemsFile.lastModified,
+            },
+            status: 'pending'
+          });
+
+          console.log('✅ Malzeme listesi CSV olarak eklendi');
+        }
+
+        // 🆕 2) İhale ilanı AYRI TXT dosyası olarak ekle (malzeme listesi olmadan)
+        if (result.data.fullText) {
+          const announcementBlob = new Blob([result.data.fullText], { type: 'text/plain' });
+          const announcementFile = new File(
+            [announcementBlob],
+            `ihale_ilan_${tender.id || Date.now()}.txt`,
+            { type: 'text/plain' }
+          );
+
+          fileObjectsMapRef.current.set(announcementFile.name, announcementFile);
+
+          addFileStatus({
+            fileMetadata: {
+              name: announcementFile.name,
+              size: announcementFile.size,
+              type: announcementFile.type,
+              lastModified: announcementFile.lastModified,
+            },
+            status: 'pending',
+            progress: 'İhale ilanı metni eklendi - İşlenmeyi bekliyor...'
+          });
+
+          console.log('✅ İhale ilanı text dosyası olarak eklendi');
+        }
+
+        // Upload sayfasına geç ki dosyalar görünsün
+        setCurrentStep("upload");
+
+        // Success message (modal kapandıktan sonra göster)
+        setTimeout(() => {
+          const hasItemsList = result.data.itemsList ? '\n📊 Malzeme listesi CSV olarak eklendi' : '';
+          alert(`✅ İhale başarıyla eklendi!\n\n📄 ${downloadedFiles.length} doküman indirildi\n📝 İhale ilanı metni eklendi${hasItemsList}\n\n💡 Dosyaları "Dosyaları İşle" butonuna basarak analiz edebilirsiniz.`);
+        }, 500);
+      } else {
+        // Upload sayfasına geç (en azından ihale ilanı text dosyası var)
+        setCurrentStep("upload");
+
+        setTimeout(() => {
+          alert(`⚠️ İhale çekildi ama doküman indirilemedi.\n\n📝 İhale ilanı metni eklendi.\n\nDokümanları manuel olarak yükleyebilirsiniz.`);
+        }, 500);
+      }
+
+    } catch (error: any) {
+      console.error('❌ İhale çekme hatası:', error);
+      alert('İhale çekilemedi: ' + error.message);
+    } finally {
+      setFetchingTenderContent(false);
+    }
+  };
+
   // Manuel hydration KALDIRILDI - Persist middleware artık yok (PERSIST-OFF.md)
 
   // Sayfa yüklendiğinde eğer currentAnalysis varsa direkt results'a git
@@ -1009,6 +1213,37 @@ export default function IhalePage() {
                 </div>
               ) : (
                 <>
+                  {/* İhale Takipten Seç Butonu */}
+                  <div className="bg-gradient-to-r from-indigo-500/20 to-purple-500/20 rounded-2xl p-6 border border-indigo-500/30 mb-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-lg font-bold text-surface-primary mb-2">
+                          🎯 İhale Takip Sisteminden Seç
+                        </h3>
+                        <p className="text-surface-secondary text-sm">
+                          Takip ettiğiniz ihalelerden birini seçin, dokümanlar otomatik yüklensin
+                        </p>
+                      </div>
+                      <button
+                        onClick={fetchTenders}
+                        disabled={loadingTenders}
+                        className="flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-colors font-medium shadow-lg hover:shadow-indigo-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {loadingTenders ? (
+                          <>
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                            Yükleniyor...
+                          </>
+                        ) : (
+                          <>
+                            <FileText className="w-5 h-5" />
+                            İhale Seç
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
                   {/* BASİT LİSTE - MODAL YOK! */}
                   <SimpleDocumentList
                     fileStatuses={fileStatuses}
@@ -1560,6 +1795,175 @@ export default function IhalePage() {
             </>
           )}
         </AnimatePresence>
+
+        {/* İhale Seçim Modal'ı */}
+        {showTenderSelection && (
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 z-50"
+            onClick={() => setShowTenderSelection(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden border border-gray-200/50 dark:border-indigo-500/30 shadow-2xl shadow-black/20"
+            >
+              {/* Header */}
+              <div className="p-6 border-b border-gray-200/50 dark:border-gray-700/50 space-y-4 bg-gradient-to-r from-indigo-50/50 to-purple-50/50 dark:from-indigo-950/30 dark:to-purple-950/30">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white">İhale Seç</h2>
+                    <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">
+                      {tenders.filter(tender => {
+                        if (!tenderSearchQuery) return true;
+                        const query = tenderSearchQuery.toLowerCase();
+                        const title = tender.title?.toLowerCase() || '';
+                        const org = tender.organization?.toLowerCase() || '';
+                        const city = tender.organization_city?.toLowerCase() || '';
+                        const sourceId = tender.source_id?.toLowerCase() || '';
+                        const rawJson = tender.raw_json ? JSON.stringify(tender.raw_json).toLowerCase() : '';
+                        return title.includes(query) || org.includes(query) || city.includes(query) || sourceId.includes(query) || rawJson.includes(query);
+                      }).length} ihale bulundu
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowTenderSelection(false)}
+                    className="p-2 hover:bg-gray-200/50 dark:hover:bg-gray-700/50 rounded-lg transition-colors"
+                  >
+                    <span className="text-gray-500 dark:text-gray-400 text-2xl">×</span>
+                  </button>
+                </div>
+
+                {/* 🆕 Arama Barı */}
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="İhale ara (Kayıt No, Kurum Adı, Şehir...)..."
+                    value={tenderSearchQuery}
+                    onChange={(e) => setTenderSearchQuery(e.target.value)}
+                    className="w-full px-4 py-3 pl-11 bg-white/80 dark:bg-gray-800/80 border border-gray-300/50 dark:border-gray-600/50 rounded-xl text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-transparent transition-all shadow-sm"
+                  />
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500">
+                    🔍
+                  </div>
+                  {tenderSearchQuery && (
+                    <button
+                      onClick={() => setTenderSearchQuery('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors text-xl"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* İhale Listesi */}
+              <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)] bg-gray-50/50 dark:bg-gray-950/30">
+                {tenders.filter(tender => {
+                  if (!tenderSearchQuery) return true;
+                  const query = tenderSearchQuery.toLowerCase();
+                  const title = tender.title?.toLowerCase() || '';
+                  const org = tender.organization?.toLowerCase() || '';
+                  const city = tender.organization_city?.toLowerCase() || '';
+                  const sourceId = tender.source_id?.toLowerCase() || '';
+                  const rawJson = tender.raw_json ? JSON.stringify(tender.raw_json).toLowerCase() : '';
+                  return title.includes(query) || org.includes(query) || city.includes(query) || sourceId.includes(query) || rawJson.includes(query);
+                }).length === 0 ? (
+                  <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                    <FileText className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                    <p>Henüz ihale bulunamadı</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {tenders.filter(tender => {
+                      if (!tenderSearchQuery) return true;
+                      const query = tenderSearchQuery.toLowerCase();
+                      const title = tender.title?.toLowerCase() || '';
+                      const org = tender.organization?.toLowerCase() || '';
+                      const city = tender.organization_city?.toLowerCase() || '';
+                      const sourceId = tender.source_id?.toLowerCase() || '';
+                      const rawJson = tender.raw_json ? JSON.stringify(tender.raw_json).toLowerCase() : '';
+                      return title.includes(query) || org.includes(query) || city.includes(query) || sourceId.includes(query) || rawJson.includes(query);
+                    }).map((tender) => {
+                      // İhale başlığı düzeltme - "Belirtilmemiş" ise organization'dan çek
+                      const displayTitle = tender.title && tender.title !== 'Belirtilmemiş'
+                        ? tender.title
+                        : tender.organization?.split(' ').slice(0, 10).join(' ') || 'İhale Başlığı Yok';
+
+                      // Kurum adı kısalt (ilk 40 karakter)
+                      const displayOrg = tender.organization?.length > 40
+                        ? tender.organization.slice(0, 40) + '...'
+                        : tender.organization || 'Belirtilmemiş';
+
+                      // Şehir adı parse et (karışık data'dan temiz şehir adı çıkar)
+                      const parseCity = (cityData: string) => {
+                        if (!cityData) return 'Belirtilmemiş';
+
+                        // Türkiye şehir isimleri listesi (ilk kelime genelde şehir)
+                        const cityMatch = cityData.match(/^([A-ZĞÜŞİÖÇ][a-zğüşıöç]+)/);
+                        if (cityMatch) return cityMatch[1];
+
+                        // Fallback: İlk kelimeyi al
+                        const firstWord = cityData.split(/[^a-zA-ZğüşıöçĞÜŞİÖÇ]/)[0];
+                        return firstWord || 'Belirtilmemiş';
+                      };
+
+                      const displayCity = parseCity(tender.organization_city);
+
+                      return (
+                        <div
+                          key={tender.id}
+                          className="bg-white/80 dark:bg-gray-800/60 backdrop-blur-sm rounded-xl p-4 border border-gray-200/50 dark:border-gray-700/30 hover:border-indigo-400/50 dark:hover:border-indigo-500/50 hover:shadow-lg hover:shadow-indigo-500/10 transition-all cursor-pointer group"
+                          onClick={() => handleTenderSelect(tender)}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <h3 className="text-sm font-semibold text-gray-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors mb-2.5 line-clamp-2 leading-snug">
+                                {displayTitle}
+                              </h3>
+
+                              {/* Detaylar: Kurum, Şehir, Kaynak, Kayıt No */}
+                              <div className="space-y-1.5 text-xs text-gray-600 dark:text-gray-400">
+                                <div className="flex items-center gap-2">
+                                  <span className="opacity-60 flex-shrink-0">📍</span>
+                                  <span className="line-clamp-1">{tender.organization || 'Belirtilmemiş'}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="opacity-60 flex-shrink-0">🏙️</span>
+                                  <span>{displayCity}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="opacity-60 flex-shrink-0">🔗</span>
+                                  <span className="uppercase font-medium text-indigo-600 dark:text-indigo-400">{tender.source || 'N/A'}</span>
+                                </div>
+                                {/* 🆕 Kayıt No */}
+                                {tender.raw_json?.['Kayıt no'] && (
+                                  <div className="flex items-center gap-2">
+                                    <span className="opacity-60 flex-shrink-0">🔢</span>
+                                    <span className="font-mono text-xs text-emerald-600 dark:text-emerald-400">{tender.raw_json['Kayıt no']}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Loading indicator for selected tender */}
+                            {fetchingTenderContent && selectedTender?.id === tender.id && (
+                              <div className="flex-shrink-0">
+                                <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { createClient } from '@supabase/supabase-js';
-import type { ScrapedTender, CategorizedTender, TenderInsertPayload } from '../types';
+import type { ScrapedTender, CategorizedTender, TenderInsertPayload, TenderItem } from '../types';
 
 // Client (browser-safe)
 export const supabase = createClient(
@@ -80,6 +80,12 @@ export class TenderDatabase {
       }
 
       console.log(`✅ Tender inserted: ${data.id}`);
+
+      // 🆕 Insert tender items (if exists)
+      if (tender.raw_json?.items && Array.isArray(tender.raw_json.items)) {
+        await this.bulkInsertTenderItems([data], [tender]);
+      }
+
       return { success: true, id: data.id };
     } catch (error: any) {
       console.error('Insert exception:', error);
@@ -130,6 +136,9 @@ export class TenderDatabase {
           const insertedCount = data?.length || 0;
           inserted += insertedCount;
           console.log(`✅ Batch inserted: ${insertedCount} tenders`);
+
+          // 🆕 Insert tender_items for each tender (if raw_json.items exists)
+          await this.bulkInsertTenderItems(data, batch);
         }
       } catch (error: any) {
         console.error(`❌ Batch exception: ${error.message}`);
@@ -257,6 +266,73 @@ export class TenderDatabase {
   }
 
   /**
+   * 🆕 Get tender by ID
+   */
+  static async getTenderById(id: string): Promise<any | null> {
+    try {
+      const { data, error } = await supabase
+        .from('ihale_listings')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (error) {
+        console.error('Get tender by ID error:', error);
+        return null;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Get tender by ID exception:', error);
+      return null;
+    }
+  }
+
+  /**
+   * 🆕 Update tender with AI analysis results
+   */
+  static async updateTenderWithAIAnalysis(
+    id: string,
+    analysisData: {
+      budget?: number;
+      announcement_date?: string;
+      tender_date?: string;
+      deadline_date?: string;
+      tender_type?: string;
+      procurement_type?: string;
+      category?: string;
+      specification_url?: string;
+      announcement_text?: string;
+      is_catering?: boolean;
+      catering_confidence?: number;
+      ai_categorization_reasoning?: string;
+      total_items?: number;
+      total_meal_quantity?: number;
+      estimated_budget_from_items?: number;
+      ai_analyzed?: boolean;
+      ai_analyzed_at?: string;
+      raw_json?: any;
+    }
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const { error } = await supabaseAdmin
+        .from('ihale_listings')
+        .update(analysisData)
+        .eq('id', id);
+
+      if (error) {
+        console.error('Update tender with AI analysis error:', error);
+        return { success: false, error: error.message };
+      }
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('Update tender with AI analysis exception:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
    * Log scraping run
    */
   static async logScraping(logData: {
@@ -335,6 +411,80 @@ export class TenderDatabase {
 
     if (error) {
       console.error('Search error:', error);
+      return [];
+    }
+
+    return data || [];
+  }
+
+  /**
+   * 🆕 Bulk insert tender items (mal/hizmet kalemleri)
+   * Tender insert edildikten sonra çağrılır
+   */
+  static async bulkInsertTenderItems(
+    insertedTenders: { id: string }[],
+    originalPayloads: TenderInsertPayload[]
+  ): Promise<void> {
+    const allItems: any[] = [];
+
+    // Her tender için items'ları topla
+    for (let i = 0; i < insertedTenders.length; i++) {
+      const tender = insertedTenders[i];
+      const payload = originalPayloads[i];
+
+      // raw_json'da items varsa
+      if (payload.raw_json?.items && Array.isArray(payload.raw_json.items)) {
+        const items = payload.raw_json.items as TenderItem[];
+
+        items.forEach((item, index) => {
+          allItems.push({
+            tender_id: tender.id,
+            item_number: item.item_number ?? index + 1,
+            item_name: item.item_name,
+            quantity: item.quantity,
+            unit: item.unit,
+            unit_price: item.unit_price,
+            total_price: item.total_price,
+          });
+        });
+      }
+    }
+
+    if (allItems.length === 0) {
+      return; // No items to insert
+    }
+
+    console.log(`   📋 Inserting ${allItems.length} tender items...`);
+
+    // Batch insert items
+    const BATCH_SIZE = 500; // Items are smaller, can handle more per batch
+    for (let i = 0; i < allItems.length; i += BATCH_SIZE) {
+      const batch = allItems.slice(i, Math.min(i + BATCH_SIZE, allItems.length));
+
+      const { error } = await supabaseAdmin
+        .from('tender_items')
+        .insert(batch);
+
+      if (error) {
+        console.error(`   ❌ Items batch insert error: ${error.message}`);
+      } else {
+        console.log(`   ✅ Items batch inserted: ${batch.length} items`);
+      }
+    }
+  }
+
+  /**
+   * 🆕 Get tender items for a specific tender
+   */
+  static async getTenderItems(tenderId: string): Promise<TenderItem[]> {
+    const { data, error } = await supabase
+      .from('tender_items')
+      .select('*')
+      .eq('tender_id', tenderId)
+      .order('item_number', { ascending: true });
+
+    if (error) {
+      console.error('Get tender items error:', error);
       return [];
     }
 

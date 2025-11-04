@@ -5,6 +5,7 @@
 
 import { NextResponse } from 'next/server';
 import { ScraperOrchestrator } from '@/lib/ihale-scraper/orchestrator';
+import { getDatabase } from '@/lib/ihale-scraper/database/sqlite-client';
 
 export async function GET(request: Request) {
   try {
@@ -17,37 +18,56 @@ export async function GET(request: Request) {
       );
     }
 
-    console.log('🚀 CRON: İhale scraping başlatıldı...');
+    console.log('🚀 CRON: İhale scraping başlatıldı (BACKGROUND MODE)...');
     console.log('⏰ Zamanlama: Her gün 10:00');
 
-    const startTime = Date.now();
+    // 🔧 ÖNCE DATABASE'İ INIT ET
+    getDatabase();
+    console.log('📦 Database initialized before scraping');
 
-    // Run scraper
-    const result = await ScraperOrchestrator.scrapeAll({
-      sources: ['ihalebul'],
-      maxPages: 10,
-      parallelPages: 5,
-      testMode: false, // Production mode - sadece catering ihaleleri
-    });
+    const orchestrator = new ScraperOrchestrator();
 
-    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-
-    console.log(`✅ Scraping tamamlandı (${duration}s)`);
-    console.log(`   📊 Toplam: ${result.totalScraped}`);
-    console.log(`   ✅ Yeni: ${result.newListings}`);
-    console.log(`   ⚠️  Duplicate: ${result.duplicates}`);
-    console.log(`   ❌ Hata: ${result.errors}`);
-
-    return NextResponse.json({
+    // 🚀 HEMEN CEVAP DÖN - Vercel timeout'tan kaçın!
+    const response = NextResponse.json({
       success: true,
-      message: `✅ Scraping tamamlandı`,
-      totalScraped: result.totalScraped,
-      newListings: result.newListings,
-      duplicates: result.duplicates,
-      errors: result.errors,
-      durationSeconds: parseFloat(duration),
+      message: '✅ Scraping arka planda başlatıldı',
       timestamp: new Date().toISOString(),
     });
+
+    // ⚡ ARKA PLANDA ÇALIŞTIR (await yok!)
+    orchestrator.runSingle('ihalebul', false).then(async (result) => {
+      console.log(`✅ Scraping tamamlandı`);
+      console.log(`   📊 Toplam: ${result.totalScraped}`);
+      console.log(`   ✅ Yeni: ${result.newTenders || 0}`);
+      console.log(`   ❌ Hata: ${result.errors.length}`);
+
+      // Quick Fix'i de arka planda çalıştır
+      console.log('\n⚡ Quick Fix başlatılıyor (eksik veriler için)...');
+      try {
+        const baseUrl = process.env.NEXTAUTH_URL || process.env.VERCEL_URL
+          ? `https://${process.env.VERCEL_URL}`
+          : 'http://localhost:3000';
+
+        const quickFixResponse = await fetch(`${baseUrl}/api/ihale-scraper/quick-fix`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+
+        const quickFixData = await quickFixResponse.json();
+
+        if (quickFixData.success) {
+          console.log(`✅ Quick Fix tamamlandı: ${quickFixData.fixed} ihale düzeltildi`);
+        } else {
+          console.log(`⚠️ Quick Fix hatası: ${quickFixData.error}`);
+        }
+      } catch (quickFixError: any) {
+        console.warn(`⚠️ Quick Fix çalıştırılamadı: ${quickFixError.message}`);
+      }
+    }).catch(error => {
+      console.error('❌ Scraping error:', error);
+    });
+
+    return response;
   } catch (error: any) {
     console.error('❌ Cron exception:', error);
     return NextResponse.json(

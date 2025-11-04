@@ -1,10 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { getDatabase } from '@/lib/ihale-scraper/database/sqlite-client';
 
 // Delete single tender
 export async function DELETE(request: Request) {
@@ -16,14 +11,11 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ success: false, error: 'ID required' }, { status: 400 });
     }
 
-    const { error } = await supabase
-      .from('ihale_listings')
-      .delete()
-      .eq('id', id);
+    const db = getDatabase();
+    const result = db.prepare('DELETE FROM ihale_listings WHERE id = ?').run(id);
 
-    if (error) {
-      console.error('Delete error:', error);
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    if (result.changes === 0) {
+      return NextResponse.json({ success: false, error: 'Tender not found' }, { status: 404 });
     }
 
     return NextResponse.json({ success: true });
@@ -45,17 +37,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'IDs array required' }, { status: 400 });
     }
 
-    const { error } = await supabase
-      .from('ihale_listings')
-      .delete()
-      .in('id', ids);
+    const db = getDatabase();
+    const placeholders = ids.map(() => '?').join(',');
+    const result = db.prepare(`DELETE FROM ihale_listings WHERE id IN (${placeholders})`).run(...ids);
 
-    if (error) {
-      console.error('Bulk delete error:', error);
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-    }
-
-    return NextResponse.json({ success: true, deleted: ids.length });
+    return NextResponse.json({ success: true, deleted: result.changes });
   } catch (error) {
     console.error('Bulk delete error:', error);
     return NextResponse.json(

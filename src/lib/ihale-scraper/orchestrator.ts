@@ -8,7 +8,8 @@ import { IhalebulScraper } from './scrapers/ihalebul-scraper';
 import { EkapScraper } from './scrapers/ekap-scraper';
 import { TenderCategorizer } from './ai/tender-categorizer';
 import { GeminiCategorizer } from './ai/gemini-categorizer';
-import { TenderDatabase } from './database/supabase-client';
+import { ClaudeCategorizer } from './ai/claude-categorizer';
+import { TenderDatabase } from './database/sqlite-client';
 import { NotificationService } from './notifications/notification-service';
 import { getScrapersByPriority, GLOBAL_CONFIG } from './config';
 import type { ScrapedTender, CategorizedTender, ScrapeResult } from './types';
@@ -16,24 +17,36 @@ import type { ScrapedTender, CategorizedTender, ScrapeResult } from './types';
 export class ScraperOrchestrator {
   private categorizer: TenderCategorizer;
   private geminiCategorizer: GeminiCategorizer | null = null;
+  private claudeCategorizer: ClaudeCategorizer | null = null;
 
   constructor() {
     this.categorizer = new TenderCategorizer();
 
-    // Gemini'yi dene, yoksa fallback
+    // 🚀 İlk önce Claude Haiku'yu dene (6x HIZLI!)
     try {
-      this.geminiCategorizer = new GeminiCategorizer();
-      console.log('✅ Gemini AI categorizer initialized (200x ucuz!)');
+      this.claudeCategorizer = new ClaudeCategorizer();
+      console.log('✅ Claude Haiku AI categorizer initialized (6x hızlı!)');
     } catch (error) {
-      console.warn('⚠️ Gemini AI başlatılamadı, Claude fallback kullanılacak');
-      this.geminiCategorizer = null;
+      console.warn('⚠️ Claude AI başlatılamadı, Gemini fallback kullanılacak');
+      this.claudeCategorizer = null;
+    }
+
+    // Gemini'yi dene (yedek)
+    if (!this.claudeCategorizer) {
+      try {
+        this.geminiCategorizer = new GeminiCategorizer();
+        console.log('✅ Gemini AI categorizer initialized (200x ucuz!)');
+      } catch (error) {
+        console.warn('⚠️ Gemini AI de başlatılamadı, sadece keyword filter kullanılacak');
+        this.geminiCategorizer = null;
+      }
     }
   }
 
   /**
    * Run all enabled scrapers
    */
-  async runAll(): Promise<{
+  async runAll(testMode: boolean = false): Promise<{
     success: boolean;
     results: ScrapeResult[];
     totalNew: number;
@@ -52,14 +65,26 @@ export class ScraperOrchestrator {
       try {
         console.log(`\n📍 Running: ${config.name}`);
 
-        // Create scraper instance
+        // 🆕 Callback: Her batch tamamlandığında çağrılacak - ANINDA database'e kaydet
         let scraper;
+        let batchSavedTotal = 0;
+
+        const onBatchComplete = async (batchTenders: ScrapedTender[]) => {
+          if (batchTenders.length > 0) {
+            console.log(`\n💾 ${batchTenders.length} ihale parti parti database'e kaydediliyor...`);
+            const saved = await this.saveMinimalTenders(batchTenders, testMode);
+            batchSavedTotal += saved.newCount;
+            totalNew += saved.newCount; // Toplama ekle
+            console.log(`✅ ${saved.newCount} yeni ihale kaydedildi (Toplam: ${batchSavedTotal})`);
+          }
+        };
+
         switch (config.id) {
           case 'ilan_gov':
             scraper = new IlanGovScraper(config);
             break;
           case 'ihalebul':
-            scraper = new IhalebulScraper(config);
+            scraper = new IhalebulScraper(config, onBatchComplete); // ✅ Callback ekle!
             break;
           case 'ekap':
             scraper = new EkapScraper(config);
@@ -72,23 +97,7 @@ export class ScraperOrchestrator {
         // Execute scraping
         const result = await scraper.execute();
         results.push(result);
-
-        if (result.success && result.tenders.length > 0) {
-          // NOT: Başlık temizleme şimdilik devre dışı - Gemini rate limit aşımı önlemek için
-          // Categorize with AI
-          const categorized = await this.categorizeTenders(result.tenders);
-
-          // Save to database
-          const saved = await this.saveTenders(categorized);
-
-          totalNew += saved.newCount;
-          totalCatering += saved.cateringCount;
-
-          // Send notifications for new catering tenders
-          if (saved.newCatering.length > 0) {
-            await this.sendNotifications(saved.newCatering);
-          }
-        }
+        result.newTenders = batchSavedTotal; // Batch kayıtlarını güncelle
 
         // Log to database
         await TenderDatabase.logScraping({
@@ -97,7 +106,7 @@ export class ScraperOrchestrator {
           completedAt: result.completedAt,
           status: result.success ? 'success' : 'failed',
           totalScraped: result.totalScraped,
-          newListings: result.newTenders,
+          newListings: batchSavedTotal, // Batch kayıtlarını kullan
           updatedListings: result.updatedTenders,
           errorMessage: result.errors.length > 0 ? result.errors[0].message : undefined,
         });
@@ -132,12 +141,24 @@ export class ScraperOrchestrator {
     }
 
     let scraper;
+    let totalSaved = 0;
+
+    // 🆕 Callback: Her batch tamamlandığında çağrılacak - ANINDA database'e kaydet
+    const onBatchComplete = async (batchTenders: ScrapedTender[]) => {
+      if (batchTenders.length > 0) {
+        console.log(`\n💾 ${batchTenders.length} ihale parti parti database'e kaydediliyor...`);
+        const saved = await this.saveMinimalTenders(batchTenders, testMode);
+        totalSaved += saved.newCount;
+        console.log(`✅ ${saved.newCount} yeni ihale kaydedildi (Toplam: ${totalSaved})`);
+      }
+    };
+
     switch (sourceId) {
       case 'ilan_gov':
         scraper = new IlanGovScraper(config);
         break;
       case 'ihalebul':
-        scraper = new IhalebulScraper(config);
+        scraper = new IhalebulScraper(config, onBatchComplete);
         break;
       case 'ekap':
         scraper = new EkapScraper(config);
@@ -147,19 +168,7 @@ export class ScraperOrchestrator {
     }
 
     const result = await scraper.execute();
-
-    if (result.success && result.tenders.length > 0) {
-      // NOT: Başlık temizleme şimdilik devre dışı - Gemini rate limit aşımı önlemek için
-      const categorized = await this.categorizeTenders(result.tenders);
-      const saved = await this.saveTenders(categorized, testMode); // TEST MODE: save all
-
-      result.newTenders = saved.newCount;
-
-      // Notifications
-      if (saved.newCatering.length > 0) {
-        await this.sendNotifications(saved.newCatering);
-      }
-    }
+    result.newTenders = totalSaved; // Toplam kaydedilen sayıyı güncelle
 
     // Log
     await TenderDatabase.logScraping({
@@ -242,22 +251,69 @@ export class ScraperOrchestrator {
     const cateringCount = keywordResults.filter(r => r.is_catering).length;
     console.log(`\n✅ Keyword filter: ${cateringCount}/${newTenders.length} catering tespit edildi`);
 
-    // Kullanıcıya hemen keyword sonuçlarını dön
-    const categorizedTenders: CategorizedTender[] = newTenders.map((tender, i) => ({
-      ...tender,
-      is_catering: keywordResults[i].is_catering,
-      catering_confidence: keywordResults[i].confidence,
-      ai_reasoning: keywordResults[i].reasoning,
-      keywords_found: keywordResults[i].keywords_found,
-    }));
+    // ============================================================
+    // 🆕 TIER 2: AI - CATERING TESPİTİ + VERİ TEMİZLEME (TEK SEFERDE!)
+    // Claude Haiku tercih edilir (6x hızlı), yoksa Gemini fallback
+    // ============================================================
+    // Sadece catering olarak işaretlenen ihaleleri AI ile temizle
+    const cateringTenders = newTenders.filter((_, i) => keywordResults[i].is_catering);
 
-    // ============================================================
-    // GEMINI KALDIRILDI - SCRAPING ARTIK ÇOK HIZLI!
-    // ============================================================
-    // Gemini veri temizleme artık scraping'den BAĞIMSIZ:
-    // → Scraping bittikten SONRA /api/ihale-scraper/clean-data çağrılır
-    // → Rate limit yok, acele yok, kullanıcı beklemez!
-    console.log('\n⚡ Scraping tamamlandı - Gemini ayrı çalışacak (veri temizleme için)');
+    let categorizedTenders: CategorizedTender[] = [];
+
+    // 🚀 Önce Claude Haiku'yu dene (6x HIZLI!)
+    const activeAI = this.claudeCategorizer || this.geminiCategorizer;
+    const aiName = this.claudeCategorizer ? 'Claude Haiku' : 'Gemini';
+
+    if (cateringTenders.length > 0 && activeAI) {
+      console.log(`\n🤖 TIER 2: ${aiName} AI - Catering ihalelerini temizliyor (${cateringTenders.length} ihale)`);
+      console.log(`   💡 Hem catering doğrulama HEM veri temizleme AYNI ANDA yapılıyor!`);
+
+      const aiResults = await activeAI.categorizeBatch(cateringTenders);
+
+      // AI sonuçlarını uygula
+      categorizedTenders = newTenders.map((tender, i) => {
+        const tenderId = tender.source_id || `${tender.source}_${i}`;
+        const aiResult = aiResults.get(tenderId);
+
+        if (aiResult) {
+          // AI temizlenmiş veri varsa kullan
+          return {
+            ...tender,
+            // Temizlenmiş verileri uygula
+            organization_city: aiResult.cleaned_city || tender.organization_city,
+            deadline_date: aiResult.cleaned_deadline_date || tender.deadline_date,
+            announcement_date: aiResult.cleaned_announcement_date || tender.announcement_date,
+            tender_date: aiResult.cleaned_tender_date || tender.tender_date,
+            // AI sonuçları
+            is_catering: aiResult.is_catering,
+            catering_confidence: aiResult.confidence,
+            ai_reasoning: aiResult.reasoning,
+            keywords_found: aiResult.keywords_found,
+          };
+        } else {
+          // AI çalışmadıysa keyword sonucunu kullan
+          return {
+            ...tender,
+            is_catering: keywordResults[i].is_catering,
+            catering_confidence: keywordResults[i].confidence,
+            ai_reasoning: keywordResults[i].reasoning,
+            keywords_found: keywordResults[i].keywords_found,
+          };
+        }
+      });
+
+      console.log(`\n✅ ${aiName} tamamlandı: Veriler temizlendi ve database'e hazır!`);
+    } else {
+      // AI yok veya catering yok, sadece keyword kullan
+      console.log(`\n⚠️ AI kullanılamıyor veya catering ihale yok, keyword sonuçları kullanılıyor`);
+      categorizedTenders = newTenders.map((tender, i) => ({
+        ...tender,
+        is_catering: keywordResults[i].is_catering,
+        catering_confidence: keywordResults[i].confidence,
+        ai_reasoning: keywordResults[i].reasoning,
+        keywords_found: keywordResults[i].keywords_found,
+      }));
+    }
 
     return categorizedTenders;
   }
@@ -416,9 +472,15 @@ export class ScraperOrchestrator {
       tender_type: t.tender_type,
       procurement_type: t.procurement_type,
       category: t.category,
+      specification_url: t.specification_url, // 🆕 Şartname dökümanı linki
+      announcement_text: t.announcement_text, // 🆕 İhale ilan metni
       is_catering: t.is_catering,
       catering_confidence: t.catering_confidence,
       ai_categorization_reasoning: t.ai_reasoning,
+      // 🆕 Mal/Hizmet listesi özet
+      total_items: t.total_items,
+      total_meal_quantity: t.total_meal_quantity,
+      estimated_budget_from_items: t.estimated_budget_from_items,
       raw_html: t.raw_html,
       raw_json: t.raw_json,
     }));
@@ -438,6 +500,70 @@ export class ScraperOrchestrator {
       newCount: result.inserted,
       cateringCount: cateringTenders.length,
       newCatering,
+    };
+  }
+
+  /**
+   * 🆕 Save minimal tender data (without AI categorization)
+   * AI analizi sonradan on-demand yapılacak
+   */
+  private async saveMinimalTenders(tenders: ScrapedTender[], saveAll: boolean = false): Promise<{
+    newCount: number;
+  }> {
+    console.log(`\n💾 Saving ${tenders.length} tenders to database...`);
+
+    // Prepare insert payloads - TÜM SCRAPE EDİLEN VERİYİ KAYDET!
+    const payloads = tenders.map(t => {
+      // 🔍 DEBUG: İlk ihaleyi logla
+      if (t.source_id === '1759785131303') {
+        console.log(`🔍 ORCHESTRATOR DEBUG [${t.source_id}]:`);
+        console.log(`   announcement_date:`, t.announcement_date);
+        console.log(`   tender_date:`, t.tender_date);
+        console.log(`   deadline_date:`, t.deadline_date);
+      }
+
+      return {
+        source: t.source,
+        source_id: t.source_id,
+        source_url: t.source_url,
+        title: t.title,
+        organization: t.organization,
+        organization_city: t.organization_city,
+        registration_number: t.registration_number, // ✅ İhale kayıt numarası
+        tender_type: t.tender_type,
+        procurement_type: t.procurement_type,
+        category: t.category,
+
+        // ✅ TARİHLER - SCRAPER'DAN GELİYOR
+        announcement_date: t.announcement_date as any,
+        deadline_date: t.deadline_date as any,
+        tender_date: t.tender_date as any,
+
+      // ✅ BÜTÇE - SCRAPER'DAN GELİYOR
+      budget: t.budget,
+      currency: t.currency || 'TRY',
+
+      // ✅ DÖKÜMAN VE İÇERİK
+      specification_url: t.specification_url,
+      announcement_text: t.announcement_text,
+
+      // ❌ AI kategorilendirmesi YOK - on-demand yapılacak
+        is_catering: false, // Default olarak false, AI analizi sonrası güncellenecek
+        catering_confidence: 0,
+        ai_analyzed: false, // 🆕 AI analizi yapılmadı
+
+        raw_html: t.raw_html,
+        raw_json: t.raw_json,
+      };
+    });
+
+    // Bulk insert
+    const result = await TenderDatabase.bulkInsertTenders(payloads as any);
+
+    console.log(`✅ ${result.inserted} yeni ihale kaydedildi (tarihler dahil)`);
+
+    return {
+      newCount: result.inserted,
     };
   }
 

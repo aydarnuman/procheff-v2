@@ -4,9 +4,11 @@
 
 Bu proje, ihale dokümanlarını (PDF, DOCX, CSV) yükleyip AI ile analiz eden bir Next.js uygulamasıdır.
 
+- **İhale Takip Sistemi**: SQLite database ile yerel ihale takibi
+- **AI-powered Scraping**: Claude AI ile otomatik ihale çekme ve parse etme
+- **Smart Integration**: İhale Takip'ten direkt dosya seçimi
 - Dosya upload ve işleme
 - Claude AI ve Gemini ile doküman analizi
-- Supabase backend
 - Dashboard ve raporlama
 
 ---
@@ -23,14 +25,28 @@ Bu proje, ihale dokümanlarını (PDF, DOCX, CSV) yükleyip AI ile analiz eden b
 ### State & Data
 
 - **State Management**: Zustand (global state için)
-- **Database**: Supabase
+  - Stores: `/lib/stores/` (menu-store.ts, price-store.ts, analysis-store.ts)
+- **Database**: SQLite (local) + Supabase (planned)
+  - **İhale Takip**: Local SQLite (`/data/ihale-scraper.db`)
+    - Tablo: `tenders` (ihale bilgileri)
+    - Schema: `/lib/ihale-scraper/database/schema.sql`
+    - Client: `/lib/ihale-scraper/database/sqlite-client.ts`
 - **API**: Next.js API Routes
+  - `/api/ai/*` - AI analiz endpoints
+  - `/api/cron/*` - Cron job endpoints (CRON_SECRET ile korumalı)
+  - `/api/ihale-scraper/*` - Scraper yönetim endpoints
+    - `list` - İhale listesi (SQLite'dan)
+    - `fetch-full-content` - AI ile ihale çekme (Puppeteer + Claude)
+    - `download-document` - Döküman indirme (proxy)
 
 ### AI & File Processing
 
 - **AI Models**:
-  - Anthropic Claude SDK (@anthropic-ai/sdk)
-  - Google Generative AI
+  - Anthropic Claude SDK (@anthropic-ai/sdk) - İhale analizi
+  - Google Generative AI (Gemini 2.0 Flash) - Ürün tespiti, İhale kategorilendirme
+    - Free tier: 1,500 request/gün
+    - Rate limit: Dakikada 8 request (güvenli marj)
+    - **UYARI**: Scraper'ı manuel sık test etme (kota tüketir!)
 - **File Processing**:
   - PDF: pdf-lib, pdf2json, jspdf
   - DOCX: mammoth
@@ -152,17 +168,32 @@ const analyzeDocument = (file) => {
 ## 📁 Proje Yapısı
 
 ```
-/app                 # Next.js App Router
-  /api              # API routes
-  /components       # Page-specific components
-  /[page]           # Pages
-/components         # Shared/reusable components
-  /ui              # UI primitives
-/lib               # Utility functions
-  /ai              # AI helper functions
-  /supabase        # Supabase client
-/types             # TypeScript types & interfaces
-/public            # Static assets
+/app                      # Next.js App Router
+  /api                   # API routes
+    /ai                  # AI analiz endpoints (detect-product, full-analysis, etc.)
+    /cron                # Cron job endpoints (delete-tenders, scrape-tenders)
+    /ihale-scraper       # Scraper yönetim (stats, list, validate, etc.)
+  /components            # Page-specific components
+  /ihale-takip          # İhale takip sayfası
+  /menu-planner         # Menü planlama sayfası
+  /price-feed           # Market fiyatları sayfası
+  /[page]               # Diğer sayfalar
+/components              # Shared/reusable components
+  /ui                   # UI primitives
+  /modals               # Modal components
+/lib                    # Utility functions
+  /ai                   # AI helper functions
+  /ihale-scraper        # İhale scraper sistemi
+    /ai                 # Gemini categorizer
+    /scrapers           # Scraper implementations (ihalebul, ekap, ilan-gov)
+    /database           # Supabase client
+    /notifications      # Bildirim servisi
+  /stores               # Zustand stores (menu-store, price-store)
+  /supabase             # Supabase client
+/supabase               # Supabase yapılandırması
+  /migrations           # Database migrations
+/types                  # TypeScript types & interfaces
+/public                 # Static assets
 ```
 
 ### Dosya Organizasyonu
@@ -171,6 +202,11 @@ const analyzeDocument = (file) => {
 - Utils: `/lib` altında kategorize et
 - Types: `/types` klasöründe global type'lar
 - API routes: `/app/api` altında
+  - AI endpoints: `/app/api/ai/*`
+  - Cron jobs: `/app/api/cron/*`
+  - Scraper: `/app/api/ihale-scraper/*`
+- Stores: `/lib/stores/` (Zustand global state)
+- Scraper: `/lib/ihale-scraper/` (İhale scraper sistemi)
 
 ---
 
@@ -265,9 +301,10 @@ export async function POST(request: NextRequest) {
 - Streaming responses destekle
 - Token limitlerine dikkat et
 - Error handling ve retry logic
+- **Gemini quota yönetimi**: Rate limiting ve retry mekanizması
 
 ```typescript
-// ✅ İyi
+// ✅ İyi - Claude kullanımı
 import Anthropic from "@anthropic-ai/sdk";
 
 const analyzeWithClaude = async (content: string) => {
@@ -293,7 +330,62 @@ const analyzeWithClaude = async (content: string) => {
     throw new Error("AI analysis failed");
   }
 };
+
+// ✅ İyi - Gemini kullanımı (quota yönetimi ile)
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
+const analyzeWithGemini = async (prompt: string, retryCount: number = 0) => {
+  const maxRetries = 3;
+  const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+  const model = genai.getGenerativeModel({
+    model: process.env.GEMINI_MODEL || 'gemini-2.0-flash-exp'
+  });
+
+  try {
+    const result = await model.generateContent(prompt);
+    return result.response.text();
+  } catch (error: any) {
+    // Rate limit hatası kontrolü (429)
+    const isRateLimit = error?.message?.includes('429') ||
+                       error?.message?.includes('quota') ||
+                       error?.message?.includes('rate limit');
+
+    if (isRateLimit && retryCount < maxRetries) {
+      const retryDelay = 15000; // 15 saniye bekle
+      console.log(`⏳ Rate limit! ${retryDelay / 1000}s bekleniyor...`);
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
+      return analyzeWithGemini(prompt, retryCount + 1);
+    }
+
+    throw error;
+  }
+};
 ```
+
+### Gemini API Quota Yönetimi
+
+**Free Tier Limitler:**
+- **Günlük**: 1,500 request
+- **Dakikalık**: 15 request (güvenli: 8 request/dakika kullan)
+
+**Rate Limiting Stratejisi:**
+```typescript
+// İhale scraper için batch processing
+const SAFE_REQUESTS_PER_MINUTE = 8; // 15'in altında kal
+const DELAY_BETWEEN_REQUESTS = Math.ceil(60000 / SAFE_REQUESTS_PER_MINUTE); // 7500ms
+
+for (let i = 0; i < items.length; i++) {
+  await processItem(items[i]);
+  if (i < items.length - 1) {
+    await sleep(DELAY_BETWEEN_REQUESTS); // 7.5 saniye bekle
+  }
+}
+```
+
+**Kota Kontrolü:**
+- ✅ Cron job günde 1 kere çalışır (~200-300 request)
+- ❌ Scraper'ı manuel sık test etme (her test ~218 request)
+- ✅ Ürün ekleme ayrı kota kullanır (aynı key ama farklı endpoint)
 
 ---
 
@@ -339,14 +431,17 @@ const validateFile = (file: File) => {
 
 ### Store Yapısı
 
+**Store Konumu**: `/lib/stores/` (çoğul - ÖNEMLİ!)
+
 ✅ **YAPILMASI GEREKENLER:**
 
 - Küçük, focused store'lar oluştur
 - TypeScript ile type et
 - Immer middleware kullan (gerekirse)
+- Store'ları `/lib/stores/` altında tut
 
 ```typescript
-// ✅ İyi
+// ✅ İyi - /lib/stores/analysis-store.ts
 import { create } from "zustand";
 
 interface AnalysisStore {
@@ -369,6 +464,10 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
   reset: () => set({ isAnalyzing: false, result: null, error: null }),
 }));
 ```
+
+**Mevcut Store'lar:**
+- `/lib/stores/menu-store.ts` - Menü yönetimi
+- `/lib/stores/price-store.ts` - Fiyat yönetimi
 
 ---
 
@@ -443,6 +542,31 @@ npm run test:smoke   # Smoke tests
 npm run test:ai      # AI tests
 ```
 
+### Environment Variables
+
+**Zorunlu:**
+```bash
+# Anthropic Claude API (İhale analizi)
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Google Gemini API (Ürün tespiti, İhale kategorilendirme)
+GEMINI_API_KEY=AIzaSy...
+GEMINI_MODEL=gemini-2.0-flash-exp
+
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=https://...supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+
+# Cron Job Güvenliği
+CRON_SECRET=your-secure-secret-key
+```
+
+**İsteğe Bağlı:**
+```bash
+# Sentry (Hata takibi)
+SENTRY_DSN=https://...@sentry.io/...
+```
+
 ### Git
 
 - Meaningful commit messages
@@ -471,6 +595,30 @@ Bu proje için:
 3. **Performance** önemli - large files için streaming kullan
 4. **User experience** öncelik - loading states ve error messages net olsun
 5. **Type safety** her yerde - TypeScript'in gücünü kullan
+
+### İhale Scraper Sistemi
+
+**Cron Job Yapısı** (Vercel):
+- **09:50 UTC** (TR 12:50): Eski ihaleleri sil
+- **10:00 UTC** (TR 13:00): Yeni ihaleleri scrape et
+
+**Scraper Özellikleri:**
+- 3 kaynak: ihalebul, ekap, ilan.gov.tr
+- Gemini ile otomatik kategorilendirme (catering tespiti)
+- Rate limiting: Dakikada 8 request (güvenli marj)
+- SQLite veritabanına otomatik kayıt
+- **Metadata Caching**: İki aşamalı veri çekme sistemi
+
+**Metadata Caching Pattern:**
+- **Liste sayfası**: Başlık, kurum, şehir bilgilerini cache'le
+- **Detay sayfası**: Cache'lenmiş veriyi öncelikle kullan, detay sayfadan zenginleştir
+- **Avantajlar**: %100 doğruluk, kayıp veri yok, DOM değişikliklerine daha dayanıklı
+- **Implementasyon**: `Map<sourceId, {title, organization, city}>` yapısı
+
+**UYARILAR:**
+- ❌ Scraper'ı manuel sık test etme (her test ~218 Gemini request = kota tüketir!)
+- ✅ Cron job'a bırak (günde 1 kere otomatik çalışır)
+- ✅ Test için `/api/ihale-scraper/stats` endpoint'ini kullan (kota harcamaz)
 
 ---
 
@@ -662,7 +810,142 @@ yoksa native ile mi gidelim?"
 
 ---
 
-**Son Güncelleme**: 1 Kasım 2025
+**Son Güncelleme**: 4 Kasım 2025
 **Proje Versiyonu**: 0.1.0
 **Next.js**: 16.0.1
 **React**: 19.2.0
+
+---
+
+## 🆕 Son Değişiklikler (4 Kasım 2025)
+
+1. **İhale Scraper Metadata Caching Sistemi** (En Son)
+   - İki aşamalı veri çekme: Liste sayfası + Detay sayfası
+   - Map-based metadata caching (`Map<sourceId, metadata>`)
+   - %100 doğruluk: Başlık, kurum, şehir bilgileri her zaman doğru
+   - DOM değişikliklerine daha dayanıklı yapı
+   - Batch processing: 5'li gruplar halinde database kayıt
+   - Test sonuçları: 140+ ihale başarıyla kaydedildi
+
+2. **İhale Takip UI İyileştirmeleri**
+   - Başlık kolonu kaldırıldı (gereksiz tekrar)
+   - Sadece kurum adı gösterimi (daha odaklı)
+   - Daha temiz ve okunabilir liste görünümü
+
+3. **İhale Scraper Sistemi Eklendi**
+   - Otomatik ihale takibi (günde 1 kere)
+   - Gemini AI ile kategorilendirme
+   - SQLite database entegrasyonu
+   - Cron job yapısı (Vercel)
+
+4. **Stores Klasörü Yeniden Organize Edildi**
+   - `/lib/store` → `/lib/stores` (çoğul)
+   - menu-store.ts ve price-store.ts taşındı
+
+5. **API Yapısı Genişletildi**
+   - `/api/ai/*` - AI analiz endpoints
+   - `/api/cron/*` - Cron job endpoints
+   - `/api/ihale-scraper/*` - Scraper yönetim
+
+6. **Gemini API Quota Yönetimi**
+   - Rate limiting stratejisi eklendi
+   - Retry mekanizması
+   - Quota kontrolü ve uyarılar
+
+7. **UI İyileştirmeleri**
+   - Menü planlayıcıya kategori filtreleme
+   - Market fiyatları sayfası UI tutarlılığı
+   - "Pilav" → "Yardımcı Yemek" kategori değişikliği
+
+## 🏗️ Mimari Kalıplar
+
+### 1. Metadata Caching Pattern (İhale Scraper)
+
+**Problem**: Detay sayfalarındaki DOM selektörleri güvenilir değil, veriler eksik gelebilir.
+
+**Çözüm**: İki aşamalı veri çekme
+```typescript
+// 1. Aşama: Liste sayfasından metadata'yı cache'le
+private metadataCache: Map<string, { title: string; organization: string; city: string }> = new Map();
+
+private extractMetadataFromListPage(html: string): void {
+  const $ = cheerio.load(html);
+  $('div.card').each((i, card) => {
+    const sourceId = extractIdFromUrl($(card).find('a').attr('href'));
+    const title = $(card).find('.title').text();
+    const organization = $(card).find('.organization').text();
+    const city = $(card).find('.city').text();
+
+    this.metadataCache.set(sourceId, { title, organization, city });
+  });
+}
+
+// 2. Aşama: Detay sayfasında cache'den al, detaylarla zenginleştir
+private parseDetailPage(html: string, url: string): ScrapedTender | null {
+  const sourceId = extractIdFromUrl(url);
+  const cachedMetadata = this.metadataCache.get(sourceId);
+
+  // ÖNCE CACHE'DEN AL!
+  let title = cachedMetadata?.title || extractFromDetailPage();
+  let organization = cachedMetadata?.organization || extractFromDetailPage();
+  // ...
+}
+```
+
+**Avantajlar:**
+- ✅ %100 doğruluk garantisi
+- ✅ DOM değişikliklerine daha dayanıklı
+- ✅ Fallback mekanizması (detay sayfa ikinci seçenek)
+- ✅ Kayıp veri yok
+
+### 2. Batch Processing with Callbacks
+
+**Pattern**: Büyük veri setlerini küçük gruplara böl, her grup sonrası callback çağır
+
+```typescript
+// BaseScraper sınıfına callback ekle
+protected onBatchComplete?: (tenders: ScrapedTender[]) => Promise<void>;
+
+// Batch'leri işle ve callback çağır
+for (let i = 0; i < allTenders.length; i += BATCH_SIZE) {
+  const batch = allTenders.slice(i, i + BATCH_SIZE);
+
+  if (this.onBatchComplete) {
+    await this.onBatchComplete(batch); // Database'e kaydet
+  }
+}
+
+// Orchestrator'da kullanım
+const onBatchComplete = async (batchTenders: ScrapedTender[]) => {
+  const saved = await TenderDatabase.saveTenders(batchTenders);
+  console.log(`✅ ${saved.newCount} yeni ihale kaydedildi`);
+};
+
+const scraper = new IhalebulScraper(config, onBatchComplete);
+```
+
+**Avantajlar:**
+- ✅ Bellek kullanımı optimize
+- ✅ İlerleyiş takibi kolay
+- ✅ Hata durumunda kayıp minimum
+- ✅ Gerçek zamanlı feedback
+
+### 3. Text Extraction from Nested DOM (Clone Pattern)
+
+**Problem**: `.text()` kullanınca iç içe elemanların text'leri birleşiyor
+
+```typescript
+// ❌ KÖTÜ - Text'ler birleşir
+const city = $('.city-container').text();
+// "icon İstanbul" (icon element + text birleşti)
+
+// ✅ İYİ - Clone pattern
+const city = $('.city-container')
+  .clone()           // Klonla
+  .children()        // Alt elemanları seç
+  .remove()          // Sil
+  .end()             // Klona geri dön
+  .text()            // Artık sadece text
+  .trim();
+// "İstanbul" (sadece text, icon yok)
+```

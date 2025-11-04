@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/ihale-scraper/database/supabase-client';
+import { getDatabase } from '@/lib/ihale-scraper/database/sqlite-client';
 
 export async function GET(request: Request) {
   try {
@@ -20,21 +20,9 @@ export async function GET(request: Request) {
     console.log('🗑️ CRON: Tüm ihaleleri silme başlatıldı...');
 
     // Delete all tenders
-    const { error, count } = await supabaseAdmin
-      .from('ihale_listings')
-      .delete()
-      .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all (using a condition that's always true)
-
-    if (error) {
-      console.error('❌ Silme hatası:', error);
-      return NextResponse.json(
-        {
-          success: false,
-          error: error.message,
-        },
-        { status: 500 }
-      );
-    }
+    const db = getDatabase();
+    const result = db.prepare('DELETE FROM ihale_listings').run();
+    const count = result.changes;
 
     console.log(`✅ ${count || 0} ihale silindi`);
 

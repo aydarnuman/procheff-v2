@@ -10,10 +10,12 @@ export abstract class BaseScraper {
   protected config: ScraperSourceConfig;
   protected errors: ScrapeError[] = [];
   protected startTime: Date;
+  protected onBatchComplete?: (tenders: ScrapedTender[]) => Promise<void>; // 🆕 Callback
 
-  constructor(config: ScraperSourceConfig) {
+  constructor(config: ScraperSourceConfig, onBatchComplete?: (tenders: ScrapedTender[]) => Promise<void>) {
     this.config = config;
     this.startTime = new Date();
+    this.onBatchComplete = onBatchComplete;
   }
 
   /**
@@ -189,11 +191,13 @@ export abstract class BaseScraper {
   protected parseDate(text: string): Date | null {
     if (!text || typeof text !== 'string') return null;
 
-    // Format 1: DD.MM.YYYY (Turkish)
-    const ddmmyyyy = text.match(/(\d{2})\.(\d{2})\.(\d{4})/);
+    // Format 1: DD.MM.YYYY or D.MM.YYYY or DD.M.YYYY or D.M.YYYY (Turkish)
+    const ddmmyyyy = text.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/);
     if (ddmmyyyy) {
       const [, day, month, year] = ddmmyyyy;
-      return new Date(`${year}-${month}-${day}`);
+      const paddedDay = day.padStart(2, '0');
+      const paddedMonth = month.padStart(2, '0');
+      return new Date(`${year}-${paddedMonth}-${paddedDay}`);
     }
 
     // Format 2: YYYY-MM-DD (ISO)

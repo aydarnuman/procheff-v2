@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/ihale-scraper/database/supabase-client';
+import { getDatabase } from '@/lib/ihale-scraper/database/sqlite-client';
 import Anthropic from '@anthropic-ai/sdk';
 
 export async function POST(request: Request) {
@@ -14,16 +14,14 @@ export async function POST(request: Request) {
     console.log('🧹 Detay sayfalarından veri çekme başlatıldı...');
 
     // Get ALL tenders that need cleaning
-    const { data: tenders, error } = await supabaseAdmin
-      .from('ihale_listings')
-      .select('id, source_url, organization_city, deadline_date, announcement_date, tender_date, organization, title, budget, procurement_type')
-      .eq('is_catering', true)
-      .limit(1000); // Tüm ihaleler (max 1000)
-
-    if (error) {
-      console.error('❌ Database hatası:', error);
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-    }
+    const db = getDatabase();
+    const tenders = db.prepare(`
+      SELECT id, source_url, organization_city, deadline_date, announcement_date,
+             tender_date, organization, title, budget, procurement_type, raw_json,
+             registration_number
+      FROM ihale_listings
+      LIMIT 1000
+    `).all();
 
     if (!tenders || tenders.length === 0) {
       return NextResponse.json({ success: false, message: 'Temizlenecek kayıt bulunamadı' });
@@ -46,6 +44,42 @@ export async function POST(request: Request) {
     const processTender = async (tender: any, index: number, total: number) => {
       console.log(`\n[${index + 1}/${total}] İşleniyor: ${tender.id}`);
       console.log(`   URL: ${tender.source_url}`);
+
+      // ========================================================================
+      // ÖNCE: raw_json'dan kayıt numarasını çıkar (AI'a gitmeden önce)
+      // ========================================================================
+      let registrationNumber = tender.registration_number; // Mevcut değer
+
+      if (!registrationNumber && tender.raw_json) {
+        try {
+          const rawData = typeof tender.raw_json === 'string'
+            ? JSON.parse(tender.raw_json)
+            : tender.raw_json;
+
+          if (rawData && rawData['Kayıt no']) {
+            registrationNumber = rawData['Kayıt no'];
+            console.log(`   🔢 Kayıt no raw_json'dan çıkarıldı: ${registrationNumber}`);
+          }
+        } catch (e) {
+          console.log('   ⚠️ raw_json parse edilemedi');
+        }
+      }
+
+      // ========================================================================
+      // Organization field'ını temizle (ilk cümleyi veya ilk 150 karakteri al)
+      // ========================================================================
+      let cleanOrganization = tender.organization;
+      if (cleanOrganization && cleanOrganization.length > 150) {
+        // "1-" veya "İdarenin" gibi ayraçtan öncesini al
+        const match = cleanOrganization.match(/^([^1\n]+?)(?:\s+1-|\s+İdarenin|\s+Ayrıntılı)/);
+        if (match) {
+          cleanOrganization = match[1].trim();
+        } else {
+          // Yoksa ilk 150 karakter
+          cleanOrganization = cleanOrganization.slice(0, 150).trim();
+        }
+        console.log(`   🧹 Organization temizlendi: "${cleanOrganization}"`);
+      }
 
       try {
         // 1. Detay sayfasının HTML'ini fetch et
@@ -143,27 +177,41 @@ SADECE JSON döndür!`;
 
         console.log('   ✅ Parse edildi:', cleanedData);
 
-        // 4. Database'i güncelle
-        const { error: updateError } = await supabaseAdmin
-          .from('ihale_listings')
-          .update({
-            title: cleanedData.title,
-            organization_city: cleanedData.city,
-            deadline_date: cleanedData.deadline_date,
-            announcement_date: cleanedData.announcement_date,
-            tender_date: cleanedData.tender_date,
-            organization: cleanedData.organization,
-            budget: cleanedData.budget,
-            procurement_type: cleanedData.procurement_type,
-          })
-          .eq('id', tender.id);
-
-        if (updateError) {
+        // 4. Database'i güncelle (+ registration_number ve clean organization)
+        try {
+          const db = getDatabase();
+          db.prepare(`
+            UPDATE ihale_listings
+            SET title = ?,
+                organization_city = ?,
+                deadline_date = ?,
+                announcement_date = ?,
+                tender_date = ?,
+                organization = ?,
+                budget = ?,
+                procurement_type = ?,
+                registration_number = ?
+            WHERE id = ?
+          `).run(
+            cleanedData.title,
+            cleanedData.city,
+            cleanedData.deadline_date,
+            cleanedData.announcement_date,
+            cleanedData.tender_date,
+            cleanOrganization || cleanedData.organization, // Temiz organization kullan
+            cleanedData.budget,
+            cleanedData.procurement_type,
+            registrationNumber, // raw_json'dan çıkarılan kayıt no
+            tender.id
+          );
+          console.log('   ✅ Database güncellendi');
+          if (registrationNumber) {
+            console.log(`   🔢 Kayıt no kaydedildi: ${registrationNumber}`);
+          }
+          return { success: true };
+        } catch (updateError: any) {
           console.error('   ❌ Update hatası:', updateError);
           return { success: false };
-        } else {
-          console.log('   ✅ Database güncellendi');
-          return { success: true };
         }
       } catch (error: any) {
         console.error(`   ❌ Hata: ${error.message}`);

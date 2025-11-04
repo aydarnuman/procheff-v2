@@ -33,6 +33,15 @@ export interface ScrapedTender {
   procurement_type?: string; // "Hizmet Alımı", "Mal Alımı"
   category?: string;
 
+  // Dökümanlar
+  specification_url?: string; // Şartname dökümanı indirme linki
+  announcement_text?: string; // İhale ilan metni (temiz text)
+
+  // 🆕 Mal/Hizmet listesi özet bilgileri
+  total_items?: number; // Toplam kalem sayısı
+  total_meal_quantity?: number; // Toplam öğün sayısı (catering için)
+  estimated_budget_from_items?: number; // Kalemlerden hesaplanan bütçe
+
   // Ham veri
   raw_html?: string;
   raw_json?: Record<string, any>;
@@ -122,6 +131,7 @@ export interface ScraperMetrics {
 
 /**
  * AI Categorization result
+ * 🆕 Artık hem kategorilendirme HEM veri temizleme bilgilerini içerir!
  */
 export interface AICategorization {
   is_catering: boolean;
@@ -129,6 +139,11 @@ export interface AICategorization {
   reasoning: string;
   keywords_found: string[];
   suggested_category?: string;
+  // 🆕 Temizlenmiş veri alanları
+  cleaned_city?: string | null;
+  cleaned_deadline_date?: string | null;
+  cleaned_announcement_date?: string | null;
+  cleaned_tender_date?: string | null;
 }
 
 /**
@@ -149,9 +164,21 @@ export interface TenderInsertPayload {
   tender_type?: string;
   procurement_type?: string;
   category?: string;
+  specification_url?: string; // Şartname dökümanı indirme linki
+  announcement_text?: string; // İhale ilan metni (temiz text)
   is_catering: boolean;
   catering_confidence: number;
   ai_categorization_reasoning?: string;
+  // 🆕 Mal/Hizmet listesi özet
+  total_items?: number;
+  total_meal_quantity?: number;
+  estimated_budget_from_items?: number;
   raw_html?: string;
   raw_json?: Record<string, any>;
 }
+
+/**
+ * 🆕 Tender Item (Mal/Hizmet Kalemi)
+ * Re-export from item-parser for convenience
+ */
+export type { TenderItem } from './parsers/item-parser';

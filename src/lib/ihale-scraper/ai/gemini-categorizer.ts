@@ -23,10 +23,11 @@ export class GeminiCategorizer {
   }
 
   /**
-   * Tek bir ihaleyi kategorize et (Gemini ile) - Retry logic ile
+   * Tek bir ihaleyi kategorize et + veri temizle (Gemini ile) - Retry logic ile
+   * ARTIK HEM catering tespiti HEM veri temizleme AYNI ANDA yapılıyor!
    */
   async categorizeSingle(tender: ScrapedTender, retryCount: number = 0): Promise<AICategorization> {
-    const prompt = this.buildCategorizationPrompt(tender);
+    const prompt = this.buildCategorizationAndCleaningPrompt(tender);
     const maxRetries = 3;
 
     try {
@@ -154,36 +155,49 @@ Giriş: "2024 YILI PERSONEL YEMEK HİZMET ALIMI İHALESİ (Açık İhale Usulü)
   }
 
   /**
-   * Kategorilendirme prompt'u oluştur
+   * 🆕 YENİ: Kategorilendirme + Veri Temizleme AYNI ANDA (TEK REQUEST!)
+   * Hem catering tespiti hem şehir/tarih çıkarma - Maliyet yarıya düşer!
    */
-  private buildCategorizationPrompt(tender: ScrapedTender): string {
-    return `Sen bir kamu ihale kategorilendirme uzmanısın. Görevi sadece ihalenin catering/yemek hizmeti ile ilgili olup olmadığını tespit etmek.
+  private buildCategorizationAndCleaningPrompt(tender: ScrapedTender): string {
+    return `Sen bir kamu ihale uzmanısın. 2 görevi AYNI ANDA yapacaksın:
+1) İhalenin catering/yemek hizmeti olup olmadığını tespit et
+2) Karışık verileri temizle (şehir, tarihler)
 
 # İHALE BİLGİLERİ
 Başlık: ${tender.title}
 Kurum: ${tender.organization || 'Belirtilmemiş'}
 Kategori: ${tender.category || 'Belirtilmemiş'}
+Şehir (karışık): ${tender.organization_city || 'Belirtilmemiş'}
+Son tarih: ${tender.deadline_date || 'Belirtilmemiş'}
+İlan tarihi: ${tender.announcement_date || 'Belirtilmemiş'}
+İhale tarihi: ${tender.tender_date || 'Belirtilmemiş'}
 
-# CATERING/YEMEK İLE İLGİLİ ANAHTAR KELİMELER
-Pozitif: yemek, öğün, kahvaltı, öğle, akşam, catering, iaşe, beslenme, gıda tedarik, kantin, yemekhane, kafeterya, hazır yemek, lokantacılık, servis hizmeti
-Negatif: inşaat, yazılım, danışmanlık, temizlik (sadece), ulaşım, kırtasiye, mobilya
+# GÖREV 1: CATERING TESPİTİ
+Pozitif kelimeler: yemek, öğün, kahvaltı, öğle, akşam, catering, iaşe, beslenme, gıda tedarik, kantin, yemekhane, kafeterya, hazır yemek, lokantacılık
+Negatif kelimeler: inşaat, yazılım, danışmanlık, temizlik (sadece), ulaşım, kırtasiye, mobilya
 
-# GÖREV
-Bu ihale catering/yemek hizmeti ile ilgili mi?
+Değerlendirme:
+- Başlıkta pozitif kelimeler var mı?
+- Kurum eğitim/sağlık/askeri ise yüksek ihtimal
+- Kategori "Hazır Yemek" ise kesin catering
+- Sadece "gıda alımı" (market ürünleri) catering DEĞİL
 
-Değerlendirme kriterleri:
-1. Başlıkta "yemek", "catering", "iaşe" gibi kelimeler var mı?
-2. Kurum adı eğitim/sağlık/askeri ise (çok yemek tüketen) yüksek ihtimal
-3. Kategori "Hazır Yemek" veya "Lokantacılık" ise kesin catering
-4. Ama sadece "gıda alımı" (market ürünleri) catering DEĞİL
+# GÖREV 2: VERİ TEMİZLEME
+Şehir verisinden: SADECE şehir adını çıkar (örn: "İstanbul", "Ankara", "Mersin")
+Tarihlerden: YYYY-MM-DD formatında çıkar (örn: "2025-03-15")
+Bulamazsan: null yaz
 
 JSON formatında cevap ver:
 {
   "is_catering": true/false,
   "confidence": 0.95,
-  "reasoning": "Başlıkta 'yemek hizmeti alımı' geçiyor ve kurum bir hastane. Kesin catering ihalesi.",
-  "keywords_found": ["yemek", "kahvaltı", "öğle"],
-  "suggested_category": "Catering Hizmet Alımı"
+  "reasoning": "Başlıkta 'yemek hizmeti' geçiyor ve kurum hastane. Kesin catering.",
+  "keywords_found": ["yemek", "kahvaltı"],
+  "suggested_category": "Catering Hizmet Alımı",
+  "cleaned_city": "Mersin",
+  "cleaned_deadline_date": "2025-03-15",
+  "cleaned_announcement_date": "2025-02-01",
+  "cleaned_tender_date": "2025-03-10"
 }
 
 SADECE JSON döndür, açıklama yazma!`;

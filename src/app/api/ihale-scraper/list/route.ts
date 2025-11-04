@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { TenderDatabase } from '@/lib/ihale-scraper/database/supabase-client';
+import { TenderDatabase } from '@/lib/ihale-scraper/database/sqlite-client';
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
 
     // Parse filters
     const filters = {
-      isCatering: searchParams.get('is_catering') === 'true',
+      isCatering: searchParams.get('is_catering') === 'true' ? true : undefined,
       minBudget: searchParams.get('min_budget') ? parseInt(searchParams.get('min_budget')!) : undefined,
       maxBudget: searchParams.get('max_budget') ? parseInt(searchParams.get('max_budget')!) : undefined,
       city: searchParams.get('city') || undefined,
@@ -23,9 +23,26 @@ export async function GET(request: NextRequest) {
 
     const result = await TenderDatabase.getTendersFiltered(filters);
 
+    // Serialize data to plain objects (fix "Only plain objects" error)
+    const serializedData = result.data.map(tender => {
+      const plainTender: any = {};
+      for (const [key, value] of Object.entries(tender)) {
+        if (value === null || value === undefined) {
+          plainTender[key] = value;
+        } else if (key === 'raw_json' && typeof value === 'object') {
+          plainTender[key] = JSON.parse(JSON.stringify(value));
+        } else if (value instanceof Date || (typeof value === 'string' && !isNaN(Date.parse(value)))) {
+          plainTender[key] = value?.toString() || null;
+        } else {
+          plainTender[key] = value;
+        }
+      }
+      return plainTender;
+    });
+
     return NextResponse.json({
       success: true,
-      data: result.data,
+      data: serializedData,
       total: result.total,
       page: Math.floor(filters.offset / filters.limit) + 1,
       pageSize: filters.limit,

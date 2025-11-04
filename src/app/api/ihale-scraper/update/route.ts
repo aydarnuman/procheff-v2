@@ -1,10 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { getDatabase } from '@/lib/ihale-scraper/database/sqlite-client';
 
 // Update single tender
 export async function PATCH(request: Request) {
@@ -19,23 +14,24 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ success: false, error: 'Updates required' }, { status: 400 });
     }
 
-    // Add last_updated_at timestamp
-    const updateData = {
-      ...updates,
-      last_updated_at: new Date().toISOString(),
-    };
+    // Build update query
+    const fields = Object.keys(updates);
+    const setClause = fields.map(f => `${f} = ?`).join(', ');
+    const values = fields.map(f => updates[f]);
 
-    const { data, error } = await supabase
-      .from('ihale_listings')
-      .update(updateData)
-      .eq('id', id)
-      .select()
-      .single();
+    const db = getDatabase();
+    const result = db.prepare(`
+      UPDATE ihale_listings
+      SET ${setClause}, last_updated_at = datetime('now')
+      WHERE id = ?
+    `).run(...values, id);
 
-    if (error) {
-      console.error('Update error:', error);
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    if (result.changes === 0) {
+      return NextResponse.json({ success: false, error: 'Tender not found' }, { status: 404 });
     }
+
+    // Get updated data
+    const data = db.prepare('SELECT * FROM ihale_listings WHERE id = ?').get(id);
 
     return NextResponse.json({ success: true, data });
   } catch (error) {
@@ -56,6 +52,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Updates array required' }, { status: 400 });
     }
 
+    const db = getDatabase();
     const results = [];
     const errors = [];
 
@@ -66,22 +63,21 @@ export async function POST(request: Request) {
       }
 
       try {
-        const updateData = {
-          ...update.data,
-          last_updated_at: new Date().toISOString(),
-        };
+        const fields = Object.keys(update.data);
+        const setClause = fields.map(f => `${f} = ?`).join(', ');
+        const values = fields.map(f => update.data[f]);
 
-        const { data, error } = await supabase
-          .from('ihale_listings')
-          .update(updateData)
-          .eq('id', update.id)
-          .select()
-          .single();
+        const result = db.prepare(`
+          UPDATE ihale_listings
+          SET ${setClause}, last_updated_at = datetime('now')
+          WHERE id = ?
+        `).run(...values, update.id);
 
-        if (error) {
-          errors.push({ id: update.id, error: error.message });
-        } else {
+        if (result.changes > 0) {
+          const data = db.prepare('SELECT * FROM ihale_listings WHERE id = ?').get(update.id);
           results.push(data);
+        } else {
+          errors.push({ id: update.id, error: 'Tender not found' });
         }
       } catch (error: any) {
         errors.push({ id: update.id, error: error.message });
