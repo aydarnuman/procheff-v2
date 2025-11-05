@@ -877,12 +877,13 @@ function IhaleTakipPageInner() {
       const sessionId = createSessionData.sessionId;
       console.log(`✅ Session oluşturuldu: ${sessionId}`);
 
-      // 2. Dökümanları indir ve session'a yükle
-      console.log(`\n📥 Step 2: ${selectedDocuments.length} döküman indiriliyor ve yükleniyor...`);
+      // 2. Dökümanları indir ve session'a yükle (sadece gerçek URL'leri)
+      const realDocuments = selectedDocuments.filter(url => !url.startsWith('virtual://'));
+      console.log(`\n📥 Step 2: ${realDocuments.length} gerçek döküman indiriliyor ve yükleniyor...`);
       let uploadedCount = 0;
       let errorCount = 0;
 
-      for (const url of selectedDocuments) {
+      for (const url of realDocuments) {
         try {
           console.log(`📥 İndiriliyor: ${url.substring(url.lastIndexOf('/') + 1)}`);
 
