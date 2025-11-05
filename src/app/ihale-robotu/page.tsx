@@ -1959,29 +1959,12 @@ function IhaleTakipPageInner() {
                             <div className="flex items-center justify-between pb-3 border-b border-gray-200">
                               <button
                                 onClick={async () => {
-                                  // [DEBUG] Hızlı Analiz Başlat zinciri
-                                  if (selectedDocuments.length > 0 && fullContent.documents) {
-                                    const tempId = `ihale_docs_${Date.now()}`;
-                                    const selectedDocs = fullContent.documents.filter((doc: any) => selectedDocuments.includes(doc.url));
-                                    // fullContent.fullText varsa ekle
-                                    const payload = {
-                                      documents: selectedDocs,
-                                      tenderTitle: selectedTender?.title || '',
-                                      text: fullContent.fullText || '',
-                                      size: fullContent.fullText ? fullContent.fullText.length : 0,
-                                      timestamp: Date.now(),
-                                    };
-                                    console.log('[DEBUG] Hızlı Analiz Başlat - payload:', payload);
-                                    sessionStorage.setItem(tempId, JSON.stringify(payload));
-                                    await new Promise(r => setTimeout(r, 150));
-                                    router.push(`/ihale/yeni-analiz?from=${tempId}`);
-                                  } else {
-                                    console.warn('[DEBUG] Hızlı Analiz Başlat - Seçili döküman yok veya fullContent.documents eksik');
-                                  }
+                                  // Gerçek dosya indirme ve analiz başlatma
+                                  await sendDocumentsToAnalysis();
                                 }}
                                 disabled={selectedDocuments.length === 0}
                                 className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed text-white rounded-lg text-xs font-semibold transition-all shadow-sm hover:shadow-md mr-2"
-                                title="Seçili dökümanları hızlıca analiz et"
+                                title="Seçili dökümanları indir ve analiz et"
                               >
                                 <Wand2 className="w-3.5 h-3.5" />
                                 Hızlı Analiz Başlat
