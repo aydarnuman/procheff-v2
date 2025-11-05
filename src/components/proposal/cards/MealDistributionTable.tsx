@@ -67,7 +67,7 @@ export function MealDistributionTable({
   const subtotal = ProposalValidator.calculateSubtotal(distribution);
 
   // Sadece kullanıcının doldurduğu (toplam > 0) satırlar varsa uyarı göster
-  const hasFilledRows = distribution.some(row => row.toplam > 0);
+  const hasFilledRows = distribution.some(row => (row.toplam ?? 0) > 0);
   const shouldShowWarnings = hasFilledRows && (!validation.isValid || validation.warnings.length > 0);
 
   return (

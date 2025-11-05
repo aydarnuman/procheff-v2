@@ -41,11 +41,38 @@ export async function GET(request: NextRequest) {
       redirect: 'follow',
     });
 
-    // Get the response body
-    const html = await response.text();
+    const contentType = response.headers.get('content-type') || '';
+
+    // Binary dosya mı (PDF, ZIP, etc.) yoksa HTML mi?
+    const isBinary = contentType.includes('pdf') ||
+                    contentType.includes('zip') ||
+                    contentType.includes('octet-stream') ||
+                    contentType.includes('application/');
+
+    let responseBody: any;
+    let modifiedBody: any;
+
+    if (isBinary) {
+      // Binary dosya - olduğu gibi forward et
+      responseBody = await response.arrayBuffer();
+      modifiedBody = responseBody;
+      console.log(`✅ Proxy response sent (binary: ${contentType}, ${responseBody.byteLength} bytes)`);
+    } else {
+      // HTML/Text - base tag inject et
+      const html = await response.text();
+
+      // Inject base tag to fix relative URLs
+      const urlObj = new URL(targetUrl);
+      const baseUrl = `${urlObj.protocol}//${urlObj.host}`;
+      modifiedBody = html.replace(
+        '<head>',
+        `<head><base href="${baseUrl}/">`
+      );
+      console.log('✅ Proxy response sent (HTML)');
+    }
 
     // Forward the response with all headers
-    const proxyResponse = new NextResponse(html, {
+    const proxyResponse = new NextResponse(modifiedBody, {
       status: response.status,
       statusText: response.statusText,
     });
@@ -57,6 +84,8 @@ export async function GET(request: NextRequest) {
       'expires',
       'last-modified',
       'etag',
+      'content-length',
+      'content-disposition',
     ];
 
     headersToForward.forEach(headerName => {
@@ -72,20 +101,7 @@ export async function GET(request: NextRequest) {
       proxyResponse.headers.set('set-cookie', setCookies);
     }
 
-    // Inject base tag to fix relative URLs
-    const urlObj = new URL(targetUrl);
-    const baseUrl = `${urlObj.protocol}//${urlObj.host}`;
-    const modifiedHtml = html.replace(
-      '<head>',
-      `<head><base href="${baseUrl}/">`
-    );
-
-    console.log('✅ Proxy response sent');
-
-    return new NextResponse(modifiedHtml, {
-      status: response.status,
-      headers: proxyResponse.headers,
-    });
+    return proxyResponse;
 
   } catch (error: any) {
     console.error('❌ Proxy error:', error);

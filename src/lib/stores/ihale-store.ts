@@ -16,6 +16,7 @@ export interface FileMetadata {
   size: number;
   type: string;
   lastModified: number;
+  url?: string; // 🆕 İhale Robotu'ndan gelen dosyalar için indirme URL'i
 }
 
 export interface FileProcessingStatus {
@@ -53,6 +54,19 @@ export interface IhaleState {
   // Analysis History (localStorage'da saklanacak)
   analysisHistory: AIAnalysisResult[];
 
+  // 🆕 Auto-Analysis Preview (İhale seçildiğinde otomatik işleme)
+  autoAnalysisPreview: {
+    isProcessing: boolean;
+    stage: 'idle' | 'csv-processing' | 'txt-processing' | 'ai-analyzing' | 'completed';
+    progress: number; // 0-100
+    summary: {
+      csvItemCount?: number;
+      totalCost?: number;
+      missingColumns?: string[];
+      confidence?: number;
+    } | null;
+  };
+
   // Actions
   setCurrentAnalysis: (analysis: AIAnalysisResult | null) => void;
   setFileStatuses: (statuses: FileProcessingStatus[]) => void;
@@ -77,6 +91,10 @@ export interface IhaleState {
   updateDeepAnalysis: (deepAnalysis: any) => void; // Derin analiz güncelle (currentAnalysis için)
   updateStatus: (index: number, status: IhaleStatus) => void;
 
+  // 🆕 Auto-Analysis Preview Actions
+  setAutoAnalysisPreview: (preview: Partial<IhaleState['autoAnalysisPreview']>) => void;
+  resetAutoAnalysisPreview: () => void;
+
   // Reset
   reset: () => void;
 }
@@ -88,6 +106,12 @@ const initialState = {
   isProcessing: false,
   currentStep: 'upload' as const,
   analysisHistory: [],
+  autoAnalysisPreview: {
+    isProcessing: false,
+    stage: 'idle' as const,
+    progress: 0,
+    summary: null,
+  },
 };
 
 /**
@@ -125,6 +149,14 @@ export const useIhaleStore = create<IhaleState>()(
 
   addFileStatus: (status) => {
     const current = get().fileStatuses;
+
+    // Duplicate kontrolü - aynı dosya zaten varsa ekleme
+    const exists = current.some(fs => fs.fileMetadata.name === status.fileMetadata.name);
+    if (exists) {
+      console.log(`⚠️ [STORE] Dosya zaten mevcut, eklenmedi:`, status.fileMetadata.name);
+      return;
+    }
+
     console.log(`📥 [STORE] addFileStatus çağrıldı:`, {
       fileName: status.fileMetadata.name,
       detectedType: status.detectedType,
@@ -161,6 +193,14 @@ export const useIhaleStore = create<IhaleState>()(
   // CSV Actions
   addCSVFile: (status) => {
     const current = get().csvFiles;
+
+    // Duplicate kontrolü - aynı dosya zaten varsa ekleme
+    const exists = current.some(csv => csv.fileMetadata.name === status.fileMetadata.name);
+    if (exists) {
+      console.log(`⚠️ [STORE] CSV dosyası zaten mevcut, eklenmedi:`, status.fileMetadata.name);
+      return;
+    }
+
     set({ csvFiles: [...current, status] });
   },
 
@@ -229,17 +269,34 @@ export const useIhaleStore = create<IhaleState>()(
     set({ analysisHistory: updated });
   },
 
+  // 🆕 Auto-Analysis Preview Actions
+  setAutoAnalysisPreview: (preview) => {
+    const current = get().autoAnalysisPreview;
+    set({ autoAnalysisPreview: { ...current, ...preview } });
+  },
+
+  resetAutoAnalysisPreview: () => {
+    set({ autoAnalysisPreview: initialState.autoAnalysisPreview });
+  },
+
       // Reset Everything
       reset: () => set(initialState),
     }),
     {
       name: 'ihale-analysis-storage', // localStorage key
       storage: createJSONStorage(() => localStorage),
-      // SADECE analiz sonuçlarını sakla, file processing state'i SAKLAMA
+      // Analiz sonuçları + aktif dosya durumu sakla
       partialize: (state) => ({
         currentAnalysis: state.currentAnalysis,
-        analysisHistory: state.analysisHistory,
-        // fileStatuses, csvFiles, isProcessing, currentStep SAKLANMAZ
+        // 🆕 analysisHistory maksimum 20 analiz (eski analizleri otomatik temizle)
+        analysisHistory: state.analysisHistory.slice(-20),
+        // 🆕 fileStatuses - extractedText'i ÇIKAR (quota aşımı önleme)
+        fileStatuses: state.fileStatuses.map(fs => ({
+          ...fs,
+          extractedText: undefined, // Text persist edilmesin (50-200KB tasarruf per file)
+        })),
+        currentStep: state.currentStep, // 🆕 Hangi adımda olduğumuzu sakla
+        // csvFiles, isProcessing SAKLANMAZ
       }),
     }
   )

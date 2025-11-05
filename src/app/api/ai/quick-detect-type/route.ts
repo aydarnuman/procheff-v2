@@ -69,8 +69,8 @@ SADECE JSON formatında yanıt ver:
       'ihale_ilani',
       'teknik_sartname',
       'idari_sartname',
-      'sozlesme',
-      'fiyat_teklif',
+      'sozlesme_tasarisi',
+      'fiyat_teklif_mektubu',
       'diger',
       'belirsiz'
     ];

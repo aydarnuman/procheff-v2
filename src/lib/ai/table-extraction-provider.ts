@@ -406,6 +406,7 @@ METİN UZUNLUĞU: ${Math.floor(tableText.length / 1000)}K karakter`;
                 row.map((cell: string) => this.fixTurkishEncoding(cell))
               ),
               satir_sayisi: rawTablo.satir_sayisi || rawTablo.rows.length,
+              sutun_sayisi: rawTablo.headers.length,
               guven: rawTablo.guven || 0.8,
             });
           }
@@ -422,6 +423,7 @@ METİN UZUNLUĞU: ${Math.floor(tableText.length / 1000)}K karakter`;
                   row.map((cell: string) => this.fixTurkishEncoding(cell))
                 ),
                 satir_sayisi: rawTablo.satir_sayisi || asciiParsed.rows.length,
+                sutun_sayisi: asciiParsed.headers.length,
                 guven: rawTablo.guven || 0.7,
               });
             }

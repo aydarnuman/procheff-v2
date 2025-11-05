@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import {
   Eye,
@@ -52,24 +52,18 @@ export function EnhancedAnalysisResults({
   onFilesAdded,
   autoStartDeepAnalysis = false,
 }: EnhancedAnalysisResultsProps) {
-  const [activeTab, setActiveTab] = useState<"extraction" | "analysis" | "deep">(
-    "extraction"
-  );
+  const [activeTab, setActiveTab] = useState<"extraction" | "analysis" | "deep">("extraction");
   const [showProposal, setShowProposal] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editedData, setEditedData] = useState(analysis.extracted_data);
+  // Zustand store'dan fonksiyonları üstte çağır
+  const { updateDeepAnalysis, removeCSVFile, fileStatuses, csvFiles } = useIhaleStore();
 
-  // Zustand store'dan derin analiz güncelleme fonksiyonu
-  const { updateDeepAnalysis } = useIhaleStore();
-
-  // 🔥 Otomatik Derin Analiz Başlatma - COUNTDOWN YOK, direkt başla
   useEffect(() => {
-    if (autoStartDeepAnalysis && activeTab === "extraction") {
-      console.log("🚀 Derin analiz sekmesine direkt geçiliyor (bekleme YOK)...");
-      // Direkt "deep" sekmesine geç
+    if (autoStartDeepAnalysis) {
       setActiveTab("deep");
     }
-  }, [autoStartDeepAnalysis, activeTab]);
+  }, [autoStartDeepAnalysis]);
 
   // Collapsible sections state
   const [openTables, setOpenTables] = useState<Record<number, boolean>>({ 0: true }); // İlk tablo açık
@@ -78,13 +72,15 @@ export function EnhancedAnalysisResults({
   const [veriCikarimTab, setVeriCikarimTab] = useState<"ham-veri" | "tablolar">("ham-veri"); // Tab state
   const [showEvidence, setShowEvidence] = useState(false);
 
-  // CSV analizlerinden toplam maliyeti hesapla
-  const csvTotalCost = analysis.csv_analyses?.reduce((total, csv) => {
-    return total + (csv.analysis?.summary?.total_cost || 0);
-  }, 0) || 0;
+  // CSV analizlerinden toplam maliyeti güvenli şekilde hesapla
+  const csvTotalCost = Array.isArray(analysis.csv_analyses)
+    ? analysis.csv_analyses.reduce((t, csv) => t + (csv.analysis?.summary?.total_cost ?? 0), 0)
+    : 0;
 
-  // Zustand store'dan dosya bilgilerini al
-  const { fileStatuses, csvFiles } = useIhaleStore();
+  // Memoize edilmiş tablo tıklama fonksiyonu
+  const handleTableClick = useCallback((index: number, tablo: any) => {
+    setFullscreenTable({ index, tablo });
+  }, []);
 
   /**
    * Ham metni akıllıca formatla
@@ -279,7 +275,8 @@ export function EnhancedAnalysisResults({
     }
   };
 
-  const handleExportPdf = () => {
+  // PDF export fonksiyonu asenkron
+  const handleExportPdf = async () => {
     try {
       // Convert AI analysis to legacy format for PDF
       const legacyFormat = {
@@ -303,17 +300,17 @@ export function EnhancedAnalysisResults({
             `Tahmini Bütçe: ${analysis.extracted_data.tahmini_butce?.toLocaleString(
               "tr-TR"
             )} TL`,
-            `Maliyet Sapma Riski: %${analysis.contextual_analysis.maliyet_sapma_olasiligi.oran}`,
+            `Maliyet Sapma Riski: %${analysis.contextual_analysis?.maliyet_sapma_olasiligi?.oran}`,
           ],
           confidence: analysis.processing_metadata.confidence_score,
-          evidencePassages: analysis.contextual_analysis.maliyet_sapma_olasiligi.sebepler,
+          evidencePassages: analysis.contextual_analysis?.maliyet_sapma_olasiligi?.sebepler ?? [],
         },
         risks: {
           title: "Risk Analizi",
-          content: analysis.contextual_analysis.operasyonel_riskler.faktorler,
+          content: analysis.contextual_analysis?.operasyonel_riskler?.faktorler ?? [],
           confidence: analysis.processing_metadata.confidence_score,
           evidencePassages:
-            analysis.contextual_analysis.operasyonel_riskler.oneriler,
+            analysis.contextual_analysis?.operasyonel_riskler?.oneriler ?? [],
         },
         menu: {
           title: "Özel Şartlar",
@@ -321,7 +318,7 @@ export function EnhancedAnalysisResults({
           confidence: analysis.extracted_data.guven_skoru,
           evidencePassages: analysis.extracted_data.riskler,
         },
-        summary: analysis.contextual_analysis.genel_oneri,
+        summary: analysis.contextual_analysis?.genel_oneri,
         overallConfidence: analysis.processing_metadata.confidence_score,
         processingTime: analysis.processing_metadata.processing_time,
         wordCount: 0,
@@ -338,11 +335,11 @@ export function EnhancedAnalysisResults({
       const fileName = `ai-ihale-analiz-${
         new Date().toISOString().split("T")[0]
       }.pdf`;
-      const htmlContent = ReportGenerator.generateHtmlReport(
+      const htmlContent = await ReportGenerator.generateHtmlReport(
         legacyFormat,
         fileName
       );
-      ReportGenerator.downloadHtmlAsPdf(htmlContent);
+      await ReportGenerator.downloadHtmlAsPdf(htmlContent);
     } catch (error) {
       console.error("PDF export hatası:", error);
       alert("PDF export sırasında hata oluştu. Lütfen tekrar deneyin.");
@@ -363,7 +360,7 @@ export function EnhancedAnalysisResults({
           <div className="flex items-center space-x-3">
             <Brain className="w-8 h-8 text-accent-400" />
             <h2 className="text-2xl font-bold text-surface-primary">
-              AI Analiz Sonuçları
+              {analysis.processing_metadata.ai_provider || 'AI'} Analiz Sonuçları
             </h2>
           </div>
           <div className="flex-1 flex justify-end gap-3">
@@ -414,15 +411,25 @@ export function EnhancedAnalysisResults({
       </div>
 
       {/* Eksik Belge Ekle Butonu */}
-      {onAddDocument && (
+      {onFilesAdded && (
         <div className="flex justify-center">
-          <button
-            onClick={onAddDocument}
-            className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors font-medium shadow-lg hover:shadow-blue-500/30"
-          >
+          <label className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors font-medium shadow-lg hover:shadow-blue-500/30 cursor-pointer">
             <Upload className="w-5 h-5" />
             📎 Eksik Belge Ekle
-          </button>
+            <input
+              type="file"
+              multiple
+              accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt,.json"
+              className="hidden"
+              onChange={(e) => {
+                const files = Array.from(e.target.files || []);
+                if (files.length > 0 && onFilesAdded) {
+                  onFilesAdded(files);
+                }
+                e.target.value = ''; // Reset input
+              }}
+            />
+          </label>
         </div>
       )}
 
@@ -440,10 +447,7 @@ export function EnhancedAnalysisResults({
                 key={index}
                 analysis={csv.analysis!}
                 fileName={csv.fileMetadata.name}
-                onRemove={() => {
-                  const { removeCSVFile } = useIhaleStore.getState();
-                  removeCSVFile(csv.fileMetadata.name);
-                }}
+                onRemove={() => removeCSVFile(csv.fileMetadata.name)}
               />
             ))}
         </div>
@@ -627,7 +631,7 @@ export function EnhancedAnalysisResults({
                       <PaginatedTablesViewer
                         tables={analysis.extracted_data.tablolar}
                         tablesPerPage={6}
-                        onTableClick={(index, tablo) => setFullscreenTable({ index, tablo })}
+                        onTableClick={handleTableClick}
                       />
                     </motion.div>
                   )}
@@ -740,11 +744,11 @@ export function EnhancedAnalysisResults({
                 </div>
                 <div className="space-y-2">
                   {(() => {
-                    const kahvalti = analysis.extracted_data.detayli_veri?.ogun_dagilimi?.kahvalti;
-                    const ogle = analysis.extracted_data.detayli_veri?.ogun_dagilimi?.ogle;
-                    const aksam = analysis.extracted_data.detayli_veri?.ogun_dagilimi?.aksam;
-                    const toplam = analysis.extracted_data.kisi_sayisi && analysis.extracted_data.gun_sayisi
-                      ? analysis.extracted_data.kisi_sayisi * analysis.extracted_data.ogun_sayisi! * analysis.extracted_data.gun_sayisi
+                    const kahvalti = analysis.extracted_data?.detayli_veri?.ogun_dagilimi?.kahvalti;
+                    const ogle = analysis.extracted_data?.detayli_veri?.ogun_dagilimi?.ogle;
+                    const aksam = analysis.extracted_data?.detayli_veri?.ogun_dagilimi?.aksam;
+                    const toplam = analysis.extracted_data?.kisi_sayisi && analysis.extracted_data?.gun_sayisi
+                      ? analysis.extracted_data.kisi_sayisi * (analysis.extracted_data.ogun_sayisi ?? 0) * analysis.extracted_data.gun_sayisi
                       : null;
 
                     if (kahvalti && ogle && aksam) {
@@ -770,7 +774,7 @@ export function EnhancedAnalysisResults({
                         <>
                           <div>
                             <p className="text-2xl font-bold text-white">
-                              {(analysis.extracted_data.ogun_sayisi || 0).toLocaleString('tr-TR')}
+                              {(analysis.extracted_data.ogun_sayisi ?? 0).toLocaleString('tr-TR')}
                             </p>
                             <p className="text-xs text-gray-400">Günlük Öğün</p>
                           </div>
@@ -908,58 +912,13 @@ export function EnhancedAnalysisResults({
                 </div>
               </div>
 
-              {/* Cost Variation */}
-              <div className="bg-platinum-800/60 rounded-xl p-6 backdrop-blur-sm border border-platinum-700/30">
-                <h3 className="text-lg font-semibold text-surface-primary mb-4">
-                  Maliyet Sapma Analizi
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <h4 className="text-surface-primary font-medium mb-2">
-                      Sapma Sebepleri:
-                    </h4>
-                    <ul className="space-y-1">
-                      {analysis.contextual_analysis.maliyet_sapma_olasiligi.sebepler.map(
-                        (sebep, index) => (
-                          <li
-                            key={index}
-                            className="text-surface-secondary text-sm flex items-center space-x-2"
-                          >
-                            <div className="w-1.5 h-1.5 bg-orange-400 rounded-full" />
-                            <span>{sebep}</span>
-                          </li>
-                        )
-                      )}
-                    </ul>
-                  </div>
-                  <div>
-                    <h4 className="text-surface-primary font-medium mb-2">
-                      Önlem Önerileri:
-                    </h4>
-                    <ul className="space-y-1">
-                      {analysis.contextual_analysis.maliyet_sapma_olasiligi.onlem_oneriler.map(
-                        (onlem, index) => (
-                          <li
-                            key={index}
-                            className="text-surface-secondary text-sm flex items-center space-x-2"
-                          >
-                            <div className="w-1.5 h-1.5 bg-blue-400 rounded-full" />
-                            <span>{onlem}</span>
-                          </li>
-                        )
-                      )}
-                    </ul>
-                  </div>
-                </div>
-              </div>
-
               {/* General Recommendation */}
-              <div className="bg-linear-to-r from-accent-500/10 to-purple-500/10 rounded-xl p-6 border border-accent-500/30">
+              <div className="bg-gradient-to-r from-accent-500/10 to-purple-500/10 rounded-xl p-6 border border-accent-500/30">
                 <h3 className="text-lg font-semibold text-surface-primary mb-4">
                   Genel Öneri
                 </h3>
                 <p className="text-surface-primary leading-relaxed">
-                  {analysis.contextual_analysis.genel_oneri}
+                  {analysis.contextual_analysis?.genel_oneri}
                 </p>
               </div>
             </div>
@@ -997,9 +956,8 @@ export function EnhancedAnalysisResults({
           <button
             type="button"
             onClick={() => {
-              if (confirm('Analiz sonuçlarını kapatmak istediğinizden emin misiniz?\n\n(Sayfa yenilendiğinde analiz hala burada olacaktır)')) {
+              if (confirm('Analiz sekmesini kapatmak istediğinize emin misiniz?\nKaydedilmemiş veriler kaybolabilir.')) {
                 onReturnToView();
-                setCurrentAnalysis(null);
               }
             }}
             className="flex items-center space-x-2 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-xl transition-colors"

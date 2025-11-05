@@ -76,6 +76,20 @@ export interface FieldSource {
   kanit?: string; // Orijinal metin pasajı
 }
 
+// Tablo Kategorileri
+export type TableCategory =
+  | "organization"   // Kuruluş & Dağılım
+  | "meals"         // Öğün & Menu
+  | "quantities"    // Gramaj & Porsiyon
+  | "materials"     // Malzeme & Ürün
+  | "personnel"     // Personel & Kadro
+  | "financial"     // Maliyet & Bütçe
+  | "schedule"      // Süre & Takvim
+  | "equipment"     // Ekipman & Araç-Gereç
+  | "summary"       // Özet & Toplam
+  | "technical"     // Teknik Şartlar
+  | "other";        // Diğer
+
 // Belge Türleri
 export type BelgeTuru =
   | "teknik_sartname"
@@ -114,7 +128,9 @@ export interface ExtractedTable {
   headers: string[]; // Sütun başlıkları ["Kuruluş", "Kahvaltı", "Öğle", ...]
   rows: string[][]; // Satırlar [["Huzurevi", "6", "6", ...], ...]
   satir_sayisi: number; // Kaç veri satırı (header hariç)
+  sutun_sayisi: number; // Kaç sütun var
   guven: number; // 0-1 arası güven skoru
+  category?: TableCategory; // Tablonun kategorisi (AI tarafından atanır)
 }
 
 export interface ExtractedData {
@@ -181,8 +197,27 @@ export interface ExtractedData {
   // YENİ: Veri Havuzu - Metinsel extraction (Data Pool - Claude)
   veri_havuzu?: DataPoolExtraction;
 
-  // YENİ: Çıkarılan tablolar (Gemini)
-  tablolar?: ExtractedTable[];
+  // YENİ: Kritik malzemeler listesi
+  kritik_malzemeler?: Array<{
+    malzeme: string;
+    miktar?: string;
+    birim?: string;
+    onem_derecesi?: 'kritik' | 'orta' | 'düşük';
+  }>;
+
+  // Menü programı (opsiyonel)
+  menu_programi?: MenuDay[];
+
+  // Detaylı öğün dağılımı (opsiyonel)
+  detayli_veri?: {
+    ogun_dagilimi?: {
+      kahvalti?: number;
+      ogle?: number;
+      aksam?: number;
+      ara_ogun?: number;
+      ikindi?: number;
+    };
+  };
 
   // YENİ: Tablo İş Zekası (Table Intelligence)
   tablo_intelligence?: {
@@ -229,6 +264,9 @@ export interface ExtractedData {
     guven_skoru?: number;
     kaynak_tablolar?: string[];
   };
+
+  // YENİ: Çıkarılan tablolar listesi
+  tablolar?: ExtractedTable[];
 }
 
 export interface ContextualAnalysis {

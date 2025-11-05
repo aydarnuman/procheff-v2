@@ -11,6 +11,40 @@ import { BelgeTuru } from '@/types/ai';
 export function detectDocumentTypeFromFileName(fileName: string): BelgeTuru {
   const nameLower = fileName.toLowerCase();
 
+  // ⚠️ PDF/DOCX dosyaları ÖNCELİKLİ - bu dosyalar asla CSV/TXT olarak algılanmamalı
+  const isPdfOrDocx = nameLower.endsWith('.pdf') || nameLower.endsWith('.docx') || nameLower.endsWith('.doc');
+
+  if (isPdfOrDocx) {
+    // PDF/DOCX dosyaları için normal tespit akışına devam et (aşağıdaki kurallara uysun)
+    // Şartname kontrolü aşağıda yapılacak
+  }
+
+  // CSV, TXT, JSON dosyaları için özel kontrol
+  // NOT: Sadece gerçekten text/csv/json uzantılı dosyalar için geçerli
+  const isDataFile = !isPdfOrDocx && (nameLower.endsWith('.csv') || nameLower.endsWith('.txt') || nameLower.endsWith('.json'));
+
+  if (isDataFile) {
+    // Eğer "İhale Detayları" gibi kelimeler varsa → ihale_ilani
+    if (
+      nameLower.includes('ihale detay') ||
+      nameLower.includes('tender detail') ||
+      nameLower.includes('ihale bilgi') ||
+      nameLower.includes('ilan')
+    ) {
+      return 'ihale_ilani';
+    }
+    // Eğer teknik şartname içeriyor → teknik_sartname
+    if (nameLower.includes('teknik') && (nameLower.includes('şartname') || nameLower.includes('sartname'))) {
+      return 'teknik_sartname';
+    }
+    // Eğer idari şartname içeriyor → idari_sartname
+    if (nameLower.includes('idari') && (nameLower.includes('şartname') || nameLower.includes('sartname'))) {
+      return 'idari_sartname';
+    }
+    // Varsayılan: belirsiz (AI'ya bırak - content-based detection yapılacak)
+    return 'belirsiz';
+  }
+
   // İhale İlanı
   if (
     nameLower.includes('ilan') ||
@@ -44,7 +78,7 @@ export function detectDocumentTypeFromFileName(fileName: string): BelgeTuru {
     nameLower.includes('sozlesme') ||
     nameLower.includes('contract')
   ) {
-    return 'sozlesme';
+    return 'sozlesme_tasarisi';
   }
 
   // Fiyat Teklif Mektubu
@@ -53,12 +87,7 @@ export function detectDocumentTypeFromFileName(fileName: string): BelgeTuru {
     nameLower.includes('price') && nameLower.includes('offer') ||
     nameLower.includes('teklif') && nameLower.includes('mektup')
   ) {
-    return 'fiyat_teklif';
-  }
-
-  // CSV - maliyet dosyası
-  if (nameLower.endsWith('.csv')) {
-    return 'diger';
+    return 'fiyat_teklif_mektubu';
   }
 
   // Varsayılan - belirsiz
@@ -120,7 +149,7 @@ export function detectDocumentTypeFromContent(text: string, fileName: string): B
     first500.includes('sozlesme') ||
     (textLower.includes('taraf') && textLower.includes('madde'))
   ) {
-    return 'sozlesme';
+    return 'sozlesme_tasarisi';
   }
 
   // Fiyat Teklif Mektubu
@@ -129,7 +158,7 @@ export function detectDocumentTypeFromContent(text: string, fileName: string): B
     textLower.includes('teklif mektubu') ||
     (textLower.includes('teklif') && textLower.includes('₺'))
   ) {
-    return 'fiyat_teklif';
+    return 'fiyat_teklif_mektubu';
   }
 
   return 'belirsiz';

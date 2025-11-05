@@ -94,8 +94,10 @@ export function SimpleDocumentList({
       {/* Upload Section */}
       <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
         <div className="flex items-center justify-end gap-3 mb-4">
-          <label className="cursor-pointer">
+          <label className="cursor-pointer" htmlFor="document-file-input">
             <input
+              id="document-file-input"
+              name="document-files"
               type="file"
               multiple
               accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
@@ -109,8 +111,10 @@ export function SimpleDocumentList({
           </label>
 
           {onCSVSelect && (
-            <label className="cursor-pointer">
+            <label className="cursor-pointer" htmlFor="csv-file-input">
               <input
+                id="csv-file-input"
+                name="csv-files"
                 type="file"
                 multiple
                 accept=".csv"

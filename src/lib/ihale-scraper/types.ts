@@ -18,9 +18,10 @@ export interface ScrapedTender {
   title: string;
   organization?: string;
   organization_city?: string;
+  registration_number?: string; // İhale kayıt numarası
 
   // Mali bilgiler
-  budget?: number;
+  budget?: number | null;
   currency?: string;
 
   // Tarihler
@@ -156,7 +157,7 @@ export interface TenderInsertPayload {
   title: string;
   organization?: string;
   organization_city?: string;
-  budget?: number;
+  budget?: number | null;
   currency?: string;
   announcement_date?: Date;
   deadline_date?: Date;

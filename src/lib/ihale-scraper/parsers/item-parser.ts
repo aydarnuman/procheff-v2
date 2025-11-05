@@ -23,7 +23,7 @@ export class ItemParser {
    * 🎯 Genelleştirilmiş tablo parse - TÜM ihale siteleri için çalışır
    * Farklı tablo yapılarını otomatik tespit eder
    */
-  static parseItemTable($: cheerio.Root): TenderItem[] {
+  static parseItemTable($: cheerio.CheerioAPI): TenderItem[] {
     const items: TenderItem[] = [];
 
     // Farklı tablo selector'larını dene (en yaygından başla)
@@ -43,8 +43,8 @@ export class ItemParser {
       if (rows.length > 0) {
         console.log(`   📋 Tablo bulundu: "${selector}" (${rows.length} satır)`);
 
-        rows.each((i, row) => {
-          const item = this.parseItemRow($(row));
+        rows.each((i: number, row: any) => {
+          const item = this.parseItemRow($(row), $);
           if (item && item.item_name.trim().length > 0) {
             items.push(item);
           }
@@ -68,13 +68,13 @@ export class ItemParser {
   /**
    * 📝 Tek bir satırı parse et - Farklı sütun düzenlerini handle eder
    */
-  private static parseItemRow($row: cheerio.Cheerio): TenderItem | null {
+  private static parseItemRow($row: cheerio.Cheerio<cheerio.AnyNode>, $: cheerio.CheerioAPI): TenderItem | null {
     const cells = $row.find('td');
     if (cells.length < 1) return null; // En az 1 hücre olmalı
 
-    const cellTexts = Array.from(cells).map(cell =>
-      cheerio.load(cell).text().trim()
-    );
+    const cellTexts = cells.map((_, cell) =>
+      $(cell).text().trim()
+    ).get();
 
     // Header satırlarını atla
     if (cellTexts.some(text =>

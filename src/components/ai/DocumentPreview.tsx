@@ -12,7 +12,11 @@ import {
   Clock,
   Upload,
   Plus,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
+import { FileProcessingStatus, CSVFileStatus } from '@/lib/stores/ihale-store';
+import { BelgeTuru, BELGE_TURU_LABELS } from '@/types/ai';
 
 interface DocumentPage {
   pageNumber: number;
@@ -46,6 +50,8 @@ interface DocumentPreviewProps {
   totalFilesCount?: number; // Total number of files (PDF + CSV)
   csvFilesCount?: number; // Number of CSV files
   onAddFiles?: () => void; // Callback to add more files in Stage 2
+  fileStatuses?: FileProcessingStatus[]; // Detailed file information
+  csvFiles?: CSVFileStatus[]; // Detailed CSV file information
 }
 
 export function DocumentPreview({
@@ -59,12 +65,15 @@ export function DocumentPreview({
   totalFilesCount = 0,
   csvFilesCount = 0,
   onAddFiles,
+  fileStatuses = [],
+  csvFiles = [],
 }: DocumentPreviewProps) {
   const [selectedPage, setSelectedPage] = useState<number | null>(null);
   const [showEmptyPages, setShowEmptyPages] = useState(false);
   const [filterQuality, setFilterQuality] = useState<"all" | "high" | "low">(
     "all"
   );
+  const [showFileDetails, setShowFileDetails] = useState(false);
 
   // Filtreleme
   const filteredPages = pages.filter((page) => {
@@ -383,13 +392,19 @@ export function DocumentPreview({
         {(detectedDocTypes.length > 0 || totalFilesCount > 0) && (
           <div className="bg-gradient-to-r from-slate-800/50 via-slate-800/30 to-slate-800/50 border border-slate-700 rounded-2xl p-6">
             <div className="flex items-center justify-between">
-              {/* Sol: Dosya Bilgisi */}
-              <div className="flex items-center gap-4">
+              {/* Sol: Dosya Bilgisi - Tıklanabilir */}
+              <button
+                onClick={() => setShowFileDetails(!showFileDetails)}
+                className="flex items-center gap-4 hover:bg-slate-700/30 p-3 rounded-xl transition-colors"
+              >
                 <div className="p-3 bg-purple-500/20 rounded-xl border border-purple-500/30">
                   <span className="text-2xl">📋</span>
                 </div>
-                <div>
-                  <div className="text-sm text-gray-400 mb-1">Yüklenecek Dökümanlar</div>
+                <div className="text-left">
+                  <div className="text-sm text-gray-400 mb-1 flex items-center gap-2">
+                    Yüklenecek Dökümanlar
+                    {showFileDetails ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </div>
                   <div className="flex items-center gap-2">
                     {totalFilesCount > 0 ? (
                       <>
@@ -415,7 +430,7 @@ export function DocumentPreview({
                     )}
                   </div>
                 </div>
-              </div>
+              </button>
 
               {/* Orta: Separator */}
               <div className="h-12 w-px bg-gradient-to-b from-transparent via-slate-600 to-transparent"></div>
@@ -431,6 +446,86 @@ export function DocumentPreview({
                 </div>
               </div>
             </div>
+
+            {/* Dosya Detay Listesi - Expandable */}
+            {showFileDetails && (fileStatuses.length > 0 || csvFiles.length > 0) && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mt-4 pt-4 border-t border-slate-700"
+              >
+                <div className="space-y-2">
+                  {/* PDF/DOC Files */}
+                  {fileStatuses.map((file, index) => (
+                    <div
+                      key={`${file.fileMetadata.name}-${index}`}
+                      className="flex items-center gap-3 p-3 bg-slate-900/50 rounded-lg border border-slate-700/50 hover:border-slate-600 transition-colors"
+                    >
+                      <span className="text-xl">📄</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-white truncate">
+                            {file.fileMetadata.name}
+                          </span>
+                          {file.detectedType && file.detectedType !== 'belirsiz' && (
+                            <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded text-xs font-medium flex-shrink-0">
+                              {BELGE_TURU_LABELS[file.detectedType as BelgeTuru]}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-500">
+                          <span>{(file.fileMetadata.size / 1024 / 1024).toFixed(2)} MB</span>
+                          {file.status === 'completed' && file.wordCount && (
+                            <span className="text-green-400">✓ {file.wordCount.toLocaleString()} kelime</span>
+                          )}
+                          {file.status === 'processing' && (
+                            <span className="text-blue-400">🔄 İşleniyor...</span>
+                          )}
+                          {file.status === 'pending' && (
+                            <span className="text-yellow-400">⏳ Bekliyor</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* CSV Files */}
+                  {csvFiles.map((csv, index) => (
+                    <div
+                      key={`csv-${csv.fileMetadata.name}-${index}`}
+                      className="flex items-center gap-3 p-3 bg-slate-900/50 rounded-lg border border-emerald-700/50 hover:border-emerald-600 transition-colors"
+                    >
+                      <span className="text-xl">📊</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-white truncate">
+                            {csv.fileMetadata.name}
+                          </span>
+                          <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 rounded text-xs font-medium flex-shrink-0">
+                            CSV Maliyet
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-500">
+                          <span>{(csv.fileMetadata.size / 1024).toFixed(2)} KB</span>
+                          {csv.status === 'completed' && csv.analysis && (
+                            <span className="text-emerald-400">
+                              ✓ {csv.analysis.summary.total_items} ürün • {csv.analysis.summary.total_cost.toLocaleString('tr-TR', { style: 'currency', currency: 'TRY' })}
+                            </span>
+                          )}
+                          {csv.status === 'processing' && (
+                            <span className="text-blue-400">🔄 İşleniyor...</span>
+                          )}
+                          {csv.status === 'pending' && (
+                            <span className="text-yellow-400">⏳ Bekliyor</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
           </div>
         )}
 

@@ -59,6 +59,10 @@ export class DataValidator {
     const butceResult = this.validateButce(fixed_data);
     if (butceResult.warning) warnings.push(butceResult.warning);
 
+    // 6. Anomaly Detection (İstatistiksel Aykırı Değer Tespiti)
+    const anomalyResult = this.detectAnomalies(fixed_data);
+    if (anomalyResult.warnings) warnings.push(...anomalyResult.warnings);
+
     return {
       data: fixed_data,
       warnings,
@@ -440,5 +444,142 @@ export class DataValidator {
     }
 
     return {};
+  }
+
+  /**
+   * Anomaly Detection - İstatistiksel aykırı değer tespiti
+   */
+  private static detectAnomalies(data: ExtractedData): {
+    warnings?: ValidationWarning[];
+  } {
+    const warnings: ValidationWarning[] = [];
+    const { kisi_sayisi, tahmini_butce, ogun_sayisi, gun_sayisi } = data;
+
+    // 1. Kişi sayısı anomalisi (Z-score benzeri yaklaşım)
+    if (kisi_sayisi && kisi_sayisi > 0) {
+      // Tipik ihale kişi sayısı aralıkları
+      const TYPICAL_RANGES = {
+        small: { min: 10, max: 100 },      // Küçük ölçek: 10-100 kişi
+        medium: { min: 100, max: 500 },    // Orta ölçek: 100-500 kişi
+        large: { min: 500, max: 2000 },    // Büyük ölçek: 500-2000 kişi
+        xlarge: { min: 2000, max: 10000 }  // Çok büyük: 2000-10000 kişi
+      };
+
+      // 10,000'den büyük = anomaly
+      if (kisi_sayisi > 10000) {
+        warnings.push({
+          field: "kisi_sayisi",
+          severity: "error",
+          message: `🔴 ANOMALY: Kişi sayısı ${kisi_sayisi.toLocaleString()} normalin çok üstünde! Bu muhtemelen öğün sayısı veya hatalı toplama. Acil manuel kontrol gerekli.`,
+          original_value: kisi_sayisi,
+          auto_fixed: false
+        });
+      }
+      // 5000-10000 arası = şüpheli
+      else if (kisi_sayisi > 5000) {
+        warnings.push({
+          field: "kisi_sayisi",
+          severity: "warning",
+          message: `🟡 ANOMALY: Kişi sayısı ${kisi_sayisi.toLocaleString()} olağandışı yüksek. Türkiye'de en büyük toplu yemek ihaleleri genelde 5000 kişinin altındadır. Kontrol edin.`,
+          original_value: kisi_sayisi,
+          auto_fixed: false
+        });
+      }
+    }
+
+    // 2. Bütçe anomalisi (Kişi başına bütçe kontrolü)
+    if (tahmini_butce && kisi_sayisi && ogun_sayisi && gun_sayisi && gun_sayisi > 0) {
+      const toplam_ogun = kisi_sayisi * ogun_sayisi * gun_sayisi;
+      if (toplam_ogun > 0) {
+        const ogun_basina = tahmini_butce / toplam_ogun;
+
+        // Öğün başına 5 TL'den az = kritik anomaly
+        if (ogun_basina < 5) {
+          warnings.push({
+            field: "tahmini_butce",
+            severity: "error",
+            message: `🔴 ANOMALY: Öğün başı maliyet ${ogun_basina.toFixed(2)} TL imkansız derecede düşük! (Bütçe: ${tahmini_butce.toLocaleString()} TL, Toplam öğün: ${toplam_ogun.toLocaleString()}). Bütçe muhtemelen hatalı.`,
+            original_value: tahmini_butce,
+            auto_fixed: false
+          });
+        }
+        // Öğün başına 300 TL'den fazla = lüks/anomaly
+        else if (ogun_basina > 300) {
+          warnings.push({
+            field: "tahmini_butce",
+            severity: "warning",
+            message: `🟡 ANOMALY: Öğün başı maliyet ${ogun_basina.toFixed(2)} TL olağanüstü yüksek! Bu bir otel/resort ihalesi olmadıkça muhtemelen hata var.`,
+            original_value: tahmini_butce,
+            auto_fixed: false
+          });
+        }
+      }
+    }
+
+    // 3. Gün sayısı anomalisi
+    if (gun_sayisi && gun_sayisi > 0) {
+      // 2 yıldan uzun ihaleler nadir
+      if (gun_sayisi > 730) {
+        warnings.push({
+          field: "gun_sayisi",
+          severity: "warning",
+          message: `🟡 ANOMALY: İhale süresi ${gun_sayisi} gün (${(gun_sayisi / 365).toFixed(1)} yıl) çok uzun. Türkiye'de yemek ihaleleri genelde 1 yıllık olur.`,
+          original_value: gun_sayisi,
+          auto_fixed: false
+        });
+      }
+      // 7 günden kısa = test/etkinlik ihalesi olmalı
+      else if (gun_sayisi < 7) {
+        warnings.push({
+          field: "gun_sayisi",
+          severity: "info",
+          message: `ℹ️ ANOMALY: İhale süresi ${gun_sayisi} gün çok kısa. Bu bir etkinlik/kısa dönemli hizmet olabilir.`,
+          original_value: gun_sayisi,
+          auto_fixed: false
+        });
+      }
+    }
+
+    // 4. Öğün sayısı anomalisi
+    if (ogun_sayisi && ogun_sayisi > 0) {
+      // 4'ten fazla öğün nadir
+      if (ogun_sayisi > 4) {
+        warnings.push({
+          field: "ogun_sayisi",
+          severity: "warning",
+          message: `🟡 ANOMALY: Öğün sayısı ${ogun_sayisi} alışılmadık yüksek. Günde genelde 2-3 öğün olur (ara öğünler ayrı sayılıyorsa mantıklı olabilir).`,
+          original_value: ogun_sayisi,
+          auto_fixed: false
+        });
+      }
+    }
+
+    // 5. Çapraz anomaly (Toplam öğün sayısı)
+    if (kisi_sayisi && ogun_sayisi && gun_sayisi && kisi_sayisi > 0 && ogun_sayisi > 0 && gun_sayisi > 0) {
+      const toplam_ogun = kisi_sayisi * ogun_sayisi * gun_sayisi;
+
+      // 100 milyondan fazla öğün = kesin anomaly
+      if (toplam_ogun > 100_000_000) {
+        warnings.push({
+          field: "cross_check",
+          severity: "error",
+          message: `🔴 ANOMALY: Toplam öğün sayısı ${toplam_ogun.toLocaleString()} fiziksel olarak imkansız! (${kisi_sayisi} kişi × ${ogun_sayisi} öğün × ${gun_sayisi} gün). Sayıların tamamı yanlış olabilir.`,
+          original_value: toplam_ogun,
+          auto_fixed: false
+        });
+      }
+      // 100'den az öğün = çok küçük/test
+      else if (toplam_ogun < 100) {
+        warnings.push({
+          field: "cross_check",
+          severity: "info",
+          message: `ℹ️ ANOMALY: Toplam öğün sayısı ${toplam_ogun} çok küçük. Bu bir pilot/demo ihale olabilir.`,
+          original_value: toplam_ogun,
+          auto_fixed: false
+        });
+      }
+    }
+
+    return warnings.length > 0 ? { warnings } : {};
   }
 }

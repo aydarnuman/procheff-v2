@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { UtensilsCrossed, Info, AlertTriangle } from "lucide-react";
 import { AIAnalysisResult } from "@/types/ai";
-import { CostData, ProposalValidator } from "@/types/proposal";
+import { CostData, ProposalValidator, MealDistributionRow } from "@/types/proposal";
 import { MealDistributionTable } from "./MealDistributionTable";
 
 interface MealCostCardProps {
@@ -12,9 +12,9 @@ interface MealCostCardProps {
   onChange: (data: CostData) => void;
 }
 
-const DEFAULT_MEAL_ROWS = [
+const DEFAULT_MEAL_ROWS: MealDistributionRow[] = [
   { mealType: "sabah_kahvaltisi", dietType: "standart", adet: 0, birimFiyat: 0, toplam: 0 },
-  { mealType: "oglen_yemegi", dietType: "standart", adet: 0, birimFiyat: 0, toplam: 0 },
+  { mealType: "ogle_yemegi", dietType: "standart", adet: 0, birimFiyat: 0, toplam: 0 },
   { mealType: "aksam_yemegi", dietType: "standart", adet: 0, birimFiyat: 0, toplam: 0 },
   { mealType: "kusluk", dietType: "standart", adet: 0, birimFiyat: 0, toplam: 0 },
 ];

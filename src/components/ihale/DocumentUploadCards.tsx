@@ -203,17 +203,17 @@ export function DocumentUploadCards({
                   <div className="w-full space-y-1">
                     {/* Durum */}
                     <div className="text-sm font-medium">
-                      {status.processingCount > 0 && status.processingCount === status.count ? (
+                      {(status.processingCount ?? 0) > 0 && status.processingCount === status.count ? (
                         // Tüm dosyalar işleniyor
                         <div className="text-blue-400 flex items-center justify-center gap-2">
                           <Loader2 className="w-4 h-4 animate-spin" />
                           {status.count} dosya işleniyor...
                         </div>
-                      ) : status.processingCount > 0 ? (
+                      ) : (status.processingCount ?? 0) > 0 ? (
                         // Karışık durum
                         <div className="text-blue-400 flex items-center justify-center gap-2">
                           <Loader2 className="w-4 h-4 animate-spin" />
-                          {status.processingCount} işleniyor, {status.completedCount} hazır
+                          {status.processingCount ?? 0} işleniyor, {status.completedCount} hazır
                         </div>
                       ) : status.hasCompleted ? (
                         // Hepsi tamamlandı

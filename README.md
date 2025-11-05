@@ -78,6 +78,25 @@ Auto-save with 2-second debounce to localStorage
 
 ---
 
+## Recent Updates (v0.1.0)
+
+### 🐛 Bug Fixes
+- **Fixed "Belge Ekle" Button**: Corrected HTML label-input ID mismatch in SimpleDocumentList component
+- **UI Improvements**: Enhanced button functionality and user experience
+
+### 🎨 UI/UX Enhancements
+- **İhale Robotu Page**: Improved document analysis workflow
+- **Button Optimization**: Removed redundant "Seçili Dökümanları Analiz Et" button
+- **Analysis Flow**: Renamed "Toplu Export & Analiz Et" to "Hızlı Analiz Başlat" for clarity
+- **Icon Updates**: Updated button icons for better visual hierarchy
+
+### 🔧 Technical Improvements
+- **Component Refactoring**: Cleaned up document upload components
+- **Build Optimization**: Ensured all changes compile successfully
+- **Code Quality**: Maintained TypeScript strict mode compliance
+
+---
+
 ## Tech Stack
 
 ### Core

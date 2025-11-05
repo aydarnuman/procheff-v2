@@ -34,6 +34,21 @@ export class NotificationService {
   }
 
   /**
+   * Notify about a new tender (currently disabled)
+   */
+  static async notifyNewTender(tender: {
+    id: string;
+    title: string;
+    organization?: string;
+    organization_city?: string;
+    budget?: number;
+    deadline_date?: Date | string;
+    category?: string;
+  }): Promise<void> {
+    console.log(`ℹ️ Would notify about new tender: ${tender.title} (system disabled)`);
+  }
+
+  /**
    * Send deadline approaching notifications (currently disabled)
    */
   static async sendDeadlineApproachingNotifications(hours: number = 24): Promise<void> {

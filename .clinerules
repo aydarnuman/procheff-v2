@@ -13,7 +13,26 @@ Bu proje, ihale dokümanlarını (PDF, DOCX, CSV) yükleyip AI ile analiz eden b
 
 ---
 
-## 🛠️ Teknoloji Stack
+## � Son Güncellemeler (v0.1.0)
+
+### 🐛 Bug Fixes
+- **"Belge Ekle" Buton Düzeltmesi**: SimpleDocumentList component'ında HTML label-input ID uyumsuzluğu düzeltildi
+- **UI İyileştirmeleri**: Buton işlevselliği ve kullanıcı deneyimi geliştirildi
+
+### 🎨 UI/UX Geliştirmeleri
+- **İhale Robotu Sayfası**: Doküman analiz iş akışı iyileştirildi
+- **Buton Optimizasyonu**: Gereksiz "Seçili Dökümanları Analiz Et" butonu kaldırıldı
+- **Analiz Akışı**: "Toplu Export & Analiz Et" butonu "Hızlı Analiz Başlat" olarak yeniden adlandırıldı
+- **İkon Güncellemeleri**: Daha iyi görsel hiyerarşi için buton ikonları güncellendi
+
+### 🔧 Teknik İyileştirmeler
+- **Component Refactoring**: Doküman upload componentleri temizlendi
+- **Build Optimizasyonu**: Tüm değişikliklerin başarıyla derlendiği doğrulandı
+- **Kod Kalitesi**: TypeScript strict mode uyumluluğu korundu
+
+---
+
+## �🛠️ Teknoloji Stack
 
 ### Core
 

@@ -56,6 +56,10 @@ export interface LogMetadata {
   sayfaSayisi?: number;         // PDF sayfa sayısı
   kelimeSayisi?: number;        // Çıkarılan kelime sayısı
   karakterSayisi?: number;      // Karakter sayısı
+  satirSayisi?: number;         // CSV satır sayısı
+  sutunSayisi?: number;         // CSV sütun sayısı
+  belgeSayisi?: number;         // Birleştirilen belge sayısı
+  belgeTurleri?: string;        // Belge türleri (virgülle ayrılmış)
   aiModel?: string;             // Kullanılan AI model
   tokenKullanimi?: number;      // Token kullanımı
   maliyetTL?: number;           // Maliyet (TL)

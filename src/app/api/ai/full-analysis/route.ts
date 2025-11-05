@@ -9,16 +9,20 @@ import { TurkishContextAnalyzer } from "@/lib/utils/turkish-context-analyzer";
 import { DualAPIOrchestrator } from "@/lib/ai/dual-api-orchestrator";
 import { categorizeTables } from "@/lib/ai/table-categorizer";
 import { CSVCostAnalysis } from "@/lib/csv/csv-parser";
+import { ANALYSIS_STAGES, createProgressEvent, createDocumentStage, getDocumentProcessingProgress } from "@/lib/ai/analysis-stages";
 
 // 💾 CACHE MANAGER
 class ServerAnalysisCache {
   private static cache = new Map<string, { data: any; timestamp: number }>();
-  private static readonly TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
+  private static readonly TTL = 3 * 24 * 60 * 60 * 1000; // 3 days (daha güncel analizler)
   private static readonly MAX_ENTRIES = 50; // Server can hold more
+  private static readonly MODEL_VERSION = 'v2.0.0'; // Model versiyonu (değişince cache invalidate olur)
 
-  static async generateHash(text: string): Promise<string> {
+  static async generateHash(text: string, additionalContext?: string): Promise<string> {
+    // Hash: text + model_version + (opsiyonel context)
     const encoder = new TextEncoder();
-    const data = encoder.encode(text);
+    const combinedData = text + this.MODEL_VERSION + (additionalContext || '');
+    const data = encoder.encode(combinedData);
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
@@ -133,6 +137,7 @@ function convertCSVToTables(csvAnalyses: any[]): ExtractedTable[] {
       rows,
       sutun_sayisi: headers.length,
       satir_sayisi: rows.length,
+      guven: 1.0, // CSV verileri %100 güvenilir
       category: "financial" // CSV maliyet verileri -> financial category
     };
 
@@ -211,81 +216,63 @@ function getDocumentMessages(docType: string) {
 }
 
 // Streaming response handler
-async function createStreamingResponse(text: string, csvAnalyses: any[] | undefined, startTime: number) {
+async function createStreamingResponse(text: string, csvAnalyses: any[] | undefined, startTime: number, textHash: string) {
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        // Progress: Starting
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-          type: 'progress',
-          stage: '🚀 AI analizi başlatılıyor...',
-          progress: 5,
-          timestamp: Date.now()
-        })}\n\n`));
+        // Progress: Starting (sabit stage mapping)
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(createProgressEvent(ANALYSIS_STAGES.STARTING))}\n\n`));
 
         // Doküman türlerini tespit et
         const detectedTypes = detectDocumentTypes(text);
         console.log('📋 Tespit edilen doküman türleri:', detectedTypes);
 
-        // Provider selection
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-          type: 'progress',
-          stage: '🤖 AI sağlayıcıları seçiliyor...',
-          progress: 10,
-          timestamp: Date.now()
-        })}\n\n`));
+        // Provider selection (sabit stage mapping)
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(createProgressEvent(ANALYSIS_STAGES.PROVIDER_SELECTION))}\n\n`));
 
         const { extraction, strategic } = AIProviderFactory.getHybridProviders({
           textLength: text.length,
           budget: "balanced",
         });
 
-        // Doküman türlerine özel mesajlar göster (çok kısa - karışıklık olmasın)
+        // Doküman türlerine özel mesajlar göster (sabit stage mapping)
         if (detectedTypes.length > 0) {
           const typeList = detectedTypes.map(t => {
             const msg = getDocumentMessages(t);
             return msg.emoji;
           }).join(' ');
 
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-            type: 'progress',
-            stage: `📋 ${detectedTypes.length} belge tespit edildi ${typeList}`,
-            progress: 12,
-            timestamp: Date.now()
-          })}\n\n`));
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(createProgressEvent(
+            ANALYSIS_STAGES.DOCUMENT_DETECTION,
+            `${detectedTypes.length} belge tespit edildi ${typeList}`
+          ))}\n\n`));
         }
 
-        // Turkish context analysis
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-          type: 'progress',
-          stage: '🔍 Türkçe bağlam analizi yapılıyor...',
-          progress: 15,
-          timestamp: Date.now()
-        })}\n\n`));
+        // Turkish context analysis (sabit stage mapping)
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(createProgressEvent(ANALYSIS_STAGES.CONTEXT_ANALYSIS))}\n\n`));
 
         const contextAnalysis = TurkishContextAnalyzer.analyzeParagraph(text);
 
-        // Data extraction - Her doküman türü için mesaj göster
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-          type: 'progress',
-          stage: `⚙️ AI veri çıkarımı başladı (${extraction.type.toUpperCase()})`,
-          progress: 20,
-          timestamp: Date.now()
-        })}\n\n`));
+        // Data extraction - Her doküman türü için mesaj göster (sabit stage mapping)
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(createProgressEvent(
+          ANALYSIS_STAGES.DATA_EXTRACTION_START,
+          `${extraction.type.toUpperCase()} kullanılıyor`
+        ))}\n\n`));
 
-        // Doküman türlerine özel detaylı mesajlar
-        let currentProgress = 25;
-        for (const docType of detectedTypes) {
+        // Doküman türlerine özel detaylı mesajlar (dinamik progress 25-45 arası)
+        for (let i = 0; i < detectedTypes.length; i++) {
+          const docType = detectedTypes[i];
           const docMsg = getDocumentMessages(docType);
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-            type: 'progress',
-            stage: `${docMsg.emoji} ${docMsg.message}`,
-            progress: currentProgress,
-            timestamp: Date.now()
-          })}\n\n`));
-          currentProgress += Math.floor((45 - 25) / detectedTypes.length);
+          const progress = getDocumentProcessingProgress(i, detectedTypes.length);
+
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(createDocumentStage(
+            docType,
+            docMsg.emoji,
+            docMsg.message,
+            progress
+          ))}\n\n`));
 
           // Küçük delay (mesajların okunabilir olması için)
           await new Promise(resolve => setTimeout(resolve, 300));
@@ -296,22 +283,14 @@ async function createStreamingResponse(text: string, csvAnalyses: any[] | undefi
           const orchestrator = new DualAPIOrchestrator();
           rawExtractedData = await orchestrator.extractWithFallback(text);
 
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-            type: 'progress',
-            stage: '✅ Veri çıkarımı tamamlandı',
-            progress: 50,
-            details: `Güven skoru: ${Math.round(rawExtractedData.guven_skoru * 100)}%`,
-            timestamp: Date.now()
-          })}\n\n`));
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(createProgressEvent(
+            ANALYSIS_STAGES.DATA_EXTRACTION_COMPLETE,
+            `Güven skoru: ${Math.round(rawExtractedData.guven_skoru * 100)}%`
+          ))}\n\n`));
 
-          // 📊 CSV TABLOLARINI ENTEGRE ET
+          // 📊 CSV TABLOLARINI ENTEGRE ET (sabit stage mapping)
           if (csvAnalyses && csvAnalyses.length > 0) {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-              type: 'progress',
-              stage: '📊 CSV maliyet verileri entegre ediliyor...',
-              progress: 52,
-              timestamp: Date.now()
-            })}\n\n`));
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(createProgressEvent(ANALYSIS_STAGES.CSV_INTEGRATION))}\n\n`));
 
             const csvTables = convertCSVToTables(csvAnalyses);
 
@@ -321,20 +300,13 @@ async function createStreamingResponse(text: string, csvAnalyses: any[] | undefi
             }
             rawExtractedData.tablolar.push(...csvTables);
 
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-              type: 'progress',
-              stage: `✅ ${csvTables.length} CSV tablosu eklendi`,
-              progress: 55,
-              timestamp: Date.now()
-            })}\n\n`));
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(createProgressEvent(
+              ANALYSIS_STAGES.CSV_COMPLETE,
+              `${csvTables.length} CSV tablosu`
+            ))}\n\n`));
           }
         } catch (error) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-            type: 'progress',
-            stage: '🔄 Claude fallback aktif...',
-            progress: 40,
-            timestamp: Date.now()
-          })}\n\n`));
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(createProgressEvent(ANALYSIS_STAGES.GEMINI_FALLBACK))}\n\n`));
 
           const claude = new ClaudeProvider();
           rawExtractedData = await claude.extractStructuredData(text);
@@ -342,24 +314,14 @@ async function createStreamingResponse(text: string, csvAnalyses: any[] | undefi
 
         const extractionTime = Date.now() - startTime;
 
-        // Validation
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-          type: 'progress',
-          stage: '✔️ Veri doğrulama yapılıyor...',
-          progress: 60,
-          timestamp: Date.now()
-        })}\n\n`));
+        // Validation (sabit stage mapping)
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(createProgressEvent(ANALYSIS_STAGES.VALIDATION))}\n\n`));
 
         const validationResult = DataValidator.validate(rawExtractedData);
         let extractedData = validationResult.data;
 
-        // Financial control
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-          type: 'progress',
-          stage: '💰 Finansal kontrol hesaplanıyor...',
-          progress: 65,
-          timestamp: Date.now()
-        })}\n\n`));
+        // Financial control (sabit stage mapping)
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(createProgressEvent(ANALYSIS_STAGES.FINANCIAL_CONTROL))}\n\n`));
 
         const finansalKontrol = calculateFinancialControl(extractedData);
         extractedData = {
@@ -367,16 +329,11 @@ async function createStreamingResponse(text: string, csvAnalyses: any[] | undefi
           finansal_kontrol: finansalKontrol,
         };
 
-        // Critical field check
+        // Critical field check (sabit stage mapping)
         const criticalFieldsMissing = !extractedData.kisi_sayisi || !extractedData.tahmini_butce;
 
         if (criticalFieldsMissing && extraction.type === "gemini") {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-            type: 'progress',
-            stage: '🔄 Kritik alanlar için Claude fallback...',
-            progress: 70,
-            timestamp: Date.now()
-          })}\n\n`));
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(createProgressEvent(ANALYSIS_STAGES.CLAUDE_FALLBACK))}\n\n`));
 
           try {
             const claude = new ClaudeProvider();
@@ -393,14 +350,11 @@ async function createStreamingResponse(text: string, csvAnalyses: any[] | undefi
           }
         }
 
-        // Contextual analysis
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-          type: 'progress',
-          stage: `📊 Stratejik analiz yapılıyor (${strategic.type.toUpperCase()})`,
-          progress: 75,
-          details: 'Risk değerlendirmesi ve öneriler hazırlanıyor',
-          timestamp: Date.now()
-        })}\n\n`));
+        // Contextual analysis (sabit stage mapping)
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(createProgressEvent(
+          ANALYSIS_STAGES.STRATEGIC_ANALYSIS,
+          `${strategic.type.toUpperCase()} - Risk değerlendirmesi`
+        ))}\n\n`));
 
         const contextualAnalysis = await strategic.provider.analyzeContext(extractedData);
 
@@ -412,13 +366,10 @@ async function createStreamingResponse(text: string, csvAnalyses: any[] | undefi
           ? detectedTypes.map(t => getDocumentMessages(t).emoji).join(' ')
           : '📄';
 
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-          type: 'progress',
-          stage: `📋 Analiz tamamlandı ${analyzedDocsMessage}`,
-          progress: 95,
-          details: `${(totalProcessingTime / 1000).toFixed(1)} saniyede tamamlandı`,
-          timestamp: Date.now()
-        })}\n\n`));
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(createProgressEvent(
+          ANALYSIS_STAGES.FINALIZING,
+          `${analyzedDocsMessage} ${(totalProcessingTime / 1000).toFixed(1)}s`
+        ))}\n\n`));
 
         // Calculate overall confidence
         const overallConfidence = Math.min(
@@ -438,17 +389,34 @@ async function createStreamingResponse(text: string, csvAnalyses: any[] | undefi
           csv_analyses: csvAnalyses, // CSV analizlerini ekle
         };
 
+        // Serialization için veriyi düzleştir
+        const sanitizedResult = JSON.parse(JSON.stringify(result));
+
+        const metadata = {
+          total_processing_time: totalProcessingTime,
+          extraction_time: extractionTime,
+          analysis_time: analysisTime,
+          text_length: text.length,
+          timestamp: new Date().toISOString(),
+        };
+
+        // 💾 CACHE SAVE - Başarılı analizi cache'e kaydet (streaming mode)
+        ServerAnalysisCache.set(textHash, {
+          data: sanitizedResult,
+          metadata,
+          timestamp: Date.now(),
+        });
+
+        console.log(`\n💾 [STREAMING] Analiz cache'e kaydedildi`);
+        console.log(`   Hash: ${textHash.substring(0, 16)}...`);
+        const cacheStats = ServerAnalysisCache.getStats();
+        console.log(`📊 Cache Stats: ${cacheStats.entries}/${cacheStats.maxEntries} entries\n`);
+
         // Send completion
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({
           type: 'complete',
-          result: JSON.parse(JSON.stringify(result)),
-          metadata: {
-            total_processing_time: totalProcessingTime,
-            extraction_time: extractionTime,
-            analysis_time: analysisTime,
-            text_length: text.length,
-            timestamp: new Date().toISOString(),
-          }
+          result: sanitizedResult,
+          metadata
         })}\n\n`));
 
         controller.close();
@@ -532,6 +500,49 @@ export async function POST(request: NextRequest) {
       const stats = ServerAnalysisCache.getStats();
       console.log(`📊 Cache Stats: ${stats.entries}/${stats.maxEntries} entries`);
 
+      // Streaming mode için cache hit response
+      if (streamMode) {
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+          start(controller) {
+            // Progress başlangıç
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(createProgressEvent(ANALYSIS_STAGES.STARTING))}\n\n`));
+
+            // Cache'den geliyor mesajı
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              type: 'progress',
+              stage: '💾 Cache\'den yükleniyor...',
+              progress: 50,
+              details: `${Math.round(cacheAge / 1000 / 60)} dakika önce analiz edildi`,
+              timestamp: Date.now()
+            })}\n\n`));
+
+            // Tamamlandı
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              type: 'complete',
+              result: cachedResult.data,
+              metadata: {
+                ...cachedResult.metadata,
+                cached: true,
+                cache_age_ms: cacheAge,
+                cache_hit: true,
+              }
+            })}\n\n`));
+
+            controller.close();
+          }
+        });
+
+        return new NextResponse(stream, {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+          },
+        });
+      }
+
+      // Non-streaming mode için JSON response
       return NextResponse.json({
         success: true,
         data: cachedResult.data,
@@ -549,7 +560,8 @@ export async function POST(request: NextRequest) {
 
     // If streaming mode, use ReadableStream
     if (streamMode) {
-      return createStreamingResponse(text, csvAnalyses, startTime);
+      const response = await createStreamingResponse(text, csvAnalyses, startTime, textHash);
+      return response;
     }
 
     // 🚀 HYBRID MODE: Select optimal provider for extraction

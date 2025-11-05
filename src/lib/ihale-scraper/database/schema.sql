@@ -158,6 +158,75 @@ CREATE TRIGGER IF NOT EXISTS ihale_listings_au AFTER UPDATE ON ihale_listings BE
 END;
 
 -- ============================================================================
+-- TENDER ANALYSIS (AI analysis cache)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS tender_analysis (
+  tender_id TEXT PRIMARY KEY,                   -- İhale ID (ihale_listings.id)
+  analysis_result TEXT,                         -- AI analysis result (JSON)
+  full_content TEXT,                            -- Full scraped content (JSON)
+  analyzed_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- ============================================================================
+-- TENDER SESSIONS (Yeni Mimari - Single Source of Truth)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS tender_sessions (
+  id TEXT PRIMARY KEY,                          -- tender_20251105_123456
+  user_id TEXT,                                 -- Kullanıcı ID (opsiyonel)
+
+  -- Session bilgileri
+  source TEXT NOT NULL,                         -- 'ihalebul', 'manual'
+  tender_id INTEGER,                            -- İhale ID (ihale_listings.id)
+  status TEXT NOT NULL DEFAULT 'created',       -- 'created', 'uploading', 'uploaded', 'analyzing', 'completed', 'error'
+
+  -- Metadata
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+
+  -- Analysis result (JSON)
+  result_json TEXT,                             -- AI analysis sonucu (JSON)
+  error_message TEXT,                           -- Hata mesajı (varsa)
+
+  FOREIGN KEY (tender_id) REFERENCES ihale_listings(id) ON DELETE CASCADE
+);
+
+-- ============================================================================
+-- TENDER FILES (Session'a ait dosyalar)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS tender_files (
+  id TEXT PRIMARY KEY,                          -- file_uuid
+  session_id TEXT NOT NULL,                     -- tender_sessions.id
+
+  -- Dosya bilgileri
+  filename TEXT NOT NULL,                       -- Dosya adı
+  original_filename TEXT,                       -- Orijinal dosya adı (ZIP içinden çıkanlar için)
+  mime_type TEXT NOT NULL,                      -- MIME type (file-type detection)
+  size INTEGER NOT NULL,                        -- Dosya boyutu (bytes)
+
+  -- Storage
+  storage_path TEXT NOT NULL,                   -- Dosya yolu (data/sessions/{sessionId}/{filename})
+
+  -- Metadata
+  is_extracted_from_zip INTEGER DEFAULT 0,      -- ZIP'den çıkarıldı mı?
+  parent_zip_id TEXT,                           -- Parent ZIP file ID (varsa)
+  uploaded_at TEXT DEFAULT (datetime('now')),
+
+  FOREIGN KEY (session_id) REFERENCES tender_sessions(id) ON DELETE CASCADE,
+  FOREIGN KEY (parent_zip_id) REFERENCES tender_files(id) ON DELETE CASCADE
+);
+
+-- ============================================================================
+-- INDEXES (Tender Sessions)
+-- ============================================================================
+CREATE INDEX IF NOT EXISTS idx_tender_sessions_status ON tender_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_tender_sessions_tender_id ON tender_sessions(tender_id);
+CREATE INDEX IF NOT EXISTS idx_tender_sessions_created ON tender_sessions(created_at);
+
+CREATE INDEX IF NOT EXISTS idx_tender_files_session_id ON tender_files(session_id);
+CREATE INDEX IF NOT EXISTS idx_tender_files_parent_zip ON tender_files(parent_zip_id);
+
+-- ============================================================================
 -- VIEWS (Kolay sorgulama için)
 -- ============================================================================
 
@@ -177,7 +246,4 @@ WHERE il.is_catering = 1
 ORDER BY il.deadline_date ASC;
 
 -- ============================================================================
--- İNİT MESAJI
--- ============================================================================
--- SQLite doesn't support notices, so this is just a comment
--- ✅ İhale Scraper SQLite Database Schema Initialized
+

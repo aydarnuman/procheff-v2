@@ -162,11 +162,11 @@ export class IlanGovScraper extends BaseScraper {
         const results: any[] = [];
 
         // Strategy 1: Try to find igt-ad-card components (Angular)
-        let cards = document.querySelectorAll('igt-ad-card');
+        let cards: Element[] = Array.from(document.querySelectorAll('igt-ad-card'));
 
         // Strategy 2: Try carousel items
         if (cards.length === 0) {
-          cards = document.querySelectorAll('.carousel-item, [class*="ad-card"], [class*="ilan-item"]');
+          cards = Array.from(document.querySelectorAll('.carousel-item, [class*="ad-card"], [class*="ilan-item"]'));
         }
 
         // Strategy 3: Try any element with ILN ID
@@ -177,8 +177,12 @@ export class IlanGovScraper extends BaseScraper {
 
           // If ILN IDs exist, try to find their container elements
           if (ilnMatches.length > 0) {
-            const allElements = document.querySelectorAll('[class*="item"], [class*="card"], [class*="row"]');
-            cards = Array.from(allElements).filter(el => /ILN\d{8}/.test(el.textContent || ''));
+            const allElements = [
+              ...document.querySelectorAll('[class*="item"]'),
+              ...document.querySelectorAll('[class*="card"]'),
+              ...document.querySelectorAll('[class*="row"]')
+            ];
+            cards = allElements.filter(el => /ILN\d{8}/.test(el.textContent || ''));
           }
         }
 
@@ -354,7 +358,7 @@ export class IlanGovScraper extends BaseScraper {
 
         elements.each((i, elem) => {
           try {
-            const tender = this.parseHTMLElement($, elem);
+            const tender = this.parseHTMLElement($, $(elem) as cheerio.Cheerio<cheerio.Element>);
             if (this.validateTender(tender)) {
               tenders.push(tender as ScrapedTender);
             }
@@ -389,9 +393,9 @@ export class IlanGovScraper extends BaseScraper {
       organization_city: this.extractCity(item.Kurum || item.IdareName || ''),
       budget: this.parseBudget(item.TahminiBedel || item.budget || item.Butce || ''),
       currency: 'TRY',
-      announcement_date: this.parseDate(item.IlanTarihi || item.announcement_date || item.YayinTarihi || ''),
-      deadline_date: this.parseDate(item.SonTarih || item.deadline || item.TeklifSonTarihi || ''),
-      tender_date: this.parseDate(item.IhaleTarihi || item.tender_date || ''),
+      announcement_date: this.parseDate(item.IlanTarihi || item.announcement_date || item.YayinTarihi || '') || undefined,
+      deadline_date: this.parseDate(item.SonTarih || item.deadline || item.TeklifSonTarihi || '') || undefined,
+      tender_date: this.parseDate(item.IhaleTarihi || item.tender_date || '') || undefined,
       tender_type: this.cleanText(item.IhaleTuru || item.type || item.UsulAdi || ''),
       procurement_type: 'Hizmet Alımı',
       category: 'Yemek Hazırlama, Dağıtım, Catering',
@@ -403,7 +407,7 @@ export class IlanGovScraper extends BaseScraper {
   /**
    * Parse HTML element to ScrapedTender
    */
-  private parseHTMLElement($: cheerio.CheerioAPI, elem: cheerio.Element): Partial<ScrapedTender> {
+  private parseHTMLElement($: cheerio.CheerioAPI, elem: cheerio.Cheerio<cheerio.Element>): Partial<ScrapedTender> {
     const $elem = $(elem);
 
     const title =

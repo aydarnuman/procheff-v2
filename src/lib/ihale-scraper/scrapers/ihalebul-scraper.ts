@@ -4,7 +4,8 @@
 // ============================================================================
 
 import { BaseScraper } from './base-scraper';
-import type { ScrapedTender, ScraperSourceConfig } from '../types';
+import type { ScrapedTender } from '../types';
+import type { ScraperSourceConfig } from '../config';
 import * as cheerio from 'cheerio';
 import puppeteer from 'puppeteer';
 import { BLOCKED_CITIES } from '../config';
@@ -868,9 +869,9 @@ export class IhalebulScraper extends BaseScraper {
 
       // Extract announcement date (Yayın Tarihi) from footer div
       // Format: "Yayın tarihi: 7.10.2025"
-      const announcementDateEl = $('div:contains("Yayın tarihi:")').filter((i, el) => {
+      const announcementDateEl = $('div:contains("Yayın tarihi:")').filter((i: number, el: any) => {
         const text = $(el).text();
-        return text.includes('Yayın tarihi:') && text.match(/\d{1,2}\.\d{1,2}\.\d{4}/);
+        return text.includes('Yayın tarihi:') && !!text.match(/\d{1,2}\.\d{1,2}\.\d{4}/);
       }).first();
 
       let announcementDateText = '';
@@ -920,12 +921,12 @@ export class IhalebulScraper extends BaseScraper {
         title: title,
         organization: organization,
         organization_city: cityText || undefined,
-        tender_date: tenderDate, // İhale tarihi (2.1. Tarih ve Saati)
-        announcement_date: announcementDate, // Yayın tarihi (footer)
-        deadline_date: deadlineDate, // Teklif son tarihi (card-body)
+        tender_date: tenderDate || undefined, // İhale tarihi (2.1. Tarih ve Saati)
+        announcement_date: announcementDate || undefined, // Yayın tarihi (footer)
+        deadline_date: deadlineDate || undefined, // Teklif son tarihi (card-body)
         source_url: url,
         scraped_at: new Date(),
-        raw_json: rawJson, // 🆕 Kayıt numarası burada saklanacak
+        raw_json: rawJson || undefined, // 🆕 Kayıt numarası burada saklanacak
         // Diğer alanlar AI tarafından doldurulacak (on-demand)
       };
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DualAPIOrchestrator } from "@/lib/ai/dual-api-orchestrator";
 import { logger, LogKategori } from "@/lib/logger";
+import { ExtractedData } from "@/types/ai";
 
 export const runtime = "nodejs";
 

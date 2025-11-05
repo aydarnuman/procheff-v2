@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     let failed = 0;
 
     // Process each tender
-    for (const tender of tenders) {
+    for (const tender of tenders as any[]) {
       console.log(`\n🔍 ${tender.id}: ${tender.title}`);
 
       try {

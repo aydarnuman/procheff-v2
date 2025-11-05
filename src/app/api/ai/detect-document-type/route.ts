@@ -89,23 +89,27 @@ Belge Türleri:
 
     console.log(`📄 ${fileName} → ${parsed.belge_turu} (güven: ${Math.round(parsed.guven * 100)}%)`);
 
-    return NextResponse.json({
+    // Düz obje olarak döndür (Next.js serialization hatası önleme)
+    const result = {
       success: true,
       data: {
         belge_turu: parsed.belge_turu as BelgeTuru,
         guven: parsed.guven || 0.5,
         sebep: parsed.sebep || ""
       }
-    });
+    };
+
+    return NextResponse.json(result);
 
   } catch (error) {
     console.error("Document type detection error:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : "Bilinmeyen hata",
-      },
-      { status: 500 }
-    );
+
+    // Düz obje olarak hata döndür
+    const errorResponse = {
+      success: false,
+      error: error instanceof Error ? error.message : "Bilinmeyen hata",
+    };
+
+    return NextResponse.json(errorResponse, { status: 500 });
   }
 }

@@ -43,10 +43,9 @@ export const navItems: NavItem[] = [
     icon: "FileText",
     children: [
       { label: "Dashboard", href: "/ihale", icon: "LayoutDashboard" },
-      { label: "Yeni Analiz", href: "/ihale/yeni-analiz", icon: "Plus" },
+      { label: "İhale Robotu", href: "/ihale-robotu", icon: "Target" },
       { label: "İhale Listesi", href: "/ihale/liste", icon: "List" },
       { label: "Karşılaştırma", href: "/ihale/karsilastirma", icon: "GitCompare" },
-      { label: "🆕 İhale Takip (Otomatik)", href: "/ihale-takip", icon: "Target" },
     ],
   },
   {

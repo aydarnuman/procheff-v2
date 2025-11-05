@@ -54,7 +54,13 @@ interface TableIntelligence {
       fiyat: string;
     }>;
   };
-  guven_skoru?: number;
+  // Tarih bilgileri (tablolardan çıkarılır)
+  ihale_tarihi?: string;
+  teklif_son_tarih?: string;
+  ise_baslama_tarih?: string;
+  ihale_suresi?: string;
+
+  guven_skoru: number; // Required field
   kaynak_tablolar?: string[];
 }
 
@@ -79,8 +85,8 @@ export class TableIntelligenceAgent {
    * Tabloları analiz et ve intelligence çıkar
    */
   async analyzeTableIntelligence(tables: ExtractedTable[]): Promise<TableIntelligence> {
-    if (tables.length === 0) {
-      return {};
+      if (tables.length === 0) {
+        return { guven_skoru: 1.0 }; // Default value for guven_skoru
     }
 
     console.log(`\n🧠 TABLE INTELLIGENCE BAŞLIYOR - ${tables.length} tablo analiz ediliyor`);
@@ -138,7 +144,7 @@ export class TableIntelligenceAgent {
     } catch (error) {
       console.error("❌ Table intelligence error:", error);
       logAIError("/ai/table-intelligence", error);
-      return {};
+      return { guven_skoru: 0 };
     }
   }
 
@@ -370,7 +376,7 @@ ${tableDescriptions.join("\n")}
     } catch (error) {
       console.error("❌ Failed to parse table intelligence response:", error);
       console.error("Response text:", responseText);
-      return {};
+      return { guven_skoru: 0 };
     }
   }
 

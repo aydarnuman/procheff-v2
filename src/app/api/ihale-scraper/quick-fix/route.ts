@@ -58,8 +58,8 @@ export async function POST(request: Request) {
     await page.waitForSelector('input[name="kul_adi"]', { timeout: 10000 });
 
     await page.evaluate((email, pass) => {
-      const userInputs = document.querySelectorAll('input[name="kul_adi"]');
-      const passInputs = document.querySelectorAll('input[name="sifre"]');
+      const userInputs = document.querySelectorAll('input[name="kul_adi"]') as NodeListOf<HTMLInputElement>;
+      const passInputs = document.querySelectorAll('input[name="sifre"]') as NodeListOf<HTMLInputElement>;
 
       // Use desktop form (index 1)
       if (userInputs.length >= 2 && passInputs.length >= 2) {
@@ -75,7 +75,7 @@ export async function POST(request: Request) {
     await Promise.all([
       page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }),
       page.evaluate(() => {
-        const buttons = document.querySelectorAll('button[type="submit"][name="ok"]');
+        const buttons = document.querySelectorAll('button[type="submit"][name="ok"]') as NodeListOf<HTMLButtonElement>;
         if (buttons.length >= 2) {
           buttons[1].click(); // Desktop button
         } else if (buttons.length === 1) {

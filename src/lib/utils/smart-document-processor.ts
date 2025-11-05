@@ -26,6 +26,8 @@ export class SmartDocumentProcessor {
     "application/vnd.ms-excel", // .csv (eski Excel format)
     "image/png", // .png (taranmış belgeler)
     "image/jpeg", // .jpg (taranmış belgeler)
+    "application/json", // .json
+    "text/json", // .json alternate
   ];
 
   private static readonly SUPPORTED_EXTENSIONS = [
@@ -39,6 +41,7 @@ export class SmartDocumentProcessor {
     ".png",
     ".jpg",
     ".jpeg",
+    ".json",
   ];
 
   /**
@@ -236,7 +239,53 @@ export class SmartDocumentProcessor {
         }
       }
 
-      // 3️⃣ Metin Dosyaları (TXT, RTF, HTML)
+      // 3️⃣ JSON Dosyaları - Pretty print ile
+      if (mimeType.includes("json") || fileName.endsWith(".json")) {
+        try {
+          console.log("JSON dosyası işleme başladı...");
+          const text = await file.text();
+
+          if (text?.trim()) {
+            // JSON'u parse edip güzelce formatla
+            try {
+              const jsonData = JSON.parse(text);
+              const prettyJson = JSON.stringify(jsonData, null, 2);
+              const normalizedText = TurkishNormalizer.normalize(prettyJson);
+
+              console.log(
+                `JSON dosyası başarılı: ${normalizedText.length} karakter`
+              );
+
+              return {
+                success: true,
+                text: normalizedText,
+                method: "json-reader",
+                fileType: "json",
+                processingTime: Date.now() - startTime,
+                warnings,
+              };
+            } catch (parseError) {
+              // JSON parse edilemezse raw text olarak kullan
+              console.warn("JSON parse hatası, raw text kullanılıyor:", parseError);
+              const normalizedText = TurkishNormalizer.normalize(text);
+
+              return {
+                success: true,
+                text: normalizedText,
+                method: "json-reader-raw",
+                fileType: "json",
+                processingTime: Date.now() - startTime,
+                warnings: [...warnings, "JSON formatı hatalı, raw metin olarak okundu"],
+              };
+            }
+          }
+        } catch (error) {
+          console.error("JSON dosyası işleme hatası:", error);
+          warnings.push("JSON dosyası okunamadı");
+        }
+      }
+
+      // 4️⃣ Metin Dosyaları (TXT, RTF, HTML)
       if (mimeType.includes("text") || fileName.match(/\.(txt|rtf|html)$/)) {
         try {
           console.log("Metin dosyası işleme başladı...");
@@ -263,7 +312,7 @@ export class SmartDocumentProcessor {
         }
       }
 
-      // 4️⃣ DOC (Legacy Word) - Gerçekçi işleme süresi ile
+      // 5️⃣ DOC (Legacy Word) - Gerçekçi işleme süresi ile
       if (mimeType.includes("msword") || fileName.endsWith(".doc")) {
         console.log("DOC dosyası algılandı, kapsamlı işleme başlatılıyor...");
 

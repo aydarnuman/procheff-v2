@@ -55,12 +55,8 @@ export class GeminiProvider {
           temperature: 0.3,
           maxOutputTokens: 4000,
         },
-        // Web search aktif
-        tools: [
-          {
-            googleSearch: {},
-          },
-        ],
+        // Web search disabled - not supported in current SDK version
+        // tools: [{ googleSearch: {} }],
       });
 
       const processingTime = Date.now() - startTime;

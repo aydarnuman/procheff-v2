@@ -412,7 +412,7 @@ CEVAP FORMATI (SADECE JSON):
 
       const result = await model.generateContent({
         contents: [{ role: "user", parts: [{ text: prompt }] }],
-        tools: [{ googleSearch: {} }], // Enable web search!
+        // tools: [{ googleSearch: {} }], // Disabled - not supported in current SDK version
       });
 
       const output = result.response.text();

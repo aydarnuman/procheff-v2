@@ -10,6 +10,38 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
 
+    // 🆕 Eğer ID parametresi varsa, tek tender getir
+    const tenderId = searchParams.get('id');
+    if (tenderId) {
+      const tender = await TenderDatabase.getTenderById(tenderId);
+      if (!tender) {
+        return NextResponse.json(
+          { success: false, error: 'Tender bulunamadı' },
+          { status: 404 }
+        );
+      }
+
+      // Serialize single tender
+      const plainTender: any = {};
+      for (const [key, value] of Object.entries(tender)) {
+        if (value === null || value === undefined) {
+          plainTender[key] = value;
+        } else if (key === 'raw_json' && typeof value === 'object') {
+          plainTender[key] = JSON.parse(JSON.stringify(value));
+        } else if (value instanceof Date || (typeof value === 'string' && !isNaN(Date.parse(value)))) {
+          plainTender[key] = value?.toString() || null;
+        } else {
+          plainTender[key] = value;
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: [plainTender], // Array formatında döndür (fetchAI uyumluluğu için)
+        total: 1,
+      });
+    }
+
     // Parse filters
     const filters = {
       isCatering: searchParams.get('is_catering') === 'true' ? true : undefined,

@@ -6,7 +6,14 @@
 import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
-import type { ScrapedTender, CategorizedTender, TenderInsertPayload, TenderItem } from '../types';
+import type { ScrapedTender, CategorizedTender, TenderInsertPayload as _TenderInsertPayload, TenderItem } from '../types';
+
+// Gerekli alanları ekleyerek tip tanımını genişletiyoruz
+type TenderInsertPayload = _TenderInsertPayload & {
+  ai_analyzed?: boolean;
+  ai_analyzed_at?: string;
+  is_active?: boolean;
+};
 
 // Database path - proje root'unda data klasörü
 const DB_PATH = path.join(process.cwd(), 'data', 'ihale-scraper.db');
@@ -282,18 +289,37 @@ export class TenderDatabase {
   }
 
   /**
-   * Get tender by ID
+   * Get tender by ID (source_id - gerçek tender ID)
    */
-  static async getTenderById(id: string): Promise<any> {
+  static async getTenderById(sourceId: string): Promise<any> {
     const db = getDatabase();
-    const stmt = db.prepare('SELECT * FROM ihale_listings WHERE id = ?');
-    const result = stmt.get(id);
+    // İlk önce source_id ile dene (gerçek tender ID)
+    let stmt = db.prepare('SELECT * FROM ihale_listings WHERE source_id = ?');
+    let result = stmt.get(sourceId);
 
-    if (result && (result as any).raw_json) {
-      (result as any).raw_json = JSON.parse((result as any).raw_json);
+    // Bulunamazsa, integer ID ile dene (backwards compatibility)
+    if (!result && /^\d+$/.test(sourceId)) {
+      console.log(`⚠️ [DB] source_id bulunamadı, integer id deneniyor: ${sourceId}`);
+      stmt = db.prepare('SELECT * FROM ihale_listings WHERE id = ?');
+      result = stmt.get(parseInt(sourceId));
     }
 
-    return result || null;
+    if (!result) return null;
+
+    // Convert SQLite row to plain object (fix "Only plain objects" error)
+    const plainRow: any = {};
+    for (const key in result) {
+      plainRow[key] = (result as any)[key];
+    }
+    // Parse raw_json field
+    if (plainRow.raw_json) {
+      try {
+        plainRow.raw_json = JSON.parse(plainRow.raw_json);
+      } catch {}
+    }
+
+    // Final serialization to remove SQLite prototype
+    return JSON.parse(JSON.stringify(plainRow));
   }
 
   /**
@@ -309,10 +335,15 @@ export class TenderDatabase {
     `);
     const results = stmt.all(limit);
 
-    return results.map((r: any) => ({
-      ...r,
-      raw_json: r.raw_json ? JSON.parse(r.raw_json) : null,
-    }));
+    return results.map((r: any) => {
+      // Convert SQLite row to plain object (fix "Only plain objects" error)
+      const plainRow: any = {};
+      for (const key in r) {
+        plainRow[key] = r[key];
+      }
+      plainRow.raw_json = r.raw_json ? JSON.parse(r.raw_json) : null;
+      return plainRow;
+    });
   }
 
   /**
@@ -387,10 +418,21 @@ export class TenderDatabase {
       offset,
     });
 
-    const data = results.map((r: any) => ({
-      ...r,
-      raw_json: r.raw_json ? JSON.parse(r.raw_json) : null,
-    }));
+    const data = results.map((r: any) => {
+      // Convert SQLite row to plain object (fix "Only plain objects" error)
+      const plainRow: any = {};
+      for (const key in r) {
+        plainRow[key] = r[key];
+      }
+      // Parse raw_json field
+      if (plainRow.raw_json) {
+        try {
+          plainRow.raw_json = JSON.parse(plainRow.raw_json);
+        } catch {}
+      }
+      // Final serialization to remove SQLite prototype
+      return JSON.parse(JSON.stringify(plainRow));
+    });
 
     return { data, total };
   }
@@ -609,10 +651,15 @@ export class TenderDatabase {
 
     const results = stmt.all({ query, limit });
 
-    return results.map((r: any) => ({
-      ...r,
-      raw_json: r.raw_json ? JSON.parse(r.raw_json) : null,
-    }));
+    return results.map((r: any) => {
+      // Convert SQLite row to plain object (fix "Only plain objects" error)
+      const plainRow: any = {};
+      for (const key in r) {
+        plainRow[key] = r[key];
+      }
+      plainRow.raw_json = r.raw_json ? JSON.parse(r.raw_json) : null;
+      return plainRow;
+    });
   }
 
   /**
@@ -674,7 +721,79 @@ export class TenderDatabase {
     `);
     return stmt.all(tenderId) as TenderItem[];
   }
+
+  /**
+   * Save AI analysis result and full content for a tender
+   */
+  static async saveTenderAnalysis(tenderId: string, analysisResult: any, fullContent: any): Promise<{ success: boolean; error?: string }> {
+    try {
+      console.log(`💾 [DB] saveTenderAnalysis called for: ${tenderId}`);
+      const db = getDatabase();
+      const stmt = db.prepare(`
+        INSERT INTO tender_analysis (tender_id, analysis_result, full_content, analyzed_at, updated_at)
+        VALUES (@tender_id, @analysis_result, @full_content, datetime('now'), datetime('now'))
+        ON CONFLICT(tender_id) DO UPDATE SET
+          analysis_result = excluded.analysis_result,
+          full_content = excluded.full_content,
+          updated_at = datetime('now')
+      `);
+
+      const analysisJson = JSON.stringify(analysisResult);
+      const fullContentJson = JSON.stringify(fullContent);
+
+      console.log(`💾 [DB] Saving data sizes - analysis: ${analysisJson.length} bytes, content: ${fullContentJson.length} bytes`);
+
+      const result = stmt.run({
+        tender_id: tenderId,
+        analysis_result: analysisJson,
+        full_content: fullContentJson
+      });
+
+      console.log(`✅ [DB] saveTenderAnalysis successful - changes: ${result.changes}`);
+      return { success: true };
+    } catch (error: any) {
+      console.error('❌ [DB] saveTenderAnalysis error:', error);
+      console.error('❌ [DB] Error stack:', error.stack);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Get AI analysis result and full content for a tender
+   */
+  static async getTenderAnalysis(tenderId: string): Promise<{ analysisResult: any; fullContent: any } | null> {
+    try {
+      console.log(`📊 [DB] getTenderAnalysis(${tenderId})`);
+      const db = getDatabase();
+
+      // Force WAL checkpoint to ensure we see latest writes
+      db.pragma('wal_checkpoint(PASSIVE)');
+
+      const stmt = db.prepare(`SELECT analysis_result, full_content FROM tender_analysis WHERE tender_id = ?`);
+      const result: any = stmt.get(tenderId);
+
+      if (!result || typeof result !== 'object') {
+        console.log(`❌ [DB] No analysis found for tender_id: ${tenderId}`);
+        return null;
+      }
+
+      // Convert SQLite row to plain object
+      const plainRow: any = {};
+      for (const key in result) {
+        plainRow[key] = result[key];
+      }
+
+      console.log(`✅ [DB] Analysis found for tender_id: ${tenderId}`);
+      return {
+        analysisResult: plainRow.analysis_result ? JSON.parse(plainRow.analysis_result as string) : null,
+        fullContent: plainRow.full_content ? JSON.parse(plainRow.full_content as string) : null
+      };
+    } catch (error: any) {
+      console.error('getTenderAnalysis error:', error);
+      return null;
+    }
+  }
 }
 
 // Export database instance getter
-export { getDatabase };
+// Export kaldırıldı, zaten yukarıda export function olarak tanımlı
