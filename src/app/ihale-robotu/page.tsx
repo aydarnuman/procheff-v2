@@ -218,8 +218,12 @@ function IhaleTakipPageInner() {
       // Tüm ihaleleri göster
       const response = await fetch('/api/ihale-scraper/list?limit=1000');
       const data = await response.json();
+      console.log('📊 API Response:', data);
       if (data.success) {
+        console.log('✅ Setting tenders:', data.data.length, 'items');
         setTenders(data.data);
+      } else {
+        console.error('❌ API Error:', data.error);
       }
     } catch (error) {
       console.error('Load error:', error);
@@ -286,9 +290,7 @@ function IhaleTakipPageInner() {
               // Liste yenile
               await loadTenders();
 
-              if (progress.status === 'completed') {
-                alert(`✅ Scraping tamamlandı! ${progress.tendersFound || 0} ihale bulundu.`);
-              } else {
+              if (progress.status === 'error') {
                 alert(`❌ Scraping hatası: ${progress.message || 'Bilinmeyen hata'}`);
               }
             }

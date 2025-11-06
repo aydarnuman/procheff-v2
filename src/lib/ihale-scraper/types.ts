@@ -157,6 +157,7 @@ export interface TenderInsertPayload {
   title: string;
   organization?: string;
   organization_city?: string;
+  registration_number?: string; // İhale kayıt numarası
   budget?: number | null;
   currency?: string;
   announcement_date?: Date;

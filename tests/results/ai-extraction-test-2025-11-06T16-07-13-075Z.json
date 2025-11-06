@@ -1,0 +1,139 @@
+{
+  "total": 3,
+  "passed": 2,
+  "failed": 1,
+  "details": [
+    {
+      "name": "Belediye Personel Yemek Hizmeti",
+      "accuracy": 100,
+      "processingTime": 14241,
+      "confidenceScore": 0.9,
+      "passed": true,
+      "extracted": {
+        "kurum": "Ankara Büyükşehir Belediyesi",
+        "ihale_turu": "Hizmet Alımı",
+        "kisi_sayisi": 320,
+        "personel_sayisi": null,
+        "ogun_sayisi": 1,
+        "gun_sayisi": 365,
+        "tahmini_butce": 850000,
+        "teslim_suresi": null,
+        "riskler": [],
+        "ozel_sartlar": [
+          "Günlük 1 öğün (öğle yemeği)",
+          "Sıcak yemek standardı",
+          "Teklif edilen fiyatlar KDV hariç olacaktır",
+          "Sözleşme süresi: 1 yıl"
+        ],
+        "kanitlar": {},
+        "guven_skoru": 0.9
+      },
+      "expected": {
+        "kurum": "Ankara Büyükşehir Belediyesi",
+        "ihale_turu": "Hizmet Alımı",
+        "kisi_sayisi": 320,
+        "ogun_sayisi": 1,
+        "gun_sayisi": 365,
+        "tahmini_butce": 850000
+      },
+      "validations": {
+        "kurum": true,
+        "ihale_turu": true,
+        "kisi_sayisi": true,
+        "ogun_sayisi": true,
+        "tahmini_butce": true
+      }
+    },
+    {
+      "name": "Hastane Hasta Yemeği Hizmeti",
+      "accuracy": 80,
+      "processingTime": 13699,
+      "confidenceScore": 0.9,
+      "passed": true,
+      "extracted": {
+        "kurum": "İstanbul İl Sağlık Müdürlüğü",
+        "ihale_turu": "Bilinmiyor",
+        "kisi_sayisi": 552,
+        "personel_sayisi": null,
+        "ogun_sayisi": 5,
+        "gun_sayisi": 730,
+        "tahmini_butce": 2400000,
+        "teslim_suresi": null,
+        "riskler": [
+          "Diyetisyen kontrolünde özel diyet yemekleri hazırlanması gereksinimi",
+          "Hijyen kurallarına uygunluk denetimi",
+          "24 ay sürekli hizmet verme yükümlülüğü"
+        ],
+        "ozel_sartlar": [
+          "Günlük 5 öğün yemek hizmeti",
+          "Diyetisyen kontrolünde özel diyet yemekleri",
+          "Hijyen kurallarına uygun hazırlanma",
+          "24 ay sözleşme süresi"
+        ],
+        "kanitlar": {},
+        "guven_skoru": 0.9
+      },
+      "expected": {
+        "kurum": "İstanbul İl Sağlık Müdürlüğü",
+        "ihale_turu": "Hasta Yemeği Hizmeti",
+        "kisi_sayisi": 552,
+        "ogun_sayisi": 5,
+        "gun_sayisi": 730,
+        "tahmini_butce": 2400000
+      },
+      "validations": {
+        "kurum": true,
+        "ihale_turu": false,
+        "kisi_sayisi": true,
+        "ogun_sayisi": true,
+        "tahmini_butce": true
+      }
+    },
+    {
+      "name": "Okul Yemekhane İşletmeciliği",
+      "accuracy": 60,
+      "processingTime": 27453,
+      "confidenceScore": 0.9,
+      "passed": false,
+      "extracted": {
+        "kurum": "Milli Eğitim Bakanlığı",
+        "ihale_turu": "Bilinmiyor",
+        "kisi_sayisi": 950,
+        "personel_sayisi": null,
+        "ogun_sayisi": 3,
+        "gun_sayisi": 900,
+        "tahmini_butce": 6390000,
+        "teslim_suresi": null,
+        "riskler": [
+          "Beslenme uzmanları denetimi gereksinimi",
+          "5 yıllık uzun sözleşme süresi",
+          "950 öğrenciye sürekli hizmet verme zorunluluğu"
+        ],
+        "ozel_sartlar": [
+          "Günlük 3 öğün (kahvaltı, öğle, akşam) verilmesi",
+          "Tam hizmet işletmeciliği modeli",
+          "Beslenme uzmanları tarafından denetim",
+          "5 yıl sözleşme süresi",
+          "900 okul günü hizmet"
+        ],
+        "kanitlar": {},
+        "guven_skoru": 0.9
+      },
+      "expected": {
+        "kurum": "Milli Eğitim Bakanlığı",
+        "ihale_turu": "İşletmecilik Hizmeti",
+        "kisi_sayisi": 950,
+        "ogun_sayisi": 3,
+        "gun_sayisi": 900,
+        "tahmini_butce": 1278000
+      },
+      "validations": {
+        "kurum": true,
+        "ihale_turu": false,
+        "kisi_sayisi": true,
+        "ogun_sayisi": true,
+        "tahmini_butce": false
+      }
+    }
+  ]
+}

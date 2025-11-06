@@ -152,9 +152,9 @@ export class TenderDatabase {
           last_updated_at = CURRENT_TIMESTAMP
       `);
 
-      // Extract registration number from raw_json if exists
-      let registrationNumber = null;
-      if (tender.raw_json && tender.raw_json['Kayıt no']) {
+      // Extract registration number from tender field or raw_json
+      let registrationNumber = tender.registration_number || null;
+      if (!registrationNumber && tender.raw_json && tender.raw_json['Kayıt no']) {
         registrationNumber = tender.raw_json['Kayıt no'];
       }
 
@@ -195,6 +195,15 @@ export class TenderDatabase {
         return String(val);
       };
 
+      // First check if tender exists
+      const existsStmt = db.prepare(`
+        SELECT id FROM ihale_listings WHERE source = ? AND source_id = ?
+      `);
+      const existing = existsStmt.get(
+        toSafeString(tender.source) || 'unknown',
+        toSafeString(tender.source_id)?.substring(0, 200) || null
+      );
+
       const result = insertStmt.run({
         source: toSafeString(tender.source) || 'unknown',
         source_id: toSafeString(tender.source_id)?.substring(0, 200) || null,
@@ -227,7 +236,14 @@ export class TenderDatabase {
       });
 
       const insertedId = result.lastInsertRowid.toString();
-      console.log(`✅ Tender inserted: ${insertedId}`);
+      
+      // Check if this was an INSERT or UPDATE
+      if (existing) {
+        console.log(`♻️  Tender updated: ${insertedId} (source_id: ${tender.source_id})`);
+        return { success: true, id: insertedId, error: 'DUPLICATE' };
+      } else {
+        console.log(`✅ Tender inserted: ${insertedId} (source_id: ${tender.source_id})`);
+      }
 
       // Insert tender items if exists
       if (tender.raw_json?.items && Array.isArray(tender.raw_json.items)) {

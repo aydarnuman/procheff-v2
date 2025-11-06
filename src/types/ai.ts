@@ -140,6 +140,7 @@ export interface ExtractedData {
 
   kurum: string;
   ihale_turu: string;
+  registration_number: string | null; // İhale Kayıt Numarası
   kisi_sayisi: number | null; // Yemek yiyen kişi sayısı
   personel_sayisi: number | null; // Çalışan personel sayısı
   ogun_sayisi: number | null;

@@ -1,3 +1,4 @@
+import type { CheerioAPI } from 'cheerio';
 // ============================================================================
 // İHALEBUL.COM SCRAPER
 // Commercial tender aggregator - Login Required
@@ -7,10 +8,28 @@ import { BaseScraper } from './base-scraper';
 import type { ScrapedTender } from '../types';
 import * as cheerio from 'cheerio';
 import puppeteer from 'puppeteer';
-import { BLOCKED_CITIES } from '../config';
+import { BLOCKED_CITIES, SCRAPER_CONFIG } from '../config';
 import { updateProgress } from '@/app/api/ihale-scraper/progress/route';
+import * as fs from 'fs';
 
 export class IhalebulScraper extends BaseScraper {
+  constructor() {
+    super(SCRAPER_CONFIG.ihalebul);
+  }
+  /**
+   * Universal tenderInfo parser: #tender .row içindeki tüm key-value alanları map'ler
+   * Kullanım: const info = this.parseTenderInfo($);
+   * info['Kayıt no'], info['İhale başlığı'], info['Yayın tarihi'] vs. şeklinde erişilir
+   */
+  private parseTenderInfo($: CheerioAPI): Record<string, string> {
+    const info: Record<string, string> = {};
+    $('#tender .row').each((i, row) => {
+      const key = $(row).find('.fw-bold').text().replace(/\s+/g, ' ').trim();
+      const value = $(row).find('.text-dark-emphasis').text().replace(/\s+/g, ' ').trim();
+      if (key && value) info[key] = value;
+    });
+    return info;
+  }
   async scrape(): Promise<ScrapedTender[]> {
     const username = process.env.IHALEBUL_USERNAME;
     const password = process.env.IHALEBUL_PASSWORD;
@@ -109,11 +128,11 @@ ${html.substring(0, 8000)}
 - Password: ${password}
 
 ## ÖNEMLİ NOTLAR:
-1. **İki form olabilir**: Mobil modal formu VE desktop formu. Desktop formunu kullan (genellikle ikinci form).
-2. **Input name'leri**: "kul_adi", "email", "username" benzeri alanlardan biri olabilir. Password alanı genelde "sifre" ya da type="password".
-3. **CSRF token**: Eğer varsa "csrf" input'unu da doldur
-4. **Submit yöntemi**: Button click yerine form.submit() veya form.requestSubmit() kullan (daha güvenilir)
-5. **Görünmez elementler**: Display:none olan formları atla
+1. **DOĞRU FORMU SEÇ**: Sayfada birden fazla login formu var. İLK ÖNCE id="form" olan formu ara. Yoksa, .modal içinde OLMAYAN (modal dışındaki) formu seç.
+2. **Input name'leri**: "kul_adi" ve "sifre" name'lerine sahip input'ları kullan.
+3. **CSRF token**: Varsa otomatik gönderilir, elle doldurma
+4. **Submit yöntemi**: form.submit() kullan (daha güvenilir)
+5. **Modal formları atla**: .modal, .modal-dialog gibi elementlerin içindeki formları kullanma
 
 ## ÇIKTI FORMATI:
 Sadece executable JavaScript kodu döndür. Örnek:
@@ -121,38 +140,61 @@ Sadece executable JavaScript kodu döndür. Örnek:
 \`\`\`javascript
 (function(username, password) {
   try {
-    // Find login forms
-    const forms = document.querySelectorAll('form');
-    let targetForm = null;
+    // ÖNCE: id="form" olan formu ara (ana login formu)
+    let targetForm = document.getElementById('form');
 
-    // Find the form with login inputs (desktop version)
-    for (let i = 0; i < forms.length; i++) {
-      const form = forms[i];
-      const hasUsername = form.querySelector('input[name="kul_adi"]');
-      const hasPassword = form.querySelector('input[name="sifre"]');
-
-      if (hasUsername && hasPassword) {
-        // Check if form is visible (not mobile modal)
-        const style = window.getComputedStyle(form);
-        if (style.display !== 'none' && style.visibility !== 'hidden') {
-          targetForm = form;
-          break;
+    // Eğer yoksa: action="/signin" olan ve modal dışındaki formu bul
+    if (!targetForm) {
+      const forms = document.querySelectorAll('form[action*="/signin"]');
+      for (let i = 0; i < forms.length; i++) {
+        const form = forms[i];
+        // Modal içinde mi kontrol et
+        const inModal = form.closest('.modal, .modal-dialog, [class*="modal"]');
+        if (!inModal) {
+          const hasUsername = form.querySelector('input[name="kul_adi"]');
+          const hasPassword = form.querySelector('input[name="sifre"]');
+          if (hasUsername && hasPassword) {
+            targetForm = form;
+            break;
+          }
         }
       }
     }
 
     if (!targetForm) return false;
 
-    // Fill inputs
+    // Input'ları doldur - Gerçek kullanıcı etkileşimini simüle et
     const userInput = targetForm.querySelector('input[name="kul_adi"]');
     const passInput = targetForm.querySelector('input[name="sifre"]');
 
     if (userInput && passInput) {
+      // Username input: focus, click, set value, trigger events
+      userInput.focus();
+      userInput.click();
       userInput.value = username;
-      passInput.value = password;
+      userInput.dispatchEvent(new Event('input', { bubbles: true }));
+      userInput.dispatchEvent(new Event('change', { bubbles: true }));
 
-      // Submit form
-      targetForm.submit();
+      // Password input: focus, click, set value, trigger events
+      passInput.focus();
+      passInput.click();
+      passInput.value = password;
+      passInput.dispatchEvent(new Event('input', { bubbles: true }));
+      passInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+      // Submit button: prefer real button click over form.submit()
+      const submitBtn = targetForm.querySelector('button[type="submit"], input[type="submit"]');
+      if (submitBtn) {
+        submitBtn.focus();
+        submitBtn.click();
+      } else {
+        // Fallback to requestSubmit (better than submit() as it triggers validation)
+        if (typeof targetForm.requestSubmit === 'function') {
+          targetForm.requestSubmit();
+        } else {
+          targetForm.submit();
+        }
+      }
       return true;
     }
 
@@ -193,8 +235,32 @@ Sadece executable JavaScript kodu döndür. Örnek:
       const result = await page.evaluate(jsCode, username, password);
 
       if (result) {
-        console.log('✅ AI login successful!');
-        return true;
+        console.log('✅ AI login code executed!');
+
+        // Wait for navigation after login
+        console.log('⏳ Waiting for navigation after login...');
+        try {
+          await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 });
+          console.log('✅ Navigation completed');
+        } catch (navError) {
+          console.log('⚠️ Navigation timeout (might be ok if login redirected)');
+        }
+
+        // Wait a bit for cookies to be set
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Verify we have cookies now
+        const cookies = await page.cookies();
+        console.log(`🍪 Cookies after AI login: ${cookies.length} total`);
+
+        if (cookies.length > 0) {
+          console.log(`🍪 Cookie names: ${cookies.map((c: any) => c.name).join(', ')}`);
+          console.log('✅ AI login successful - cookies received!');
+          return true;
+        } else {
+          console.warn('⚠️ AI login executed but no cookies received');
+          return false;
+        }
       } else {
         console.error('❌ AI login execution failed');
         return false;
@@ -449,17 +515,41 @@ Sadece executable JavaScript kodu döndür. Örnek:
   private async saveSession(page: any): Promise<void> {
     try {
       const fs = require('fs');
+
+      // Wait a bit to ensure cookies are set
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
       const cookies = await page.cookies();
+      const currentUrl = page.url();
+
+      console.log(`📍 Saving session from URL: ${currentUrl}`);
+      console.log(`🍪 Total cookies: ${cookies.length}`);
+
+      if (cookies.length === 0) {
+        console.warn('⚠️ No cookies found! Login might have failed.');
+      }
+
       const sessionInfo = {
         timestamp: new Date().toISOString(),
-        url: page.url(),
+        url: currentUrl,
         cookies: cookies,
-        sessionCookies: cookies.filter((c: any) => c.name.toLowerCase().includes('session') || c.name.toLowerCase().includes('auth')),
+        sessionCookies: cookies.filter((c: any) =>
+          c.name.toLowerCase().includes('session') ||
+          c.name.toLowerCase().includes('auth') ||
+          c.name.toLowerCase().includes('token')
+        ),
       };
+
       fs.writeFileSync('/tmp/ihalebul-session.json', JSON.stringify(sessionInfo, null, 2));
-      console.log('💾 Session saved to /tmp/ihalebul-session.json');
+      console.log('💾 Session saved successfully!');
+      console.log(`   Cookies: ${cookies.length} total, ${sessionInfo.sessionCookies.length} auth-related`);
+
+      // Debug: Log cookie names
+      if (cookies.length > 0) {
+        console.log(`   Cookie names: ${cookies.map((c: any) => c.name).join(', ')}`);
+      }
     } catch (error) {
-      console.error('Error saving session:', error);
+      console.error('❌ Error saving session:', error);
     }
   }
 
@@ -498,8 +588,62 @@ Sadece executable JavaScript kodu döndür. Örnek:
         const searchUrl = `${this.config.baseUrl}${this.config.categoryUrl}&page=${pageNum}`;
         console.log(`\n📄 Page ${pageNum}/${maxPages}: ${searchUrl}`);
 
-        await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 60000 });
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Navigate to category page with domcontentloaded (better for SPA/AJAX pages)
+        await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+        // Wait for tenders to be loaded by JavaScript - pages load slowly via AJAX/DataTables!
+        console.log('⏳ Waiting for tender cards to load...');
+
+        try {
+          // Stage 1: Wait for first card to be visible
+          await page.waitForSelector('div.card.border-secondary', {
+            visible: true,
+            timeout: 20000
+          });
+          console.log('  ✓ First tender card appeared');
+
+          // Stage 2: Wait for multiple cards to be loaded (minimum 3 cards)
+          await page.waitForFunction(
+            () => {
+              const cards = document.querySelectorAll('div.card.border-secondary');
+              return cards.length >= 3;
+            },
+            { timeout: 20000 }
+          );
+          console.log(`  ✓ Multiple tender cards loaded`);
+
+          // Stage 3: Validate that cards have actual content (check for tender links)
+          const hasValidContent = await page.evaluate(() => {
+            const cards = document.querySelectorAll('div.card.border-secondary');
+            if (cards.length < 3) return false;
+
+            // Check if first card has tender detail link
+            const firstCard = cards[0];
+            return !!firstCard.querySelector('a[href*="/tenders/view/"]');
+          });
+
+          if (!hasValidContent) {
+            console.warn('⚠️ Cards found but content validation failed');
+          } else {
+            console.log('  ✓ Content validation passed');
+          }
+
+          // Small stabilization delay for scroll/animation
+          await new Promise(resolve => setTimeout(resolve, 1500));
+
+        } catch (e) {
+          console.error('❌ Failed to load tender cards:', e instanceof Error ? e.message : String(e));
+
+          // Save debug HTML
+          const debugHtml = await page.content();
+          const debugPath = `/tmp/ihalebul-failed-page${pageNum}-public.html`;
+          fs.writeFileSync(debugPath, debugHtml);
+          console.log(`🐛 Debug HTML saved to ${debugPath}`);
+
+          // Don't continue if cards didn't load
+          console.warn(`⚠️ Skipping page ${pageNum} due to loading failure`);
+          continue;
+        }
 
         const html = await page.content();
 
@@ -537,9 +681,9 @@ Sadece executable JavaScript kodu döndür. Örnek:
     try {
       console.log(`📡 Launching browser for İhalebul with login...`);
 
-      // Always run in headless mode (no visible browser window)
+      // Run in headless mode (production)
       const browser = await puppeteer.launch({
-        headless: true, // Run in background
+        headless: true,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
@@ -656,12 +800,62 @@ Sadece executable JavaScript kodu döndür. Örnek:
           message: `Sayfa ${pageNum}/${maxPages} taranıyor...`,
         });
 
-        await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+        // Navigate to category page with domcontentloaded (better for SPA/AJAX pages)
+        await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-        // Wait for tenders to be loaded by JavaScript - pages load slowly!
-        // The page uses AJAX to load data, so we need to wait for actual content
-        console.log('⏳ Waiting for tenders to load (page loads slowly via AJAX)...');
-        await new Promise(resolve => setTimeout(resolve, 1500)); // Wait 1.5 seconds for AJAX
+        // Wait for tenders to be loaded by JavaScript - pages load slowly via AJAX/DataTables!
+        console.log('⏳ Waiting for tender cards to load...');
+
+        try {
+          // Stage 1: Wait for first card to be visible
+          await page.waitForSelector('div.card.border-secondary', {
+            visible: true,
+            timeout: 20000
+          });
+          console.log('  ✓ First tender card appeared');
+
+          // Stage 2: Wait for multiple cards to be loaded (minimum 3 cards)
+          await page.waitForFunction(
+            () => {
+              const cards = document.querySelectorAll('div.card.border-secondary');
+              return cards.length >= 3;
+            },
+            { timeout: 20000 }
+          );
+          console.log(`  ✓ Multiple tender cards loaded`);
+
+          // Stage 3: Validate that cards have actual content (check for tender links)
+          const hasValidContent = await page.evaluate(() => {
+            const cards = document.querySelectorAll('div.card.border-secondary');
+            if (cards.length < 3) return false;
+
+            // Check if first card has tender detail link
+            const firstCard = cards[0];
+            return !!firstCard.querySelector('a[href*="/tenders/view/"]');
+          });
+
+          if (!hasValidContent) {
+            console.warn('⚠️ Cards found but content validation failed');
+          } else {
+            console.log('  ✓ Content validation passed');
+          }
+
+          // Small stabilization delay for scroll/animation
+          await new Promise(resolve => setTimeout(resolve, 1500));
+
+        } catch (e) {
+          console.error('❌ Failed to load tender cards:', e instanceof Error ? e.message : String(e));
+
+          // Save debug HTML
+          const debugHtml = await page.content();
+          const debugPath = `/tmp/ihalebul-failed-page${pageNum}-login.html`;
+          fs.writeFileSync(debugPath, debugHtml);
+          console.log(`🐛 Debug HTML saved to ${debugPath}`);
+
+          // Don't continue if cards didn't load
+          console.warn(`⚠️ Skipping page ${pageNum} due to loading failure`);
+          continue;
+        }
 
         const html = await page.content();
 
@@ -882,16 +1076,28 @@ Sadece executable JavaScript kodu döndür. Örnek:
         const dataId = $link.attr('data-id') || '';
         const titleFromLink = this.cleanText($link.text()); // "2025/1634941 - Yemek Hizmeti Alınacaktır"
 
+        // Extract Kayıt no (record number) from link text: "2025/1845237 - Title"
+        const linkTextParts = titleFromLink.split(' - ');
+        // Eski çıkarım
+        const recordNoFromLink = linkTextParts.length > 1 && linkTextParts[0].match(/^\d{4}\/\d+$/)
+          ? linkTextParts[0]
+          : '';
+        // Yeni: .tender-code veya kartın metninden ILN/2025/xxxx formatı
+        let ihaleNo =
+          $card.find('.tender-code').text().trim() ||
+          $card.text().match(/(?:ihale[\s_-]*kayıt[\s_-]*no|kayıt[\s_-]*no|kayıt[\s_-]*numarası)[^\d]*(ILN\d{6,}|20\d{2}\/\d{5,}|\d{4}\/\d{5,})/i)?.[1] ||
+          $card.text().match(/ILN\d{6,}|20\d{2}\/\d{5,}/)?.[0] ||
+          recordNoFromLink ||
+          '';
+
         // Extract title from "İhale başlığı" field (cleaner, without record number)
         const titleFromField = this.cleanText(
           $card.find('b:contains("İhale başlığı:")').parent().find('span').text() ||
           $card.find('.card-body:contains("İhale başlığı:") span').text()
         );
-        const title = titleFromField || titleFromLink.split(' - ').pop() || titleFromLink || 'Belirtilmemiş';
+        const title = titleFromField || linkTextParts.pop() || titleFromLink || 'Belirtilmemiş';
 
-        // Extract Kayıt no (record number)
-        const recordNo = this.cleanText($card.find('.card-body:contains("Kayıt no:") span').text());
-
+        const recordNo = ihaleNo;
         // Extract organization from "İdare adı" field
         const organization = this.cleanText(
           $card.find('b:contains("İdare adı:")').parent().find('span').text() ||
@@ -899,12 +1105,11 @@ Sadece executable JavaScript kodu döndür. Örnek:
           $card.find('b:contains("İhale mercii:")').parent().find('span').text() ||
           'Belirtilmemiş'
         );
-
-        // Extract city from icon indicator
+        // Extract city from icon indicator (take only the first match)
         const cityText = this.cleanText(
-          $card.find('.text-dark-emphasis.fw-medium:has(iconify-icon[icon="fa6-solid:sign-hanging"])').text().replace('icon', '').trim() ||
-          $card.find('.card-body:contains("İl:") span').text() ||
-          $card.find('.card-body:contains("Şehir:") span').text()
+          $card.find('.text-dark-emphasis.fw-medium:has(iconify-icon[icon="fa6-solid:sign-hanging"])').first().text().replace('icon', '').trim() ||
+          $card.find('.card-body:contains("İl:") span').first().text() ||
+          $card.find('.card-body:contains("Şehir:") span').first().text()
         );
 
         // Extract budget from "Tahmini bedel" field
@@ -946,6 +1151,7 @@ Sadece executable JavaScript kodu döndür. Örnek:
           deadline_date: this.parseDate(deadlineDateText) || undefined,
           procurement_type: 'Hizmet Alımı',
           category: 'Yemek Hazırlama, Dağıtım, Catering',
+          registration_number: recordNo || undefined,
           source_url: href.startsWith('http') ? href : this.config.baseUrl + href,
           scraped_at: new Date(),
         };
@@ -996,120 +1202,76 @@ Sadece executable JavaScript kodu döndür. Örnek:
     const fs = require('fs'); // fs import (debug için gerekli)
 
     try {
-      // Extract source ID from URL (needed for debug and tender object)
       const sourceId = url.split('/tender/')[1]?.split('?')[0] || `IHB${Date.now()}`;
-
-      // 🔍 DEBUG: İlk detay HTML'i kaydet
-      if (sourceId && parseInt(sourceId) % 50 === 1) {
-        const debugPath = `/tmp/ihalebul-detail-${sourceId}.html`;
-        fs.writeFileSync(debugPath, html);
-        console.log(`   🐛 DEBUG HTML saved: ${debugPath}`);
-      }
-
-      // 🆕 NEW HTML STRUCTURE: row-based layout (without :has() which Cheerio doesn't support)
-
-      // Extract title - find label, then get next column
-      let title = 'Belirtilmemiş';
-      $('.bg-info-subtle').each((i, el) => {
-        const labelText = $(el).text().trim();
-        if (labelText === 'İhale başlığı') {
-          const valueCol = $(el).parent().find('.responsive-right').first();
-          title = this.cleanText(valueCol.text()) || 'Belirtilmemiş';
-        }
-      });
-
-      // Extract organization - İlan metni içinden parse et
-      let organization = 'Belirtilmemiş';
-
-      // Önce .htmlcontent içinde ara (ihale ilan metni)
+      const $ = cheerio.load(html);
+      const tenderData = this.parseTenderInfo($);
       const htmlContent = $('.htmlcontent').html() || '';
-      console.log(`🔍 [DEBUG] htmlContent length:`, htmlContent.length);
 
-      // "1.1. Adı : ORGANIZASYON ADI" pattern'ini bul
-      const orgMatch = htmlContent.match(/<b>\s*1\.1\.\s*<\/b>\s*Adı\s*<\/td><td>\s*:\s*<\/td><td><span>\s*([^<]+)/i);
-      console.log(`🔍 [DEBUG] orgMatch:`, orgMatch ? `Found: ${orgMatch[1]}` : 'NO MATCH');
-
-      if (orgMatch && orgMatch[1]) {
-        organization = this.cleanText(orgMatch[1]);
-        console.log(`🔍 [DEBUG] İdare adı bulundu (htmlcontent):`, organization);
-      } else {
-        // Fallback: .bg-info-subtle içinde ara
-        $('.bg-info-subtle').each((i, el) => {
-          const labelText = $(el).text().trim();
-          if (labelText === 'İdare adı') {
-            const valueCol = $(el).parent().find('.responsive-right').first();
-            const orgText = this.cleanText(
-              valueCol.find('.d-block.border-bottom.fw-bold').text() ||
-              valueCol.text()
-            );
-            console.log(`🔍 [DEBUG] İdare adı bulundu (bg-info-subtle):`, orgText);
-            organization = orgText || 'Belirtilmemiş';
-          }
-        });
-      }
-
-      // 🐛 DEBUG: Save HTML for inspection
-      const debugPath = `/tmp/ihalebul-detail-${sourceId}.html`;
-      fs.writeFileSync(debugPath, html);
-      console.log(`🐛 [DEBUG] HTML saved:`, debugPath, `(org: "${organization}", htmlContent.length: ${htmlContent.length})`);
-
-      // Extract city - İlan metninden parse et
-      let cityText: string | undefined = undefined;
-
-      // "1.2. Adresi : ... ŞEHIR" pattern'inden şehir çıkar
-      const cityMatch = htmlContent.match(/<b>\s*1\.2\.\s*<\/b>\s*Adresi\s*<\/td><td>\s*:\s*<\/td><td><span>\s*[^<]*?\s+([A-ZÇĞİÖŞÜ]+)\s*<\/span>/i);
-      if (cityMatch && cityMatch[1]) {
-        cityText = this.cleanText(cityMatch[1]);
-        console.log(`🔍 [DEBUG] Şehir bulundu (htmlcontent):`, cityText);
-      } else {
-        // Fallback: icon-based city detection
-        $('iconify-icon[icon="fa6-solid:sign-hanging"]').each((i, el) => {
-          const parent = $(el).parent();
-          const text = this.cleanText(parent.text());
-          if (text && text !== 'icon') {
-            cityText = text;
-            console.log(`🔍 [DEBUG] Şehir bulundu (icon):`, cityText);
-          }
-        });
-      }
-
-      // Extract budget
-      let budgetText = '';
-      $('.bg-info-subtle').each((i, el) => {
-        const labelText = $(el).text().trim();
-        if (labelText.includes('Yaklaşık maliyet') || labelText.includes('maliyet limiti')) {
-          const valueCol = $(el).parent().find('.responsive-right').first();
-          budgetText = this.cleanText(valueCol.text());
+      // Kayıt No
+      let kayitNo = tenderData['Kayıt no'];
+      if (!kayitNo) {
+        const iknMatch = htmlContent.match(/İhale Kayıt Numarası[^<]*<b>\s*:\s*<\/b>[^<]*<b>\s*([\d]{4}\/\d+)\s*<\/b>/i);
+        if (iknMatch && iknMatch[1]) kayitNo = iknMatch[1];
+        else {
+          const regexMatch = htmlContent.match(/(ILN\d{6,}|20\d{2}\/\d{5,}|\d{4}\/\d{5,})/);
+          if (regexMatch && regexMatch[1]) kayitNo = regexMatch[1];
         }
-      });
+      }
 
-      // Extract dates
-      let announcementDateText = '';
-      let deadlineDateText = '';
-      // "2.1. Tarih ve Saati : 06.11.2025 - 10:30" pattern'i - İhale/Teklif tarihi
-      const dateMatch = htmlContent.match(/<b>\s*2\.1\.\s*<\/b>\s*Tarih ve Saati\s*<\/td><td>\s*:\s*<\/td><td><span>\s*([^<]+)/i);
-      if (dateMatch && dateMatch[1]) {
-        deadlineDateText = this.cleanText(dateMatch[1]);
-        console.log(`🔍 [DEBUG] İhale tarihi bulundu (htmlcontent):`, deadlineDateText);
-      } else {
-        // Fallback: .bg-info-subtle içinde ara
-        $('.bg-info-subtle').each((i, el) => {
-          const labelText = $(el).text().trim();
-          if (labelText === 'Yayın tarihi') {
-            const valueCol = $(el).parent().find('.responsive-right').first();
-            announcementDateText = this.cleanText(valueCol.text());
+      // Başlık
+      const title = tenderData['İhale başlığı'] || 'Belirtilmemiş';
+
+      // Organization
+      // Tek tanım: organization, cityText, budgetText, announcementDateText, deadlineDateText
+      let organization = 'Belirtilmemiş';
+      let cityText: string | undefined = undefined;
+      let budgetText: string = tenderData['Yaklaşık maliyet limiti'] || '';
+      let announcementDateText: string = tenderData['Yayın tarihi'] || '';
+      let deadlineDateText: string = tenderData['Teklif tarihi'] || '';
+      
+      // ✅ FIXED: Extract deadline date from "2.1. Tarih ve Saati" in htmlContent
+      const deadlineMatch = htmlContent.match(/<b>\s*2\.1\.\s*<\/b>\s*Tarih ve Saati\s*<\/td><td>\s*:\s*<\/td><td><span>\s*([^<]+)\s*<\/span>/i);
+      if (deadlineMatch && deadlineMatch[1]) {
+        deadlineDateText = this.cleanText(deadlineMatch[1]); // "06.11.2025 - 10:30"
+      }
+
+      // Organization
+      {
+        const orgMatch = htmlContent.match(/<b>\s*1\.1\.\s*<\/b>\s*Adı\s*<\/td><td>\s*:\s*<\/td><td><span>\s*([^<]+)/i);
+        if (orgMatch && orgMatch[1]) {
+          organization = this.cleanText(orgMatch[1]);
+        } else if (tenderData['İdare adı']) {
+          organization = tenderData['İdare adı'];
+        }
+      }
+
+      // City
+      {
+        // Method 1: From "1.2. Adresi" in htmlContent
+        const cityMatch = htmlContent.match(/<b>\s*1\.2\.\s*<\/b>\s*Adresi\s*<\/td><td>\s*:\s*<\/td><td><span>\s*[^<]*?([A-ZÇĞİÖŞÜ]+)\s*<\/span>/i);
+        if (cityMatch && cityMatch[1]) {
+          cityText = this.cleanText(cityMatch[1]);
+        }
+        
+        // Method 2: From icon div outside htmlContent
+        if (!cityText) {
+          const $cityDiv = $('div.d-inline-block:has(iconify-icon[icon="fa6-solid:sign-hanging"])');
+          if ($cityDiv.length > 0) {
+            const cityFromDiv = $cityDiv.first().text().replace(/icon/g, '').trim();
+            if (cityFromDiv && cityFromDiv.length < 30) {
+              cityText = this.cleanText(cityFromDiv);
+            }
           }
-          if (labelText === 'Teklif tarihi') {
-            const valueCol = $(el).parent().find('.responsive-right').first();
-            deadlineDateText = this.cleanText(valueCol.text());
-            console.log(`🔍 [DEBUG] Teklif tarihi bulundu (bg-info-subtle):`, deadlineDateText);
-          }
-        });
+        }
+        
+        // Method 3: From tenderData (fallback)
+        if (!cityText && tenderData['İşin yapılacağı yer']) {
+          cityText = tenderData['İşin yapılacağı yer'];
+        }
       }
 
       // Filter: Skip Doğu Bölgesi cities
       if (cityText && BLOCKED_CITIES.includes(cityText)) {
-        console.log(`  🚫 Skipping Doğu Bölgesi city: ${cityText}`);
         return null;
       }
 
@@ -1125,15 +1287,13 @@ Sadece executable JavaScript kodu döndür. Örnek:
         deadline_date: this.parseDate(deadlineDateText) || undefined,
         procurement_type: 'Hizmet Alımı',
         category: 'Yemek Hazırlama, Dağıtım, Catering',
+        registration_number: kayitNo || undefined,
         source_url: url,
         scraped_at: new Date(),
       };
 
-      if (this.validateTender(tender)) {
-        return tender as ScrapedTender;
-      }
-
-      return null;
+  // --- Tüm tekrar eden ve eski kod blokları kaldırıldı ---
+  return tender as ScrapedTender;
     } catch (error) {
       console.warn(`⚠️ Detail page parse error: ${error}`);
       return null;

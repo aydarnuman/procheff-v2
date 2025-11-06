@@ -1,0 +1,145 @@
+{
+  "total": 3,
+  "passed": 1,
+  "failed": 2,
+  "details": [
+    {
+      "name": "Belediye Personel Yemek Hizmeti",
+      "accuracy": 80,
+      "processingTime": 13618,
+      "confidenceScore": 0.9,
+      "passed": true,
+      "extracted": {
+        "kurum": "Ankara Büyükşehir Belediyesi",
+        "ihale_turu": "Bilinmiyor",
+        "registration_number": "2025/1613396",
+        "kisi_sayisi": 320,
+        "personel_sayisi": null,
+        "ogun_sayisi": 1,
+        "gun_sayisi": 365,
+        "tahmini_butce": 850000,
+        "teslim_suresi": null,
+        "riskler": [
+          "Günlük 320 kişilik yemek kapasitesi sağlama zorluğu",
+          "1 yıllık uzun sözleşme süresi riski",
+          "Sıcak yemek standardını sürdürme zorluğu"
+        ],
+        "ozel_sartlar": [
+          "Günlük 1 öğün (öğle yemeği) servisi",
+          "320 personele hizmet verilmesi",
+          "Sıcak yemek standardında servis",
+          "Sözleşme süresi 1 yıl",
+          "Teklif edilen fiyatlar KDV hariç olacak"
+        ],
+        "kanitlar": {},
+        "guven_skoru": 0.9
+      },
+      "expected": {
+        "kurum": "Ankara Büyükşehir Belediyesi",
+        "ihale_turu": "Hizmet Alımı",
+        "kisi_sayisi": 320,
+        "ogun_sayisi": 1,
+        "gun_sayisi": 365,
+        "tahmini_butce": 850000
+      },
+      "validations": {
+        "kurum": true,
+        "ihale_turu": false,
+        "kisi_sayisi": true,
+        "ogun_sayisi": true,
+        "tahmini_butce": true
+      }
+    },
+    {
+      "name": "Hastane Hasta Yemeği Hizmeti",
+      "accuracy": 60,
+      "processingTime": 11689,
+      "confidenceScore": 0.9,
+      "passed": false,
+      "extracted": {
+        "kurum": "İSTANBUL İL SAĞLIK MÜDÜRLÜĞÜ",
+        "ihale_turu": "Bilinmiyor",
+        "registration_number": "2025/789456",
+        "kisi_sayisi": 552,
+        "personel_sayisi": null,
+        "ogun_sayisi": 5,
+        "gun_sayisi": 730,
+        "tahmini_butce": 2400000,
+        "teslim_suresi": null,
+        "riskler": [
+          "Diyetisyen kontrolü gerekliliği",
+          "Hijyen kurallarına uyum zorunluluğu",
+          "24 aylık uzun sözleşme süresi"
+        ],
+        "ozel_sartlar": [
+          "Günlük 5 öğün yemek hizmeti",
+          "Diyetisyen kontrolünde özel diyet yemekleri",
+          "Yemekler hijyen kurallarına uygun olarak hazırlanacaktır"
+        ],
+        "kanitlar": {},
+        "guven_skoru": 0.9
+      },
+      "expected": {
+        "kurum": "İstanbul İl Sağlık Müdürlüğü",
+        "ihale_turu": "Hasta Yemeği Hizmeti",
+        "kisi_sayisi": 552,
+        "ogun_sayisi": 5,
+        "gun_sayisi": 730,
+        "tahmini_butce": 2400000
+      },
+      "validations": {
+        "kurum": false,
+        "ihale_turu": false,
+        "kisi_sayisi": true,
+        "ogun_sayisi": true,
+        "tahmini_butce": true
+      }
+    },
+    {
+      "name": "Okul Yemekhane İşletmeciliği",
+      "accuracy": 40,
+      "processingTime": 14328,
+      "confidenceScore": 0.9,
+      "passed": false,
+      "extracted": {
+        "kurum": "MİLLİ EĞİTİM BAKANLIĞI",
+        "ihale_turu": "Bilinmiyor",
+        "registration_number": "2025/445566",
+        "kisi_sayisi": 950,
+        "personel_sayisi": null,
+        "ogun_sayisi": 3,
+        "gun_sayisi": 900,
+        "tahmini_butce": 6390000,
+        "teslim_suresi": null,
+        "riskler": [
+          "Beslenme uzmanları denetimi gereksinimi",
+          "5 yıllık uzun vadeli sözleşme riski",
+          "950 öğrenciye sürekli hizmet verme zorunluluğu"
+        ],
+        "ozel_sartlar": [
+          "Günlük 3 öğün hizmet verilmesi",
+          "Beslenme uzmanları tarafından denetlenmesi",
+          "Tam hizmet işletmeciliği modeli",
+          "5 yıl süreyle 900 okul günü hizmet"
+        ],
+        "kanitlar": {},
+        "guven_skoru": 0.9
+      },
+      "expected": {
+        "kurum": "Milli Eğitim Bakanlığı",
+        "ihale_turu": "İşletmecilik Hizmeti",
+        "kisi_sayisi": 950,
+        "ogun_sayisi": 3,
+        "gun_sayisi": 900,
+        "tahmini_butce": 1278000
+      },
+      "validations": {
+        "kurum": false,
+        "ihale_turu": false,
+        "kisi_sayisi": true,
+        "ogun_sayisi": true,
+        "tahmini_butce": false
+      }
+    }
+  ]
+}

@@ -46,17 +46,26 @@ export class ScraperOrchestrator {
   /**
    * Run all enabled scrapers
    */
-  async runAll(testMode: boolean = false): Promise<{
+  async runAll(testMode: boolean = false, sourceFilter?: string): Promise<{
     success: boolean;
     results: ScrapeResult[];
     totalNew: number;
     totalCatering: number;
   }> {
     console.log('\n' + '='.repeat(70));
-    console.log('🚀 SCRAPER ORCHESTRATOR - ALL SOURCES');
+    console.log('🚀 SCRAPER ORCHESTRATOR -', sourceFilter ? sourceFilter.toUpperCase() : 'ALL SOURCES');
     console.log('='.repeat(70));
 
-    const scrapers = getScrapersByPriority();
+    let scrapers = getScrapersByPriority();
+    
+    // Filter by source if specified
+    if (sourceFilter) {
+      scrapers = scrapers.filter(s => s.id === sourceFilter);
+      if (scrapers.length === 0) {
+        console.error(`❌ Unknown source: ${sourceFilter}`);
+        return { success: false, results: [], totalNew: 0, totalCatering: 0 };
+      }
+    }
     const results: ScrapeResult[] = [];
     let totalNew = 0;
     let totalCatering = 0;
@@ -65,26 +74,14 @@ export class ScraperOrchestrator {
       try {
         console.log(`\n📍 Running: ${config.name}`);
 
-        // 🆕 Callback: Her batch tamamlandığında çağrılacak - ANINDA database'e kaydet
         let scraper;
-        let batchSavedTotal = 0;
-
-        const onBatchComplete = async (batchTenders: ScrapedTender[]) => {
-          if (batchTenders.length > 0) {
-            console.log(`\n💾 ${batchTenders.length} ihale parti parti database'e kaydediliyor...`);
-            const saved = await this.saveMinimalTenders(batchTenders, testMode);
-            batchSavedTotal += saved.newCount;
-            totalNew += saved.newCount; // Toplama ekle
-            console.log(`✅ ${saved.newCount} yeni ihale kaydedildi (Toplam: ${batchSavedTotal})`);
-          }
-        };
 
         switch (config.id) {
           case 'ilan_gov':
             scraper = new IlanGovScraper(config);
             break;
           case 'ihalebul':
-            scraper = new IhalebulScraper(config, onBatchComplete); // ✅ Callback ekle!
+            scraper = new IhalebulScraper();
             break;
           case 'ekap':
             scraper = new EkapScraper(config);
@@ -97,7 +94,10 @@ export class ScraperOrchestrator {
         // Execute scraping
         const result = await scraper.execute();
         results.push(result);
-        result.newTenders = batchSavedTotal; // Batch kayıtlarını güncelle
+
+        // Save tenders to database
+        const saved = await this.saveMinimalTenders(result.tenders, testMode);
+        totalNew += saved.newCount;
 
         // Log to database
         await TenderDatabase.logScraping({
@@ -106,7 +106,7 @@ export class ScraperOrchestrator {
           completedAt: result.completedAt,
           status: result.success ? 'success' : 'failed',
           totalScraped: result.totalScraped,
-          newListings: batchSavedTotal, // Batch kayıtlarını kullan
+          newListings: saved.newCount,
           updatedListings: result.updatedTenders,
           errorMessage: result.errors.length > 0 ? result.errors[0].message : undefined,
         });
@@ -143,22 +143,12 @@ export class ScraperOrchestrator {
     let scraper;
     let totalSaved = 0;
 
-    // 🆕 Callback: Her batch tamamlandığında çağrılacak - ANINDA database'e kaydet
-    const onBatchComplete = async (batchTenders: ScrapedTender[]) => {
-      if (batchTenders.length > 0) {
-        console.log(`\n💾 ${batchTenders.length} ihale parti parti database'e kaydediliyor...`);
-        const saved = await this.saveMinimalTenders(batchTenders, testMode);
-        totalSaved += saved.newCount;
-        console.log(`✅ ${saved.newCount} yeni ihale kaydedildi (Toplam: ${totalSaved})`);
-      }
-    };
-
     switch (sourceId) {
       case 'ilan_gov':
         scraper = new IlanGovScraper(config);
         break;
       case 'ihalebul':
-        scraper = new IhalebulScraper(config, onBatchComplete);
+        scraper = new IhalebulScraper();
         break;
       case 'ekap':
         scraper = new EkapScraper(config);
@@ -168,7 +158,10 @@ export class ScraperOrchestrator {
     }
 
     const result = await scraper.execute();
-    result.newTenders = totalSaved; // Toplam kaydedilen sayıyı güncelle
+    
+    // Save tenders to database
+    const saved = await this.saveMinimalTenders(result.tenders, testMode);
+    result.newTenders = saved.newCount;
 
     // Log
     await TenderDatabase.logScraping({

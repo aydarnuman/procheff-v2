@@ -141,21 +141,23 @@ CREATE VIRTUAL TABLE IF NOT EXISTS ihale_listings_fts USING fts5(
   content_rowid='id'
 );
 
+-- ❌ FTS Triggers DISABLED due to "unsafe use of virtual table" error
+-- Bu trigger'lar INSERT işlemlerini engelliyor, manual FTS rebuild kullanılacak
 -- Trigger: FTS tablosunu otomatik güncelle
-CREATE TRIGGER IF NOT EXISTS ihale_listings_ai AFTER INSERT ON ihale_listings BEGIN
-  INSERT INTO ihale_listings_fts(rowid, title, organization)
-  VALUES (new.id, new.title, new.organization);
-END;
+-- CREATE TRIGGER IF NOT EXISTS ihale_listings_ai AFTER INSERT ON ihale_listings BEGIN
+--   INSERT INTO ihale_listings_fts(rowid, title, organization)
+--   VALUES (new.id, new.title, new.organization);
+-- END;
 
-CREATE TRIGGER IF NOT EXISTS ihale_listings_ad AFTER DELETE ON ihale_listings BEGIN
-  DELETE FROM ihale_listings_fts WHERE rowid = old.id;
-END;
+-- CREATE TRIGGER IF NOT EXISTS ihale_listings_ad AFTER DELETE ON ihale_listings BEGIN
+--   DELETE FROM ihale_listings_fts WHERE rowid = old.id;
+-- END;
 
-CREATE TRIGGER IF NOT EXISTS ihale_listings_au AFTER UPDATE ON ihale_listings BEGIN
-  UPDATE ihale_listings_fts
-  SET title = new.title, organization = new.organization
-  WHERE rowid = new.id;
-END;
+-- CREATE TRIGGER IF NOT EXISTS ihale_listings_au AFTER UPDATE ON ihale_listings BEGIN
+--   UPDATE ihale_listings_fts
+--   SET title = new.title, organization = new.organization
+--   WHERE rowid = new.id;
+-- END;
 
 -- ============================================================================
 -- TENDER ANALYSIS (AI analysis cache)

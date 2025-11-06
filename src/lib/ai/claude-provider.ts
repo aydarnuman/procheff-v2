@@ -858,95 +858,121 @@ Mevcut durum:
     // Metin çok uzunsa (>100K), prompt'u kısalt
     const isLongText = text.length > 100000;
     const promptHeader = isLongText
-      ? `İhale analisti olarak aşağıdaki metinden kritik bilgileri çıkar.`
-      : `Sen profesyonel bir kamu ihale analistisin. Verilen ihale şartnamesinden veri çıkaracaksın.`;
+      ? `İhale analisti olarak aşağıdaki metinden kritik bilgileri çıkar. DİKKAT: "registration_number" (İhale Kayıt Numarası), "organization_city" (Şehir) ve "teklif_son_tarih" (Son Teklif Tarihi) alanlarını mutlaka JSON'da doldur! Eğer metinde yoksa, DOM veya Scraper'dan gelen fallback veriyi kullan. Boş bırakma!`
+      : `Sen profesyonel bir kamu ihale analistisin. Verilen ihale şartnamesinden veri çıkaracaksın. DİKKAT: "registration_number" (İhale Kayıt Numarası), "organization_city" (Şehir) ve "teklif_son_tarih" (Son Teklif Tarihi) alanlarını mutlaka JSON'da doldur! Eğer metinde yoksa, DOM veya Scraper'dan gelen fallback veriyi kullan. Boş bırakma!`;
 
     return `${promptHeader}
 
 # İHALE METNİ
 ${text}
+    ## ARANACAK BİLGİLER
 
-# GÖREV
-${isLongText ? 'Metni analiz et ve JSON formatında veri çıkar.' : 'KAYNAK TAKİBİ yaparak her bilgiyi hangi dosyadan aldığını belirt.'}
+    ### 1. KURUM (zorunlu)
+    Başlıkta veya ilk 500 kelimede kurum adını bul.
+    - "... İL MÜDÜRLÜĞÜ" ile biten kelime grubu
+    - "... BAKANLIĞI", "... BELEDİYESİ" gibi ifadeler
+    - Tam adı yaz (kısaltma yapma)
 
-**Dosya Etiketlerini Tespit Et:**
-- Metinde "=== DOSYA: dosya_adı ===" etiketleri varsa, ÇOKLU DOSYA yüklenmiş demektir
-- Her dosya etiketi, o noktadan sonraki içeriğin hangi belgeden geldiğini gösterir
-- Örnek: "=== DOSYA: Teknik_Şartname.doc ===" → bu etiketin altındaki tüm içerik bu dosyadan
+    ### 2. ŞEHİR (organization_city) (zorunlu)
+    "Şehir", "İl", "İşin yapılacağı yer" gibi ifadeleri ara. Bulamazsan: Scraper'dan gelen fallback veriyi kullan.
 
-**Kaynak Takibi Kuralları:**
-1. Her veriyi hangi dosyadan aldığını "_sources" objesine yaz
-2. Dosya adını tam olarak yaz (etiketin içindeki adı kullan)
-3. Mümkünse sayfa/tablo/bölüm bilgisini de ekle
-4. Birden fazla dosyadan aynı bilgi varsa, en detaylısını kullan ve kaynak olarak belirt
+    ### 3. İHALE TÜRÜ
+    "Açık İhale", "Belli İstekliler Arası", "Pazarlık Usulü" kelimelerini ara.
+    Bulamazsan: null
 
-**Tipik Dosya Türleri ve İçerikleri:**
-- **Teknik Şartname** (.doc/.docx): Kişi sayıları, öğün sayıları, porsiyon bilgileri, hijyen kuralları, personel gereksinimleri, menu örnek
-- **İhale İlanı** (.pdf): Tahmini bütçe, ihale türü, ihale tarihleri, teklif verme tarihleri, kurumsal bilgiler
-- **Zeylname/Ek** (.pdf/.doc): Değişiklikler, güncellemeler, ek şartlar
+    ### 4. İHALE KAYIT NUMARASI (registration_number)
+    "İhale Kayıt Numarası", "Kayıt No", "İKN" gibi ifadeleri ara. Genellikle "2025/123456" formatında olur. Bulamazsan: Scraper'dan gelen fallback veriyi kullan.
 
-# GÖREV
-Yukarıdaki metni analiz et, dosya etiketlerine dikkat ederek hangi bilginin hangi dosyadan geldiğini belirle ve JSON formatında veri çıkar.
+    ### 5. SON TEKLİF TARİHİ (teklif_son_tarih) (zorunlu)
+    "Son teklif tarihi", "Teklif tarihi", "Deadline" gibi ifadeleri ara. Bulamazsan: Scraper'dan gelen fallback veriyi kullan.
 
-## ARANACAK BİLGİLER
+    ### 6. KİŞİ SAYISI (number) - ÇOK ÖNEMLİ!
+    ...
 
-### 1. KURUM (zorunlu)
-Başlıkta veya ilk 500 kelimede kurum adını bul.
-- "... İL MÜDÜRLÜĞÜ" ile biten kelime grubu
-- "... BAKANLIĞI", "... BELEDİYESİ" gibi ifadeler
-- Tam adı yaz (kısaltma yapma)
+    ### 7. TAHMİNİ BÜTÇE (number)
+    ...
 
-### 2. İHALE TÜRÜ
-"Açık İhale", "Belli İstekliler Arası", "Pazarlık Usulü" kelimelerini ara.
-Bulamazsan: null
+    ### 8. TARİHLER
+    ...
 
-### 3. KİŞİ SAYISI (number) - ÇOK ÖNEMLİ!
-
-**AMAÇ:** Kaç kişiye yemek yapılacak? (Hizmet alan sayısı, personel değil!)
-
-**BASİT KURALLAR:**
-
-1️⃣ **TABLOLARDA ARA:**
-   - "Kahvaltı, Öğle, Akşam, Toplam" kolonlu tablolar var mı?
-   - "Toplam" sütunundaki sayıları BUL ve TOPLA
-   - Örnek: Tablo 1'de 6, Tablo 2'de 11 → Toplam: 17 kişi
-
-2️⃣ **KURULUŞ LİSTESİ VAR MI?**
-   - Birden fazla kuruluş/birim/dağıtım yeri var mı?
-   - HER kuruluştaki kişi sayısını bul ve TOPLA
-   - ⚠️ Kuruluş sayısı ≠ Kişi sayısı! (17 kuruluş varsa, her birindeki kişileri say)
-
-3️⃣ **DİREKT AÇIKLAMA:**
-   - "500 kişiye yemek", "700 öğrenciye" gibi ifadeler ara
-
-**⚠️ DİKKAT - YAPMA BUNLARI:**
-- "8 personel tarafından yapılacak" → Bu PERSONEL, kişi değil! → null
-- "1 aşçıbaşı, 3 aşçı..." şeklinde kadro listesi → Bu PERSONEL → null
-- Sadece personel sayısı varsa → kisi_sayisi: null
-- "17-Yüklenici", "5-Personel", "3-Malzeme" → Bu MADDE NUMARALARI! → null
-- Tire (-) ile başlayan madde başlıkları → MADDE NO, veri değil! → null
-- "Madde 15:", "Bent 8:", "Paragraf 12:" → Yapısal numaralar, veri değil! → null
-
-**NASIL AÇIKLAYACAĞIN:**
-"_sources" → "kisi_sayisi" → "kanit" alanına net yaz:
-- "Tablo 1: 6 kişi, Tablo 2: 11 kişi → Toplam: 17"
-- "Kuruluş A: 45, Kuruluş B: 30 → Toplam: 75"
-
-Bulamazsan: null
-
-### 4. TAHMİNİ BÜTÇE (number)
-"Tahmini bedel", "Muhammen bedel", "Toplam tutar" ara.
-Format: "1.500.000 TL" → 1500000
-Bulamazsan: null
-
-### 5. TARİHLER
-- ihale_tarihi: "İlan tarihi" ara
-- teklif_son_tarih: "Teklif verme tarihi" ara
-Bulamazsan: null
-
-## JSON FORMATI
-{
-  "kurum": "string",
+    ## JSON FORMATI
+    {
+      "kurum": "string",
+      "organization_city": "string",
+      "ihale_turu": "string|null",
+      "registration_number": "string|null",
+      "kisi_sayisi": number|null,
+      "ogun_sayisi": 3,
+      "gun_sayisi": 365,
+      "tahmini_butce": number|null,
+      "teslim_suresi": null,
+      "ihale_tarihi": "string|null",
+      "teklif_son_tarih": "string|null",
+      "ise_baslama_tarih": null,
+      "ihale_suresi": null,
+      "dagitim_yontemi": null,
+      "sertifikasyon_etiketleri": [],
+      "ornek_menu_basliklari": [],
+      "riskler": ["Risk 1", "Risk 2", "Risk 3"],
+      "ozel_sartlar": ["Şart 1", "Şart 2"],
+      "kanitlar": {},
+      "guven_skoru": 0.8,
+      "_sources": {
+        "kurum": {
+          "dosya": "İhale_İlanı.pdf",
+          "sayfa": "Başlık bölümü",
+          "kanit": "Bilecik Gençlik ve Spor İl Müdürlüğü"
+        },
+        "organization_city": {
+          "dosya": "İhale_İlanı.pdf",
+          "sayfa": "İşin yapılacağı yer veya şehir alanı",
+          "kanit": "İstanbul"
+        },
+        "ihale_turu": {
+          "dosya": "İhale_İlanı.pdf",
+          "sayfa": "Genel bilgiler",
+          "kanit": "Açık İhale Usulü"
+        },
+        "registration_number": {
+          "dosya": "İhale_İlanı.pdf",
+          "sayfa": "Başlık veya üst bölüm",
+          "kanit": "2025/123456"
+        },
+        "teklif_son_tarih": {
+          "dosya": "İhale_İlanı.pdf",
+          "sayfa": "Son teklif tarihi alanı",
+          "kanit": "2025-11-10"
+        },
+        "kisi_sayisi": {
+          "dosya": "TEKNİK_ŞARTNAME-10.09.2025.doc",
+          "sayfa": "Öğün sayıları tablosu - Tablo 1, 2, 3",
+          "kanit": "Tablolardaki toplam sütunu: 6+6+5=17 kişi"
+        },
+        "tahmini_butce": {
+          "dosya": "İhale_İlanı.pdf",
+          "sayfa": "Mali bilgiler",
+          "kanit": "Tahmini bedel: 1.500.000,00 TL"
+        },
+        "ogun_sayisi": {
+          "dosya": "TEKNİK_ŞARTNAME-10.09.2025.doc",
+          "sayfa": "Öğün sayıları tablosu başlıkları",
+          "kanit": "Kahvaltı, Öğle, Akşam kolonları"
+        },
+        "gun_sayisi": {
+          "dosya": "TEKNİK_ŞARTNAME-10.09.2025.doc",
+          "sayfa": "Sözleşme süresi",
+          "kanit": "365 gün"
+        },
+        "riskler": {
+          "dosya": "TEKNİK_ŞARTNAME-10.09.2025.doc",
+          "sayfa": "Özel şartlar ve kısıtlamalar bölümü"
+        },
+        "ozel_sartlar": {
+          "dosya": "TEKNİK_ŞARTNAME-10.09.2025.doc + İhale_İlanı.pdf",
+          "sayfa": "Teknik şartname maddeleri ve idari şartlar"
+        }
+      }
+    }
   "ihale_turu": "string|null",
   "kisi_sayisi": number|null,
   "ogun_sayisi": 3,
@@ -1218,6 +1244,10 @@ JSON:`;
         typeof dataObj.ihale_turu === "string"
           ? dataObj.ihale_turu
           : "Bilinmiyor",
+      registration_number:
+        typeof dataObj.registration_number === "string"
+          ? dataObj.registration_number
+          : null,
       kisi_sayisi:
         typeof dataObj.kisi_sayisi === "number" ? dataObj.kisi_sayisi : null,
       personel_sayisi:

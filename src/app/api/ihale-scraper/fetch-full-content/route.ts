@@ -450,15 +450,31 @@ ${innerText.slice(0, 300000)}
       documentsCount: (parsedData.documents || []).length,
     });
 
-    // Convert to frontend format
+    // Scraper'dan gelen details ana kaynak, AI'dan gelen ek bilgiler (ör: açıklama, risk, özel şartlar) sadece gerektiğinde eklenir
     const structuredData = {
       title: parsedData.title || '',
       organization: parsedData.organization || '',
-      details: parsedData.details || {},
+      details: htmlContent ? await extractDetailsFromHTML(htmlContent) : (parsedData.details || {}),
       documents: parsedData.documents || [],
       fullText: parsedData.announcementText || innerText, // Fallback to raw text
       itemsList: parsedData.itemsList || null, // 🆕 Malzeme listesi (CSV format)
+      // AI'dan gelen ek bilgiler (ör: risk, özel şartlar) varsa ekle
+      ...(parsedData.riskler ? { riskler: parsedData.riskler } : {}),
+      ...(parsedData.ozel_sartlar ? { ozel_sartlar: parsedData.ozel_sartlar } : {}),
     };
+
+    // HTML'den detayları çıkaran fonksiyon (Scraper mantığı ile)
+    async function extractDetailsFromHTML(html: string): Promise<Record<string, string>> {
+      const cheerio = require('cheerio');
+      const $ = cheerio.load(html);
+      const details: Record<string, string> = {};
+      $('#tender .row').each((i: any, row: any) => {
+        const key = $(row).find('.fw-bold').text().replace(/\s+/g, ' ').trim();
+        const value = $(row).find('.text-dark-emphasis').text().replace(/\s+/g, ' ').trim();
+        if (key && value) details[key] = value;
+      });
+      return details;
+    }
 
     // 🆕 Parse edilen detayları veritabanına kaydet (eğer tenderId varsa)
     if (tenderId) {
