@@ -25,444 +25,6 @@ export class IhalebulScraper extends BaseScraper {
     // No fallback to public scraping - login is mandatory
   }
 
-  /**
-   * Auto-login with session management
-   */
-  private async autoLogin(page: any, username: string, password: string): Promise<boolean> {
-    const fs = require('fs');
-    const sessionFile = '/tmp/ihalebul-session.json';
-    // Ensure a session file exists so other code reading it won't crash if it was deleted
-    try {
-      if (!fs.existsSync(sessionFile)) {
-        const placeholder = { timestamp: new Date().toISOString(), url: '', cookies: [] };
-        try { fs.writeFileSync(sessionFile, JSON.stringify(placeholder, null, 2)); console.log('ℹ️ Placeholder session file created at', sessionFile); } catch (e) { /* ignore write errors */ }
-      }
-    } catch (e) {
-      // ignore filesystem permission errors
-    }
-
-    try {
-      // If a recent saved session exists, restore cookies and skip login
-      if (fs.existsSync(sessionFile)) {
-        const sessionData = fs.readFileSync(sessionFile, 'utf8');
-        const savedSession = JSON.parse(sessionData);
-        const sessionAge = Date.now() - new Date(savedSession.timestamp).getTime();
-
-        if (sessionAge < 3600000) { // 1 hour
-          try {
-            console.log('🔄 Restoring saved session (age: ' + Math.round(sessionAge / 60000) + ' minutes)');
-            if (Array.isArray(savedSession.cookies) && savedSession.cookies.length > 0) {
-              await page.setCookie(...savedSession.cookies);
-              return true;
-            }
-          } catch (e) {
-            console.warn('⚠️ Failed to restore saved session cookies:', e);
-          }
-        }
-      }
-
-      // No valid saved session found — load the dedicated login page and attempt AI login first
-      try {
-        await page.goto('https://www.ihalebul.com/signin', { waitUntil: 'networkidle2', timeout: 60000 });
-
-        // ✅ İYİLEŞTİRME: JavaScript'in form'ları render etmesi için bekle
-        console.log('⏳ Waiting for forms to load (2 seconds)...');
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      } catch (e) {
-        // If the dedicated login page fails, continue and let performAILogin/Manual handle it
-      }
-
-      const html = await page.content();
-
-      // Try AI-powered login, fall back to manual login if it fails
-      const aiLoginSuccess = await this.performAILogin(page, html, username, password);
-      if (aiLoginSuccess) return true;
-
-      return await this.performManualLogin(page, username, password);
-    } catch (error: any) {
-      console.error('❌ autoLogin error:', error && error.message ? error.message : error);
-      // Fallback to manual login on any unexpected error
-      return await this.performManualLogin(page, username, password);
-    }
-  }
-
-  /**
-   * AI-powered login using HTML analysis
-   */
-  private async performAILogin(page: any, html: string, username: string, password: string): Promise<boolean> {
-    try {
-      // Import AI provider dynamically
-      const { ClaudeProvider } = await import('@/lib/ai/claude-provider');
-      const aiProvider = new ClaudeProvider();
-
-      const prompt = `
-Sen bir web scraping uzmanısın. Bu HTML sayfasında login formu var ve senin görevi bu formu otomatik olarak doldurup submit etmek.
-
-## GÖREV:
-HTML'deki login formunu analiz et ve JavaScript kodu üret.
-
-## HTML İÇERİĞİ:
-${html.substring(0, 8000)}
-
-## KULLANICI BİLGİLERİ:
-- Username: ${username}
-- Password: ${password}
-
-## ÖNEMLİ NOTLAR:
-1. **İki form olabilir**: Mobil modal formu VE desktop formu. Desktop formunu kullan (genellikle ikinci form).
-2. **Input name'leri**: "kul_adi", "email", "username" benzeri alanlardan biri olabilir. Password alanı genelde "sifre" ya da type="password".
-3. **CSRF token**: Eğer varsa "csrf" input'unu da doldur
-4. **Submit yöntemi**: Button click yerine form.submit() veya form.requestSubmit() kullan (daha güvenilir)
-5. **Görünmez elementler**: Display:none olan formları atla
-
-## ÇIKTI FORMATI:
-Sadece executable JavaScript kodu döndür. Örnek:
-
-\`\`\`javascript
-(function(username, password) {
-  try {
-    // Find login forms
-    const forms = document.querySelectorAll('form');
-    let targetForm = null;
-
-    // Find the form with login inputs (desktop version)
-    for (let i = 0; i < forms.length; i++) {
-      const form = forms[i];
-      const hasUsername = form.querySelector('input[name="kul_adi"]');
-      const hasPassword = form.querySelector('input[name="sifre"]');
-
-      if (hasUsername && hasPassword) {
-        // Check if form is visible (not mobile modal)
-        const style = window.getComputedStyle(form);
-        if (style.display !== 'none' && style.visibility !== 'hidden') {
-          targetForm = form;
-          break;
-        }
-      }
-    }
-
-    if (!targetForm) return false;
-
-    // Fill inputs
-    const userInput = targetForm.querySelector('input[name="kul_adi"]');
-    const passInput = targetForm.querySelector('input[name="sifre"]');
-
-    if (userInput && passInput) {
-      userInput.value = username;
-      passInput.value = password;
-
-      // Submit form
-      targetForm.submit();
-      return true;
-    }
-
-    return false;
-  } catch (e) {
-    console.error('Login error:', e);
-    return false;
-  }
-})(arguments[0], arguments[1])
-\`\`\`
-
-Şimdi yukarıdaki HTML'i analiz et ve benzeri bir JavaScript kodu üret. Sadece kodu döndür, açıklama yapma.
-`;
-
-      // Get AI analysis using queryRaw
-      const response = await aiProvider.queryRaw(prompt, {
-        maxTokens: 2000,
-        temperature: 0.1
-      });
-
-      if (!response) {
-        console.error('❌ AI analysis failed');
-        return false;
-      }
-
-      console.log('🤖 AI Login Instructions:', response);
-
-      // Extract JavaScript code from AI response
-      const jsCode = this.extractJSCode(response);
-      if (!jsCode) {
-        console.error('❌ Could not extract JavaScript code from AI response');
-        return false;
-      }
-
-      console.log('🔧 Executing AI-generated login code...');
-
-      // Execute the AI-generated JavaScript code
-      const result = await page.evaluate(jsCode, username, password);
-
-      if (result) {
-        console.log('✅ AI login successful!');
-        return true;
-      } else {
-        console.error('❌ AI login execution failed');
-        return false;
-      }
-
-    } catch (error: any) {
-      console.error('❌ AI login error:', error.message);
-      return false;
-    }
-  }
-
-  /**
-   * Extract JavaScript code from AI response
-   */
-  private extractJSCode(aiResponse: string): string | null {
-    // Try to find code blocks
-    const codeBlockRegex = /```(?:javascript|js)?\n?([\s\S]*?)```/i;
-    const match = aiResponse.match(codeBlockRegex);
-
-    if (match) {
-      return match[1].trim();
-    }
-
-    // Try to find function definitions or direct code
-    const lines = aiResponse.split('\n');
-    const codeLines = lines.filter(line =>
-      line.includes('document.') ||
-      line.includes('querySelector') ||
-      line.includes('getElement') ||
-      line.includes('form.') ||
-      line.includes('submit()') ||
-      line.includes('click()')
-    );
-
-    if (codeLines.length > 0) {
-      return codeLines.join('\n');
-    }
-
-    return null;
-  }
-
-  /**
-   * Fallback manual login method
-   */
-  private async performManualLogin(page: any, username: string, password: string): Promise<boolean> {
-    try {
-      console.log('🔐 Manual login fallback...');
-      const fs = require('fs');
-
-      await page.goto('https://www.ihalebul.com/signin', { waitUntil: 'networkidle2', timeout: 60000 });
-
-      // ✅ İYİLEŞTİRME: JavaScript'in form'ları render etmesi için bekle
-      console.log('⏳ Waiting for page to fully load (2 seconds)...');
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      const formReady = await this.markVisibleLoginForm(page);
-      if (!formReady) {
-        const loginHtml = await page.content();
-        fs.writeFileSync('/tmp/ihalebul-login-missing-form.html', loginHtml);
-        console.error('❌ Visible login form not detected. Saved HTML to /tmp/ihalebul-login-missing-form.html');
-        return false;
-      }
-
-      const usernameHandle = await page.$('[data-login-username="true"]');
-      const passwordHandle = await page.$('[data-login-password="true"]');
-      const submitHandle = await page.$('[data-login-submit="true"]');
-
-      if (!usernameHandle || !passwordHandle || !submitHandle) {
-        const loginHtml = await page.content();
-        fs.writeFileSync('/tmp/ihalebul-login-missing-handles.html', loginHtml);
-        console.error('❌ Login form handles missing after annotation. Saved HTML to /tmp/ihalebul-login-missing-handles.html');
-        console.error('usernameHandle:', !!usernameHandle, 'passwordHandle:', !!passwordHandle, 'submitHandle:', !!submitHandle);
-        return false;
-      }
-
-      await usernameHandle.click({ clickCount: 3 }).catch(() => undefined);
-      await usernameHandle.type(username, { delay: 60 });
-      await passwordHandle.click({ clickCount: 3 }).catch(() => undefined);
-      await passwordHandle.type(password, { delay: 60 });
-
-      console.log('🔐 Submitting login form...');
-
-      const navigationPromise = page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }).catch(() => null);
-      const responsePromise = page.waitForResponse((res: any) => res.url().includes('/signin') && res.request().method() === 'POST', { timeout: 20000 }).catch(() => null);
-
-      try {
-        await submitHandle.evaluate((element: Element) => {
-          const el = element as HTMLElement;
-          const form = el.closest('form') as HTMLFormElement | null;
-          if (el instanceof HTMLButtonElement || el instanceof HTMLInputElement) {
-            el.click();
-          }
-          if (form) {
-            if (typeof form.requestSubmit === 'function') {
-              form.requestSubmit();
-            } else {
-              form.submit();
-            }
-          }
-          if (!form && !(el instanceof HTMLButtonElement || el instanceof HTMLInputElement)) {
-            el.dispatchEvent(new Event('click', { bubbles: true }));
-          }
-        });
-      } catch (submitError) {
-        console.warn('⚠️ Submit evaluation failed, falling back to direct click:', submitError);
-        await submitHandle.click().catch(() => undefined);
-      }
-
-      await Promise.race([
-        navigationPromise,
-        responsePromise,
-        new Promise(resolve => setTimeout(resolve, 3000))
-      ]);
-      await Promise.allSettled([navigationPromise, responsePromise]);
-
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      const afterLoginUrl = page.url();
-      const afterLoginHtml = await page.content();
-
-        // DEBUG: Login sonrası gelen HTML'i her durumda kaydet
-        try {
-          const fs = require('fs');
-          fs.writeFileSync('/tmp/ihalebul-login-debug.html', afterLoginHtml);
-          console.log('🐛 Debug: Login sonrası HTML kaydedildi /tmp/ihalebul-login-debug.html');
-        } catch (e) {
-          console.warn('⚠️ Login debug HTML kaydedilemedi:', e);
-        }
-
-      if (afterLoginHtml.includes('Üye girişi engellendi') ||
-          afterLoginHtml.includes('Müşteri hizmetleri ile iletişime geçiniz') ||
-          afterLoginHtml.includes('hesabınız engellenmiştir') ||
-          afterLoginHtml.includes('account blocked')) {
-        fs.writeFileSync('/tmp/ihalebul-account-blocked.html', afterLoginHtml);
-        console.error('🚨 Hesap engellenmiş olabilir. /tmp/ihalebul-account-blocked.html dosyasına kaydedildi.');
-        return false;
-      }
-
-      const cookies = await page.cookies();
-      const sessionCookies = cookies.filter((c: any) => /session|auth|token/i.test(c.name));
-      console.log('🍪 Cookies after manual login:', cookies.length, 'total');
-      console.log('🔑 Session-like cookies:', sessionCookies.map((c: any) => c.name));
-
-      const urlLower = afterLoginUrl.toLowerCase();
-      const urlCheck = !urlLower.includes('/signin') && !urlLower.includes('/login') && !urlLower.includes('giris');
-
-      const htmlIndicators = [
-        'Çıkış',
-        'Çıkış Yap',
-        'Oturumu Kapat',
-        'Hesabım',
-        'Profilim',
-        'Abonelik Bilgileri',
-        'hoş geldiniz',
-        'hos geldiniz',
-        'ihale aboneliğiniz'
-      ];
-      const htmlCheck = htmlIndicators.some(token => afterLoginHtml.toLowerCase().includes(token.toLowerCase())) ||
-        (!afterLoginHtml.includes('name="kul_adi"') && !afterLoginHtml.includes('name="sifre"') && !afterLoginHtml.includes('type="password" name="password"'));
-
-      const isLoggedIn = urlCheck && (sessionCookies.length > 0 || htmlCheck);
-
-      if (!isLoggedIn) {
-        fs.writeFileSync('/tmp/ihalebul-login-failed.html', afterLoginHtml);
-        console.error('❌ Manual login failed. Saved HTML to /tmp/ihalebul-login-failed.html');
-        console.error(`   URL check: ${urlCheck} (current: ${afterLoginUrl})`);
-        console.error(`   Session cookie check: ${sessionCookies.length > 0}`);
-        console.error(`   HTML indicator check: ${htmlCheck}`);
-        return false;
-      }
-
-      await this.saveSession(page);
-      console.log('✅ Manual login successful!');
-      console.log(`📍 Current URL: ${afterLoginUrl}`);
-      return true;
-
-    } catch (error: any) {
-      console.error('❌ Manual login error:', error.message);
-      return false;
-    }
-  }
-
-  /**
-   * ✅ İYİLEŞTİRİLMİŞ - Debug script'teki başarılı yöntem
-   * İhalebul'da 3 form var: 1 mobil modal (gizli), 2 desktop görünür
-   * Görünür formu seçiyoruz
-   */
-  private async markVisibleLoginForm(page: any): Promise<boolean> {
-    return page.evaluate(() => {
-      const isVisible = (el: Element | null): boolean => {
-        if (!el) return false;
-        const style = window.getComputedStyle(el as HTMLElement);
-        if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
-        const rect = (el as HTMLElement).getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0;
-      };
-
-      // İhalebul: form[action*="signin"] kullan (3 adet var)
-      const signinForms = Array.from(document.querySelectorAll('form[action*="signin"]'));
-
-      if (signinForms.length === 0) {
-        console.error('[markVisibleLoginForm] Signin formu bulunamadı!');
-        return false;
-      }
-
-      console.log(`[markVisibleLoginForm] ${signinForms.length} adet signin formu bulundu`);
-
-      // Görünür formu bul (tercih: görünür, fallback: son form)
-      let targetForm: Element | null = null;
-      for (const form of signinForms) {
-        if (isVisible(form)) {
-          targetForm = form;
-          console.log('[markVisibleLoginForm] Görünür signin formu bulundu');
-          break;
-        }
-      }
-
-      if (!targetForm) {
-        // Fallback: son formu kullan (genelde desktop formu)
-        targetForm = signinForms[signinForms.length - 1];
-        console.log('[markVisibleLoginForm] Görünür form yok, son formu kullanıyorum');
-      }
-
-      // Form içinde input'ları bul
-      const usernameInput = targetForm.querySelector('input[name="kul_adi"]');
-      const passwordInput = targetForm.querySelector('input[type="password"]');
-      const submitButton = targetForm.querySelector('button[type="submit"], input[type="submit"]');
-
-      if (!usernameInput || !passwordInput || !submitButton) {
-        console.error('[markVisibleLoginForm] Form inputları eksik:', {
-          username: !!usernameInput,
-          password: !!passwordInput,
-          submit: !!submitButton
-        });
-        return false;
-      }
-
-      // Mark elements for easy finding later
-      usernameInput.setAttribute('data-login-username', 'true');
-      passwordInput.setAttribute('data-login-password', 'true');
-      submitButton.setAttribute('data-login-submit', 'true');
-      targetForm.setAttribute('data-login-form', 'true');
-
-      console.log('[markVisibleLoginForm] ✅ Form işaretlendi');
-      return true;
-    });
-  }
-
-  /**
-   * Save session cookies
-   */
-  private async saveSession(page: any): Promise<void> {
-    try {
-      const fs = require('fs');
-      const cookies = await page.cookies();
-      const sessionInfo = {
-        timestamp: new Date().toISOString(),
-        url: page.url(),
-        cookies: cookies,
-        sessionCookies: cookies.filter((c: any) => c.name.toLowerCase().includes('session') || c.name.toLowerCase().includes('auth')),
-      };
-      fs.writeFileSync('/tmp/ihalebul-session.json', JSON.stringify(sessionInfo, null, 2));
-      console.log('💾 Session saved to /tmp/ihalebul-session.json');
-    } catch (error) {
-      console.error('Error saving session:', error);
-    }
-  }
-
   private async scrapePublicPages(): Promise<ScrapedTender[]> {
     try {
       console.log(`📡 Scraping public İhalebul pages with pagination...`);
@@ -535,7 +97,7 @@ Sadece executable JavaScript kodu döndür. Örnek:
 
   private async scrapeWithLogin(username: string, password: string): Promise<ScrapedTender[]> {
     try {
-      console.log(`📡 Launching browser for İhalebul with login...`);
+      console.log(`📡 Launching browser for İhalebul with auto-login...`);
 
       // Always run in headless mode (no visible browser window)
       const browser = await puppeteer.launch({
@@ -552,47 +114,6 @@ Sadece executable JavaScript kodu döndür. Örnek:
       const page = await browser.newPage();
       const fs = require('fs');
 
-      let sessionActive = false;
-
-      // Try auto-login first (new method)
-      const autoLoginSuccess = await this.autoLogin(page, username, password);
-      if (autoLoginSuccess) {
-        sessionActive = true;
-        console.log('✅ Auto-login successful, proceeding with scraping...');
-        await this.saveSession(page);
-        try {
-          console.log('📄 Navigating to tenders page...');
-          await page.goto('https://www.ihalebul.com/tenders', { waitUntil: 'networkidle2', timeout: 60000 });
-        } catch (navError) {
-          console.warn('⚠️ Navigation after auto-login failed:', navError);
-        }
-      } else {
-        console.log('⚠️ Auto-login failed, checking saved session or manual login...');
-      }
-
-      // Check if we have a saved session (within last hour) if auto-login did not already establish one
-      if (!sessionActive) {
-        try {
-          const sessionData = fs.readFileSync('/tmp/ihalebul-session.json', 'utf8');
-          const savedSession = JSON.parse(sessionData);
-          const sessionAge = Date.now() - new Date(savedSession.timestamp).getTime();
-
-          if (sessionAge < 3600000) { // 1 hour
-            console.log('🔄 Restoring saved session (age: ' + Math.round(sessionAge / 60000) + ' minutes)');
-            if (Array.isArray(savedSession.cookies) && savedSession.cookies.length > 0) {
-              await page.setCookie(...savedSession.cookies);
-              sessionActive = true;
-            } else {
-              console.log('⚠️ Saved session exists but contains no cookies — will perform fresh login');
-            }
-          } else {
-            console.log('⏰ Saved session expired (age: ' + Math.round(sessionAge / 60000) + ' minutes)');
-          }
-        } catch (err) {
-          console.log('📝 No saved session found, will login fresh');
-        }
-      }
-
       // Set realistic browser fingerprint to bypass bot detection
       await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
       await page.setViewport({ width: 1920, height: 1080 });
@@ -604,39 +125,413 @@ Sadece executable JavaScript kodu döndür. Örnek:
         Object.defineProperty(navigator, 'languages', { get: () => ['tr-TR', 'tr', 'en-US', 'en'] });
       });
 
-      // Step 1: Login (only if no valid session)
-      if (!sessionActive) {
-        console.log('🔐 Logging in to İhalebul (fresh session)...');
-        const loginOk = await this.performManualLogin(page, username, password);
-        if (!loginOk) {
-          throw new Error('Login failed - unable to authenticate on İhalebul');
-        }
-        sessionActive = true;
-      } else {
-        console.log('✅ Using existing session - skipping fresh login');
-        await page.goto('https://www.ihalebul.com/tenders', { waitUntil: 'networkidle2', timeout: 60000 });
-        console.log('📍 Navigated to tenders page with existing session');
+      // Step 1: Auto-login with session management
+      const isLoggedIn = await this.autoLogin(page, username, password);
+
+      if (!isLoggedIn) {
+        console.error('❌ Auto-login failed, cannot proceed with scraping');
+        await browser.close();
+        throw new Error('Login failed - cannot access İhalebul');
       }
+
+  /**
+   * Auto-login with session management
+   */
+  private async autoLogin(page: any, username: string, password: string): Promise<boolean> {
+    const fs = require('fs');
+    const sessionFile = '/tmp/ihalebul-session.json';
+
+    // Check if we have a valid saved session
+    let savedSession = null;
+    try {
+      if (fs.existsSync(sessionFile)) {
+        const sessionData = fs.readFileSync(sessionFile, 'utf8');
+        savedSession = JSON.parse(sessionData);
+        const sessionAge = Date.now() - new Date(savedSession.timestamp).getTime();
+
+        if (sessionAge < 3600000) { // 1 hour
+          console.log('🔄 Restoring saved session (age: ' + Math.round(sessionAge / 60000) + ' minutes)');
+          // Restore cookies
+          await page.setCookie(...savedSession.cookies);
+
+          // Test if session is still valid
+          await page.goto('https://www.ihalebul.com/tenders', { waitUntil: 'domcontentloaded', timeout: 30000 });
+          const isStillLoggedIn = await this.checkLoginStatus(page);
+
+          if (isStillLoggedIn) {
+            console.log('✅ Session restored successfully');
+            return true;
+          } else {
+            console.log('⚠️ Session expired, will login fresh');
+            savedSession = null;
+          }
+        } else {
+          console.log('⏰ Saved session expired (age: ' + Math.round(sessionAge / 60000) + ' minutes)');
+          savedSession = null;
+        }
+      }
+    } catch (err) {
+      console.log('📝 No valid session found, will login fresh');
+      savedSession = null;
+    }
+
+    // Perform fresh login
+    console.log('🔐 Performing fresh login to İhalebul...');
+    const loginSuccess = await this.performLogin(page, username, password);
+
+    if (loginSuccess) {
+      // Save session for future use
+      await this.saveSession(page);
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Check if user is logged in
+   */
+  private async checkLoginStatus(page: any): Promise<boolean> {
+    try {
+      const content = await page.content();
+
+      // Check for logout button or user menu (indicates logged in)
+      const isLoggedIn = content.includes('Çıkış') ||
+                        content.includes('Hesabım') ||
+                        content.includes('Profilim') ||
+                        (content.includes('class="dropdown"') && content.includes('user'));
+
+      // Check for login form (indicates not logged in)
+      const hasLoginForm = content.includes('name="kul_adi"') ||
+                          content.includes('name="sifre"') ||
+                          content.includes('id="kul_adi"') ||
+                          content.includes('id="sifre"');
+
+      return isLoggedIn && !hasLoginForm;
+    } catch (error) {
+      console.error('Error checking login status:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Perform login
+   */
+  private async performLogin(page: any, username: string, password: string): Promise<boolean> {
+    try {
+      console.log('🔐 Logging in to İhalebul...');
+      await page.goto('https://www.ihalebul.com/tenders', { waitUntil: 'networkidle2', timeout: 60000 });
+
+      // Wait for login form to be rendered
+      console.log('⏳ Waiting for login form to load...');
+      try {
+        await page.waitForSelector('input[name="kul_adi"], #kul_adi', { timeout: 10000 });
+        console.log('✅ Login form detected');
+      } catch (err) {
+        console.error('❌ Login form did not appear within 10 seconds');
+        return false;
+      }
+
+      // Find login form elements
+      console.log('🔍 Looking for login form elements...');
+      const usernameInput = await page.$('input[name="kul_adi"]') || await page.$('#kul_adi');
+      const passwordInput = await page.$('input[name="sifre"]') || await page.$('#sifre');
+
+      if (!usernameInput || !passwordInput) {
+        console.error('❌ Login form inputs not found!');
+        return false;
+      }
+
+      console.log('✅ Login form found');
+      console.log('✍️ Filling login credentials...');
+
+      // Fill the form (use desktop form - index 1)
+      await page.evaluate((user: string, pass: string) => {
+        // Find all username inputs
+        const userInputs = document.querySelectorAll<HTMLInputElement>('input[name="kul_adi"]');
+        const passInputs = document.querySelectorAll<HTMLInputElement>('input[name="sifre"]');
+
+        // Use desktop form (not mobile modal) - it's the second one
+        if (userInputs.length >= 2 && passInputs.length >= 2) {
+          userInputs[1].value = user; // Desktop form
+          passInputs[1].value = pass; // Desktop form
+        } else {
+          userInputs[0].value = user; // Fallback to first form
+          passInputs[0].value = pass;
+        }
+      }, username, password);
+
+      console.log('🔐 Submitting login form...');
+
+      // Submit form and wait for navigation or error
+      const [response] = await Promise.all([
+        Promise.race([
+          page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 }).catch(() => null),
+          page.waitForSelector('.alert-danger, .error, [class*="error"]', { timeout: 10000 }).catch(() => null),
+        ]),
+        page.click('button[type="submit"][name="ok"]').catch(err => {
+          console.error('Button click failed:', err.message);
+        })
+      ]);
+
+      // Wait a bit for post-submit processing
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Check if login was successful
+      const afterLoginUrl = page.url();
+      const afterLoginHtml = await page.content();
+
+      // Check for account block
+      if (afterLoginHtml.includes('Üye girişi engellendi') ||
+          afterLoginHtml.includes('Müşteri hizmetleri ile iletişime geçiniz') ||
+          afterLoginHtml.includes('hesabınız engellenmiştir') ||
+          afterLoginHtml.includes('account blocked')) {
+        console.error('🚨 ========================================');
+        console.error('🚨 HESAP ENGELLENMİŞ!');
+        console.error('🚨 ========================================');
+        return false;
+      }
+
+      // Check if actually logged in
+      const urlCheck = !afterLoginUrl.includes('/signin') && !afterLoginUrl.includes('/login');
+      const htmlCheck = afterLoginHtml.includes('Çıkış') ||
+                       afterLoginHtml.includes('Hesabım') ||
+                       afterLoginHtml.includes('Profilim') ||
+                       (!afterLoginHtml.includes('name="kul_adi"') && !afterLoginHtml.includes('name="sifre"'));
+
+      const isLoggedIn = urlCheck && htmlCheck;
+
+      if (isLoggedIn) {
+        console.log('✅ Login successful!');
+        return true;
+      } else {
+        console.error('❌ Login failed!');
+        console.error(`   URL check: ${urlCheck} (current: ${afterLoginUrl})`);
+        console.error(`   HTML check: ${htmlCheck}`);
+        return false;
+      }
+
+    } catch (error: any) {
+      console.error('❌ Login error:', error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Save session cookies
+   */
+  private async saveSession(page: any): Promise<void> {
+    try {
+      const fs = require('fs');
+      const cookies = await page.cookies();
+      const sessionInfo = {
+        timestamp: new Date().toISOString(),
+        url: page.url(),
+        cookies: cookies,
+        sessionCookies: cookies.filter((c: any) => c.name.toLowerCase().includes('session') || c.name.toLowerCase().includes('auth')),
+      };
+      fs.writeFileSync('/tmp/ihalebul-session.json', JSON.stringify(sessionInfo, null, 2));
+      console.log('💾 Session saved to /tmp/ihalebul-session.json');
+    } catch (error) {
+      console.error('Error saving session:', error);
+    }
+  }
+
+      // Wait for login form to be rendered (DOM may load dynamically)
+      console.log('⏳ Waiting for login form to load...');
+      try {
+        await page.waitForSelector('input[name="kul_adi"], #kul_adi', { timeout: 10000 });
+        console.log('✅ Login form detected in DOM');
+      } catch (err) {
+        const errorHtml = await page.content();
+        fs.writeFileSync('/tmp/ihalebul-no-form.html', errorHtml);
+        console.error('❌ Login form did not appear within 10 seconds');
+        throw new Error('Login form not found - page may have redirected or blocked access');
+      }
+
+      // Debug: Save login page HTML
+      const loginHtml = await page.content();
+      fs.writeFileSync('/tmp/ihalebul-login.html', loginHtml);
+      console.log('🐛 Login page HTML saved to /tmp/ihalebul-login.html');
+
+      // Debug: Check for iframes (form may be inside iframe)
+      const frames = page.frames();
+      console.log(`🖼️  Found ${frames.length} frames:`, frames.map(f => f.url()));
+      if (frames.length > 1) {
+        console.log('⚠️  Multiple frames detected - form may be in iframe');
+      }
+
+      // Find login form with multiple selector options
+      console.log('🔍 Looking for login form elements...');
+      const usernameInput = await page.$('input[name="kul_adi"]') || await page.$('#kul_adi');
+      const passwordInput = await page.$('input[name="sifre"]') || await page.$('#sifre');
+      const csrfInput = await page.$('input[name="csrf"]');
+
+      if (!usernameInput || !passwordInput) {
+        console.error('❌ Login form inputs not found!');
+        console.error(`Username input: ${usernameInput ? 'Found' : 'NOT FOUND'}`);
+        console.error(`Password input: ${passwordInput ? 'Found' : 'NOT FOUND'}`);
+        throw new Error('Login form inputs not found on page');
+      }
+
+      console.log('✅ Login form found');
+      console.log('✍️ Filling login credentials...');
+
+      // Extract CSRF token if present
+      let csrfToken = '';
+      if (csrfInput) {
+        csrfToken = await page.evaluate(el => (el as HTMLInputElement).value, csrfInput);
+        console.log('🔒 CSRF token extracted');
+      }
+
+      // Fill the form (use the VISIBLE desktop form - index 1)
+      await page.evaluate((user, pass) => {
+        // Find all username inputs
+        const userInputs = document.querySelectorAll<HTMLInputElement>('input[name="kul_adi"]');
+        const passInputs = document.querySelectorAll<HTMLInputElement>('input[name="sifre"]');
+
+        // Use desktop form (not mobile modal) - it's the second one
+        if (userInputs.length >= 2 && passInputs.length >= 2) {
+          userInputs[1].value = user; // Desktop form
+          passInputs[1].value = pass; // Desktop form
+        } else {
+          userInputs[0].value = user; // Fallback to first form
+          passInputs[0].value = pass;
+        }
+      }, username, password);
+
+      // Debug: Verify inputs were filled
+      const filledValues = await page.evaluate(() => {
+        const userInputs = document.querySelectorAll<HTMLInputElement>('input[name="kul_adi"]');
+        const passInputs = document.querySelectorAll<HTMLInputElement>('input[name="sifre"]');
+        return {
+          userCount: userInputs.length,
+          passCount: passInputs.length,
+          userFilled: userInputs[1]?.value?.length > 0,
+          passFilled: passInputs[1]?.value?.length > 0,
+        };
+      });
+      console.log('📝 Input verification:', filledValues);
+
+      console.log('🔐 Submitting login form...');
+
+      // ✅ IMPROVED: Type like human + wait for response
+      try {
+        console.log('⌨️  Typing credentials like a human...');
+
+        // Type slowly like human (anti-bot)
+        await page.type('input[name="kul_adi"]', username, { delay: 100 });
+        await page.waitForTimeout(500);
+        await page.type('input[name="sifre"]', password, { delay: 100 });
+        await page.waitForTimeout(500);
+
+        console.log('🖱️  Clicking login button...');
+
+        // Click button and wait for either navigation OR error message
+        const [response] = await Promise.all([
+          Promise.race([
+            page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 }).catch(() => null),
+            page.waitForSelector('.alert-danger, .error, [class*="error"]', { timeout: 10000 }).catch(() => null),
+          ]),
+          page.click('button[type="submit"][name="ok"]').catch(err => {
+            console.error('Button click failed:', err.message);
+          })
+        ]);
+
+        // Wait a bit for any post-submit JS
+        await page.waitForTimeout(2000);
+
+        console.log('✅ Form submitted');
+      } catch (navError: any) {
+        console.error('❌ Form submission failed:', navError?.message);
+        const failHtml = await page.content();
+        fs.writeFileSync('/tmp/ihalebul-submit-error.html', failHtml);
+      }
+
+      // Check if login was successful
+      const afterLoginUrl = page.url();
+      const afterLoginHtml = await page.content();
+
+      // ⚠️ CHECK FOR ACCOUNT BLOCK FIRST
+      if (afterLoginHtml.includes('Üye girişi engellendi') ||
+          afterLoginHtml.includes('Müşteri hizmetleri ile iletişime geçiniz') ||
+          afterLoginHtml.includes('hesabınız engellenmiştir') ||
+          afterLoginHtml.includes('account blocked')) {
+        console.error('🚨 ========================================');
+        console.error('🚨 HESAP ENGELLENMİŞ!');
+        console.error('🚨 ========================================');
+        console.error('💬 Çözüm: İhalebul müşteri hizmetleri ile iletişime geçin');
+        console.error('📞 İletişim: https://www.ihalebul.com/contact');
+        console.error('⏰ Alternatif: 24 saat bekleyin veya farklı hesap deneyin');
+        fs.writeFileSync('/tmp/ihalebul-account-blocked.html', afterLoginHtml);
+        console.error('📄 Hata sayfası: /tmp/ihalebul-account-blocked.html');
+        throw new Error('🚨 Account blocked - contact ihalebul.com support');
+      }
+
+      // Debug: Check cookies after login
+      const cookies = await page.cookies();
+      console.log('🍪 Cookies after login:', cookies.length, 'cookies');
+      const sessionCookies = cookies.filter(c => c.name.toLowerCase().includes('session') || c.name.toLowerCase().includes('auth'));
+      console.log('🔑 Session cookies:', sessionCookies.map(c => c.name));
+
+      // ✅ IMPROVED: Check if actually logged in
+      // 1. URL should NOT be /signin (should redirect away)
+      // 2. Should have session cookies
+      // 3. Should NOT see login form anymore
+
+      const urlCheck = !afterLoginUrl.includes('/signin') && !afterLoginUrl.includes('/login');
+      const cookieCheck = sessionCookies.length > 0 || cookies.length > 2; // CSRF + session cookies
+      const htmlCheck = afterLoginHtml.includes('Çıkış') ||
+                       afterLoginHtml.includes('Hesabım') ||
+                       afterLoginHtml.includes('Profilim') ||
+                       (!afterLoginHtml.includes('name="kul_adi"') && !afterLoginHtml.includes('name="sifre"'));
+
+      console.log(`🔍 Login checks: URL=${urlCheck}, Cookies=${cookieCheck}, HTML=${htmlCheck}`);
+
+      const isLoggedIn = urlCheck && (cookieCheck || htmlCheck);
+
+      if (!isLoggedIn) {
+        // Login failed
+        fs.writeFileSync('/tmp/ihalebul-login-failed.html', afterLoginHtml);
+        console.error('❌ Login failed!');
+        console.error(`   URL check: ${urlCheck} (current: ${afterLoginUrl})`);
+        console.error(`   Cookie check: ${cookieCheck} (${cookies.length} total, ${sessionCookies.length} session)`);
+        console.error(`   HTML check: ${htmlCheck}`);
+        console.error('📍 Saved failed login HTML to /tmp/ihalebul-login-failed.html');
+
+        // Abort scraping
+        throw new Error('Login failed - still at signin page or no session cookies. Check credentials.');
+      }
+
+      // Save session info for future use
+      const sessionInfo = {
+        timestamp: new Date().toISOString(),
+        url: afterLoginUrl,
+        cookies: cookies,
+        sessionCookies: sessionCookies,
+      };
+      fs.writeFileSync('/tmp/ihalebul-session.json', JSON.stringify(sessionInfo, null, 2));
+      console.log('💾 Session saved to /tmp/ihalebul-session.json');
+
+      console.log('✅ Login successful! Logout button detected.');
+      console.log(`📍 Current URL: ${afterLoginUrl}`);
+    } else {
+      // Using saved session
+      console.log('✅ Using saved session - skipping login');
+      // Go directly to tenders page with cookies already set
+      await page.goto('https://www.ihalebul.com/tenders', { waitUntil: 'networkidle2', timeout: 60000 });
+      console.log('📍 Navigated to tenders page with saved session');
+    }
 
       // Step 2: Navigate to /tenders first (required for session), then search
       console.log('📍 Navigating to /tenders first (to establish session)...');
       await page.goto(`${this.config.baseUrl}/tenders`, { waitUntil: 'networkidle2', timeout: 60000 });
       await new Promise(resolve => setTimeout(resolve, 2000));
 
-        // DEBUG: Login sonrası /tenders sayfasının HTML'ini kaydet
-        try {
-          const debugHtml = await page.content();
-          const fs = require('fs');
-          fs.writeFileSync('/tmp/ihalebul-tenders.html', debugHtml);
-          console.log('🐛 Debug: /tenders HTML kaydedildi /tmp/ihalebul-tenders.html');
-        } catch (e) {
-          console.warn('⚠️ Debug HTML kaydedilemedi:', e);
-        }
-
       // Step 3: Now collect all tender URLs from search pages
       console.log('🔍 Collecting tender URLs from list pages...');
       const tenderUrls: string[] = [];
-      const maxPages = 10; // 🔧 Reduced to 10 to avoid rate limiting and account blocks
+      const maxPages = 250; // Increased to 250 to capture all tenders
 
       updateProgress('ihalebul', {
         status: 'running',

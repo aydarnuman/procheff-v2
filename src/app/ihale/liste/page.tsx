@@ -27,12 +27,6 @@ import { AIAnalysisResult, IhaleStatus } from "@/types/ai";
 
 // İYİLEŞTİRME: Mock data kaldırıldı, Zustand store kullanılıyor!
 
-const riskColors = {
-  dusuk: "text-green-400 bg-green-500/10 border-green-500/30",
-  orta: "text-yellow-400 bg-yellow-500/10 border-yellow-500/30",
-  yuksek: "text-red-400 bg-red-500/10 border-red-500/30",
-};
-
 const riskLabels = {
   dusuk: "Düşük Risk",
   orta: "Orta Risk",
@@ -47,20 +41,20 @@ function StatusBadge({ status }: { status?: IhaleStatus }) {
     completed: {
       icon: CheckCircle,
       label: "Tamamlandı",
-      className: "bg-green-600/90 text-white border-green-400/50",
-      iconColor: "text-green-200",
+      className: "bg-emerald-700/70 text-white border-emerald-500/30",
+      iconColor: "text-emerald-100",
     },
     under_evaluation: {
       icon: Clock,
       label: "Değerlendirmede",
-      className: "bg-yellow-600/90 text-white border-yellow-400/50",
-      iconColor: "text-yellow-200",
+      className: "bg-amber-700/70 text-white border-amber-500/30",
+      iconColor: "text-amber-100",
     },
     rejected: {
       icon: XCircle,
       label: "İstenmiyor",
-      className: "bg-red-600/90 text-white border-red-400/50",
-      iconColor: "text-red-200",
+      className: "bg-rose-700/70 text-white border-rose-500/30",
+      iconColor: "text-rose-100",
     },
   };
 
@@ -168,7 +162,7 @@ export default function IhaleListePage() {
             </div>
             <Link
               href="/ihale/yeni-analiz"
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              className="px-6 py-3 bg-blue-700/70 hover:bg-blue-600/80 text-white rounded-lg transition-colors shadow-lg shadow-blue-900/20"
             >
               Yeni Analiz
             </Link>
@@ -195,8 +189,8 @@ export default function IhaleListePage() {
                   onClick={() => setViewMode("grid")}
                   className={`p-2 rounded-md transition-colors ${
                     viewMode === "grid"
-                      ? "bg-blue-600 text-white"
-                      : "text-gray-400 hover:text-white"
+                      ? "bg-slate-700/60 text-white"
+                      : "text-gray-500 hover:text-gray-300"
                   }`}
                   title="Kart görünümü"
                 >
@@ -206,8 +200,8 @@ export default function IhaleListePage() {
                   onClick={() => setViewMode("list")}
                   className={`p-2 rounded-md transition-colors ${
                     viewMode === "list"
-                      ? "bg-blue-600 text-white"
-                      : "text-gray-400 hover:text-white"
+                      ? "bg-slate-700/60 text-white"
+                      : "text-gray-500 hover:text-gray-300"
                   }`}
                   title="Liste görünümü"
                 >
@@ -420,13 +414,13 @@ function IhaleCard({
           <div className="w-12 h-12 rounded-lg bg-blue-500/10 border border-blue-500/30 flex items-center justify-center">
             <Building2 className="w-6 h-6 text-blue-400" />
           </div>
-          <span
-            className={`px-3 py-1 rounded-full text-xs font-medium border ${
-              riskColors[ihale.riskSeviye as keyof typeof riskColors]
-            }`}
-          >
-            {riskLabels[ihale.riskSeviye as keyof typeof riskLabels]}
-          </span>
+          <div title={riskLabels[ihale.riskSeviye as keyof typeof riskLabels]}>
+            <AlertTriangle className={`w-6 h-6 ${
+              ihale.riskSeviye === 'dusuk' ? 'text-emerald-400' :
+              ihale.riskSeviye === 'orta' ? 'text-amber-400' :
+              'text-rose-400'
+            }`} />
+          </div>
         </div>
 
         {/* Content */}
@@ -549,14 +543,14 @@ function IhaleListItem({
             </div>
           </div>
 
-          {/* Risk Badge */}
-          <span
-            className={`px-3 py-1 rounded-full text-xs font-medium border whitespace-nowrap ${
-              riskColors[ihale.riskSeviye as keyof typeof riskColors]
-            }`}
-          >
-            {riskLabels[ihale.riskSeviye as keyof typeof riskLabels]}
-          </span>
+          {/* Risk Icon */}
+          <div className="flex items-center gap-2 flex-shrink-0" title={riskLabels[ihale.riskSeviye as keyof typeof riskLabels]}>
+            <AlertTriangle className={`w-5 h-5 ${
+              ihale.riskSeviye === 'dusuk' ? 'text-emerald-400' :
+              ihale.riskSeviye === 'orta' ? 'text-amber-400' :
+              'text-rose-400'
+            }`} />
+          </div>
 
           {/* Arrow */}
           <ArrowRight className="w-5 h-5 text-gray-500 group-hover:text-blue-400 transition-colors flex-shrink-0" />

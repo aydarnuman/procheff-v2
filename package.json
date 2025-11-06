@@ -20,6 +20,7 @@
     "axios": "^1.13.1",
     "better-sqlite3": "^11.10.0",
     "cheerio": "^1.0.0-rc.12",
+    "dotenv": "^17.2.3",
     "file-type": "^21.0.0",
     "formidable": "^3.5.4",
     "framer-motion": "^12.23.24",
@@ -35,8 +36,10 @@
     "puppeteer": "^24.29.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",
+    "resend": "^3.5.0",
     "scraperapi-sdk": "^2.0.1",
-    "zustand": "^5.0.8"
+    "server-only": "^0.0.1",
+    "zustand": "^4.5.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

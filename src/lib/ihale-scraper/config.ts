@@ -48,7 +48,7 @@ export const SCRAPER_CONFIG: Record<ScraperSource, ScraperSourceConfig> = {
   ilan_gov: {
     id: 'ilan_gov',
     name: 'İlan.gov.tr (Resmi Basın İlan Kurumu)',
-    enabled: false, // TOO COMPLEX - Angular SPA renders too slow
+    enabled: true, // TOO COMPLEX - Angular SPA renders too slow
     priority: 1,
     baseUrl: 'https://www.ilan.gov.tr',
     categoryUrl: '/ilan/kategori/437/yemek-hazirlama-dagitim-catering-hizmet-alimi',
@@ -87,7 +87,7 @@ export const SCRAPER_CONFIG: Record<ScraperSource, ScraperSourceConfig> = {
   ihalebul: {
     id: 'ihalebul',
     name: 'İhalebul.com',
-    enabled: true,
+    enabled: true, // ✅ RE-ENABLED - will use browser cookies
     priority: 3,
     baseUrl: 'https://www.ihalebul.com',
     categoryUrl: '/tenders/search?workcategory_in=15', // Category 15: Hazır Yemek - Lokantacılık (Güncel ihaleler)

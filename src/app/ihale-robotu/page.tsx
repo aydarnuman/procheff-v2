@@ -1070,99 +1070,46 @@ function IhaleTakipPageInner() {
     return { label: 'Kapandı', color: 'gray', days: -1 };
   };
 
-  // Durum rozeti render
+  // Durum rozeti render - Sadece icon
   const renderStatusBadge = (status: ReturnType<typeof getTenderStatus>) => {
     const colorClasses: Record<string, string> = {
-      red: 'bg-red-500/10 text-red-400 border-red-500/30',
-      orange: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
-      yellow: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30',
-      green: 'bg-green-500/10 text-green-400 border-green-500/30',
-      blue: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
-      gray: 'bg-gray-500/10 text-gray-500 border-gray-500/30',
+      red: 'text-red-400',
+      orange: 'text-orange-400',
+      yellow: 'text-yellow-400',
+      green: 'text-green-400',
+      blue: 'text-blue-400',
+      gray: 'text-gray-500',
     };
     return (
-      <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${colorClasses[status.color]}`}> 
-        <div className={`w-1.5 h-1.5 rounded-full bg-current`}></div>
-        {status.label}
+      <div className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${colorClasses[status.color]}`}>
+        <div className={`w-2 h-2 rounded-full bg-current`}></div>
+        <span>{status.label}</span>
       </div>
     );
   };
 
-  // Akıllı tarih gösterimi - deadline_date öncelikli
+  // Sadece tarih göster - deadline_date öncelikli
   const renderTenderDate = (t: Tender) => {
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-
     // Deadline öncelikli (teklif son tarihi)
     const deadlineDate = t.deadline_date ? new Date(t.deadline_date) : null;
     const tenderDate = t.tender_date ? new Date(t.tender_date) : null;
 
-    if (deadlineDate) {
-      deadlineDate.setHours(0, 0, 0, 0);
-    }
-    if (tenderDate) {
-      tenderDate.setHours(0, 0, 0, 0);
-    }
-
-    // Countdown hesaplama fonksiyonu
-    const calculateCountdown = (date: Date) => {
-      const daysRemaining = Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-      return daysRemaining;
-    };
-
-    // Countdown render fonksiyonu
-    const renderCountdown = (date: Date, days: number) => {
-      const countdownText = days === 0 ? 'son gün' : `son ${days} gün`;
-      const isUrgent = days <= 3;
-
-      return (
-        <div className="flex items-center gap-1.5">
-          {isUrgent ? (
-            <AlertCircle className="w-3.5 h-3.5 text-red-500" />
-          ) : (
-            <AlertTriangle className="w-3.5 h-3.5 text-yellow-500" />
-          )}
-          <span className={isUrgent ? 'text-red-500 font-semibold' : 'text-yellow-500 font-semibold'}>
-            {countdownText}
-          </span>
-        </div>
-      );
-    };
-
-    // Tarih formatla ve renklendir
+    // Tarih formatla
     const formatDate = (date: Date) => {
       return date.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' });
     };
 
-    const getDateColor = (date: Date | null) => {
-      if (!date) return 'text-gray-600';
-      const dateOnly = new Date(date);
-      dateOnly.setHours(0, 0, 0, 0);
-      const nowOnly = new Date(now);
-      nowOnly.setHours(0, 0, 0, 0);
-
-      if (dateOnly.getTime() === nowOnly.getTime()) return 'text-amber-400'; // Bugün
-      if (dateOnly > nowOnly) return 'text-green-300'; // Gelecek
-      return 'text-zinc-500'; // Geçmiş
-    };
-
-    // 1️⃣ Deadline varsa ve gelecekteyse → countdown göster (0-7 gün arası)
-    if (deadlineDate && deadlineDate >= now) {
-      const days = calculateCountdown(deadlineDate);
-      if (days <= 7) {
-        return renderCountdown(deadlineDate, days);
-      } else {
-        // 7+ gün sonra → renkli normal tarih
-        return <span className={getDateColor(deadlineDate)}>{formatDate(deadlineDate)}</span>;
-      }
+    // Deadline varsa onu göster
+    if (deadlineDate) {
+      return <span className="text-gray-400">{formatDate(deadlineDate)}</span>;
     }
 
-    // 2️⃣ Deadline yoksa veya geçmişse → tender_date göster (renkli)
+    // Deadline yoksa tender_date göster
     if (tenderDate) {
-      return <span className={getDateColor(tenderDate)}>{formatDate(tenderDate)}</span>;
+      return <span className="text-gray-400">{formatDate(tenderDate)}</span>;
     }
 
-    // 3️⃣ İkisi de yoksa
+    // İkisi de yoksa
     return <span className="text-gray-600">-</span>;
   };
 
@@ -1697,31 +1644,14 @@ function IhaleTakipPageInner() {
               </thead>
               <tbody className="divide-y divide-gray-800">
                 {sortedTenders.map((t, i) => {
-                  const status = getTenderStatus(t);
-
-                  // Deadline urgency için satır renkleri
-                  let rowBgClass = i % 2 === 0 ? 'bg-zinc-900/40' : 'bg-zinc-950/60';
-                  let rowBorderClass = '';
-
-                  if (status.color === 'red') {
-                    // 0 gün kalan (Son Gün) - Kırmızı
-                    rowBgClass = 'bg-red-950/30 border-l-4 border-red-500';
-                    rowBorderClass = 'border-l-4 border-red-500';
-                  } else if (status.color === 'orange') {
-                    // 1-3 gün kalan - Turuncu
-                    rowBgClass = 'bg-orange-950/30 border-l-4 border-orange-500';
-                    rowBorderClass = 'border-l-4 border-orange-500';
-                  } else if (status.color === 'yellow') {
-                    // 4-7 gün kalan - Sarı
-                    rowBgClass = 'bg-yellow-950/20 border-l-4 border-yellow-500';
-                    rowBorderClass = 'border-l-4 border-yellow-500';
-                  }
+                  // Normal zebra striping - hiçbir renkli çizgi yok
+                  const rowBgClass = i % 2 === 0 ? 'bg-zinc-900/40' : 'bg-zinc-950/60';
 
                   return (
                   <tr
                     key={t.id}
                     onClick={() => fetchFullContent(t)}
-                    className={`hover:bg-zinc-700/50 transition-colors cursor-pointer ${rowBgClass} ${rowBorderClass}`}
+                    className={`hover:bg-zinc-700/50 transition-colors cursor-pointer ${rowBgClass}`}
                     title="Detay için tıklayın"
                   >
                     <td className="px-2 py-2 text-gray-500">{i + 1}</td>
@@ -1835,14 +1765,173 @@ function IhaleTakipPageInner() {
               <div className="w-full max-h-[calc(95vh-140px)] overflow-y-auto p-6 space-y-6">
                 {fullContent ? (
                   <>
-                    {/* İhale İlanı - Tam Metin */}
+                    {/* 1. İhale Bilgileri */}
+                    {fullContent.details && Object.keys(fullContent.details).length > 0 && (
+                      <div className="border border-blue-200 rounded-lg overflow-hidden">
+                        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-3 border-b border-blue-200">
+                          <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                            <FileText className="w-4 h-4 text-blue-600" />
+                            İhale Bilgileri
+                          </h3>
+                        </div>
+                        <div className="bg-white p-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* Önemli alanlar önce göster */}
+                            {fullContent.details['Kayıt no'] && (
+                              <div className="flex flex-col">
+                                <span className="text-xs text-gray-500 mb-1">Kayıt No</span>
+                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['Kayıt no']}</span>
+                              </div>
+                            )}
+                            {fullContent.details['İhale başlığı'] && (
+                              <div className="flex flex-col">
+                                <span className="text-xs text-gray-500 mb-1">İhale Başlığı</span>
+                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['İhale başlığı']}</span>
+                              </div>
+                            )}
+                            {fullContent.details['İşin adı'] && (
+                              <div className="flex flex-col">
+                                <span className="text-xs text-gray-500 mb-1">İşin Adı</span>
+                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['İşin adı']}</span>
+                              </div>
+                            )}
+                            {fullContent.details['Yayın tarihi'] && (
+                              <div className="flex flex-col">
+                                <span className="text-xs text-gray-500 mb-1">Yayın Tarihi</span>
+                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['Yayın tarihi']}</span>
+                              </div>
+                            )}
+                            {fullContent.details['Teklif tarihi'] && (
+                              <div className="flex flex-col">
+                                <span className="text-xs text-gray-500 mb-1">Teklif Tarihi</span>
+                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['Teklif tarihi']}</span>
+                              </div>
+                            )}
+                            {fullContent.details['İşin süresi'] && (
+                              <div className="flex flex-col">
+                                <span className="text-xs text-gray-500 mb-1">İşin Süresi</span>
+                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['İşin süresi']}</span>
+                              </div>
+                            )}
+                            {fullContent.details['Yaklaşık maliyet limiti'] && (
+                              <div className="flex flex-col">
+                                <span className="text-xs text-gray-500 mb-1">Yaklaşık Maliyet Limiti</span>
+                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['Yaklaşık maliyet limiti']}</span>
+                              </div>
+                            )}
+                            {fullContent.details['İtirazen şikayet bedeli'] && (
+                              <div className="flex flex-col">
+                                <span className="text-xs text-gray-500 mb-1">İtirazen Şikayet Bedeli</span>
+                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['İtirazen şikayet bedeli']}</span>
+                              </div>
+                            )}
+                            {fullContent.details['İhale türü'] && (
+                              <div className="flex flex-col">
+                                <span className="text-xs text-gray-500 mb-1">İhale Türü</span>
+                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['İhale türü']}</span>
+                              </div>
+                            )}
+                            {fullContent.details['İhale usulü'] && (
+                              <div className="flex flex-col">
+                                <span className="text-xs text-gray-500 mb-1">İhale Usulü</span>
+                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['İhale usulü']}</span>
+                              </div>
+                            )}
+                            {fullContent.details['İhale kaynağı'] && (
+                              <div className="flex flex-col">
+                                <span className="text-xs text-gray-500 mb-1">İhale Kaynağı</span>
+                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['İhale kaynağı']}</span>
+                              </div>
+                            )}
+                            {fullContent.details['Teklif türü'] && (
+                              <div className="flex flex-col md:col-span-2">
+                                <span className="text-xs text-gray-500 mb-1">Teklif Türü</span>
+                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['Teklif türü']}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 2. Sektör Bilgileri */}
+                    {(selectedTender.category || fullContent.details?.['Kategori'] || fullContent.details?.['Sektör']) && (
+                      <div className="border border-green-200 rounded-lg overflow-hidden">
+                        <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-4 py-3 border-b border-green-200">
+                          <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                            <Building2 className="w-4 h-4 text-green-600" />
+                            Sektör Bilgileri
+                          </h3>
+                        </div>
+                        <div className="bg-white p-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {(fullContent.details?.['Kategori'] || selectedTender.category) && (
+                              <div className="flex flex-col">
+                                <span className="text-xs text-gray-500 mb-1">Kategori</span>
+                                <span className="text-sm font-semibold text-gray-900">{fullContent.details?.['Kategori'] || selectedTender.category}</span>
+                              </div>
+                            )}
+                            {fullContent.details?.['Sektör'] && (
+                              <div className="flex flex-col">
+                                <span className="text-xs text-gray-500 mb-1">Sektör</span>
+                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['Sektör']}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 3. İdare Bilgileri */}
+                    {fullContent.details && (fullContent.details['İdare adı'] || fullContent.details['Toplantı adresi'] || fullContent.details['Teklifin verileceği yer'] || fullContent.details['İşin yapılacağı yer']) && (
+                      <div className="border border-purple-200 rounded-lg overflow-hidden">
+                        <div className="bg-gradient-to-r from-purple-50 to-violet-50 px-4 py-3 border-b border-purple-200">
+                          <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                            <Building2 className="w-4 h-4 text-purple-600" />
+                            İdare Bilgileri
+                          </h3>
+                        </div>
+                        <div className="bg-white p-4">
+                          <div className="space-y-3">
+                            {fullContent.details['İdare adı'] && (
+                              <div className="flex flex-col">
+                                <span className="text-xs text-gray-500 mb-1">İdare Adı</span>
+                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['İdare adı']}</span>
+                              </div>
+                            )}
+                            {fullContent.details['Toplantı adresi'] && (
+                              <div className="flex flex-col">
+                                <span className="text-xs text-gray-500 mb-1">Toplantı Adresi</span>
+                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['Toplantı adresi']}</span>
+                              </div>
+                            )}
+                            {fullContent.details['Teklifin verileceği yer'] && (
+                              <div className="flex flex-col">
+                                <span className="text-xs text-gray-500 mb-1">Teklifin Verileceği Yer</span>
+                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['Teklifin verileceği yer']}</span>
+                              </div>
+                            )}
+                            {fullContent.details['İşin yapılacağı yer'] && (
+                              <div className="flex flex-col">
+                                <span className="text-xs text-gray-500 mb-1">İşin Yapılacağı Yer</span>
+                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['İşin yapılacağı yer']}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 4. İhale İlanı - Tam Metin */}
                     {fullContent.fullText && (
-                      <div className="space-y-2">
-                        <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                          <FileText className="w-4 h-4 text-orange-600" />
-                          İhale İlanı
-                        </h3>
-                        <div className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 rounded-lg p-4 max-h-[600px] overflow-y-auto">
+                      <div className="border border-orange-200 rounded-lg overflow-hidden">
+                        <div className="bg-gradient-to-r from-orange-50 to-amber-50 px-4 py-3 border-b border-orange-200">
+                          <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                            <FileText className="w-4 h-4 text-orange-600" />
+                            İhale İlanı
+                          </h3>
+                        </div>
+                        <div className="bg-white p-4 max-h-[600px] overflow-y-auto">
                           <pre className="text-xs text-gray-700 whitespace-pre-wrap font-mono leading-relaxed">
                             {fullContent.fullText}
                           </pre>
@@ -1850,51 +1939,54 @@ function IhaleTakipPageInner() {
                       </div>
                     )}
 
-                    {/* İdare Bilgileri */}
-                    {fullContent.details && fullContent.details['İdare adı'] && (
-                      <div className="bg-white border rounded-lg p-4">
-                        <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                          <Building2 className="w-4 h-4 text-blue-600" />
-                          İdare Bilgileri
-                        </h3>
-                        <div className="space-y-2 text-sm">
-                          <div><span className="text-gray-600">Adı:</span> <span className="font-medium">{fullContent.details['İdare adı']}</span></div>
-                          {fullContent.details['Toplantı adresi'] && (
-                            <div><span className="text-gray-600">Adres:</span> <span className="font-medium">{fullContent.details['Toplantı adresi']}</span></div>
-                          )}
+                    {/* 5. Mal/Hizmet Listesi */}
+                    {fullContent.itemsList && (
+                      <div className="border border-cyan-200 rounded-lg overflow-hidden">
+                        <div className="bg-gradient-to-r from-cyan-50 to-sky-50 px-4 py-3 border-b border-cyan-200">
+                          <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                            <FileText className="w-4 h-4 text-cyan-600" />
+                            Mal/Hizmet Listesi
+                          </h3>
+                        </div>
+                        <div className="bg-white p-4 overflow-x-auto">
+                          <table className="w-full text-xs border-collapse">
+                            <thead>
+                              <tr className="bg-gray-50 border-b-2 border-gray-200">
+                                {fullContent.itemsList.split('\n')[0]?.split(',').map((header: string, idx: number) => (
+                                  <th key={idx} className="px-3 py-2 text-left font-semibold text-gray-700 border-r border-gray-200 last:border-r-0">
+                                    {header.trim()}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {fullContent.itemsList.split('\n').slice(1).filter((row: string) => row.trim()).map((row: string, rowIdx: number) => (
+                                <tr key={rowIdx} className="border-b border-gray-100 hover:bg-gray-50">
+                                  {row.split(',').map((cell: string, cellIdx: number) => (
+                                    <td key={cellIdx} className="px-3 py-2 text-gray-900 border-r border-gray-100 last:border-r-0">
+                                      {cell.trim()}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         </div>
                       </div>
                     )}
 
-                    {/* İhale Detayları - Responsive Grid */}
-                    {fullContent.details && Object.keys(fullContent.details).length > 0 && (
-                      <div className="space-y-3">
-                        <h3 className="text-sm font-semibold text-gray-700">Tüm Detaylar</h3>
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-                          {Object.entries(fullContent.details)
-                            .filter(([key]) => !['Kayıt no', 'Teklif tarihi', 'Yaklaşık maliyet limiti', 'İdare adı', 'Toplantı adresi'].includes(key))
-                            .map(([key, value]: [string, any]) => (
-                              <div key={key} className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-xs">
-                                <div className="text-gray-500 mb-1 font-medium">{key}</div>
-                                <div className="text-gray-900 font-semibold break-words whitespace-normal">{value}</div>
-                              </div>
-                            ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Dokümanlar - Collapsible Card with Checkboxes */}
+                    {/* 6. İhale Dökümanları - Collapsible Card with Checkboxes */}
                     {fullContent.documents && fullContent.documents.length > 0 && (
-                      <div className="border border-gray-200 rounded-lg overflow-hidden">
+                      <div className="border border-indigo-200 rounded-lg overflow-hidden">
                         {/* Header - Always Visible */}
                         <button
                           onClick={() => setDocumentsExpanded(!documentsExpanded)}
-                          className="w-full flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 transition-colors"
+                          className="w-full flex items-center justify-between px-4 py-3 bg-gradient-to-r from-indigo-50 to-blue-50 hover:from-indigo-100 hover:to-blue-100 transition-colors border-b border-indigo-200"
                         >
                           <div className="flex items-center gap-2">
-                            <FileText className="w-4 h-4 text-blue-600" />
+                            <FileText className="w-4 h-4 text-indigo-600" />
                             <h3 className="text-sm font-semibold text-gray-700">
-                              Dökümanlar ({fullContent.documents.length})
+                              İhale Dökümanları ({fullContent.documents.length})
                             </h3>
                             {selectedDocuments.length > 0 && (
                               <span className="px-2 py-0.5 bg-blue-600 text-white text-xs font-medium rounded-full">
