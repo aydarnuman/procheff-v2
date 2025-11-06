@@ -171,8 +171,22 @@ function IhaleTakipPageInner() {
     console.log('🔄 useEffect triggered - contentCache.size:', cacheSize);
     if (cacheSize > 0) {
       try {
+        const cacheString = JSON.stringify(contentCache);
+        const cacheSizeBytes = new Blob([cacheString]).size;
+        console.log('💾 Cache boyutu:', (cacheSizeBytes / 1024 / 1024).toFixed(2), 'MB');
+
+        // localStorage limitini aşarsa cache'i küçült (max 2MB)
+        if (cacheSizeBytes > 2 * 1024 * 1024) {
+          console.warn('⚠️ Cache çok büyük, küçültülüyor...');
+          const entries = Object.entries(contentCache);
+          // Son 5 item'ı tut
+          const newCache = Object.fromEntries(entries.slice(-5));
+          setContentCache(newCache);
+          return; // Bu sefer kaydetme, useEffect tekrar çalışacak
+        }
+
         console.log('�� Kaydedilecek cache:', contentCache);
-        localStorage.setItem('ihale-content-cache', JSON.stringify(contentCache));
+        localStorage.setItem('ihale-content-cache', cacheString);
         console.log('💾 Cache localStorage\'a kaydedildi:', cacheSize, 'ihale');
 
         // Doğrulama - gerçekten kaydedildi mi?
@@ -187,9 +201,9 @@ function IhaleTakipPageInner() {
         if (e instanceof DOMException && e.name === 'QuotaExceededError') {
           console.warn('⚠️ localStorage dolu, cache temizleniyor...');
           localStorage.removeItem('ihale-content-cache');
-          // Cache'i küçült (en eski 10 item'ı sil)
+          // Cache'i küçült (en eski 3 item'ı sil)
           const entries = Object.entries(contentCache);
-          const newCache = Object.fromEntries(entries.slice(-10));
+          const newCache = Object.fromEntries(entries.slice(-3));
           setContentCache(newCache);
         }
       }

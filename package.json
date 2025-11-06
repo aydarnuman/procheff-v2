@@ -32,7 +32,7 @@
     "node-fetch": "^2.7.0",
     "pdf-lib": "^1.17.1",
     "pdf2json": "^4.0.0",
-    "puppeteer": "^24.27.0",
+    "puppeteer": "^24.29.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "scraperapi-sdk": "^2.0.1",

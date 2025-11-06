@@ -18,6 +18,7 @@ export class ClaudeCategorizer {
 
     this.client = new Anthropic({ apiKey });
     this.model = 'claude-3-5-haiku-20241022'; // Haiku - hızlı ve ucuz
+    // TODO: 2025'te yeni Haiku modeli çıkarsa güncelle
   }
 
   /**

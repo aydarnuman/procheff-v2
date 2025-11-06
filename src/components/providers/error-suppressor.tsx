@@ -11,6 +11,7 @@ export const ErrorSuppressor = () => {
     // Orijinal console metodlarını kaydet
     const originalError = console.error;
     const originalWarn = console.warn;
+    const originalDebug = console.debug;
 
     // Console.error override
     console.error = (...args: any[]) => {
@@ -37,6 +38,9 @@ export const ErrorSuppressor = () => {
         // next-themes spesifik
         'Extra attributes from the server',
         'data-theme',
+
+        // React infinite loop
+        'Maximum update depth exceeded',
       ];
 
       // Eğer suppress edilmesi gereken bir hata değilse, normal şekilde logla
@@ -47,9 +51,9 @@ export const ErrorSuppressor = () => {
       if (!shouldSuppress) {
         originalError.apply(console, args);
       } else {
-        // Debug mode'da görülebilir (production'da sessiz)
+        // Debug mode'da görülebilir (production'da sessiz) - SAFE: orijinal debug kullan
         if (process.env.NODE_ENV === 'development') {
-          console.debug('[SUPPRESSED ERROR]:', errorMessage.substring(0, 100) + '...');
+          originalDebug.call(console, '[SUPPRESSED ERROR]:', errorMessage.substring(0, 100) + '...');
         }
       }
     };
@@ -129,6 +133,7 @@ export const ErrorSuppressor = () => {
     return () => {
       console.error = originalError;
       console.warn = originalWarn;
+      console.debug = originalDebug;
       window.removeEventListener('error', handleError, true);
       window.removeEventListener('unhandledrejection', handleRejection);
     };

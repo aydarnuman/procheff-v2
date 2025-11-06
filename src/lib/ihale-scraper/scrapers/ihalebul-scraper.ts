@@ -5,19 +5,12 @@
 
 import { BaseScraper } from './base-scraper';
 import type { ScrapedTender } from '../types';
-import type { ScraperSourceConfig } from '../config';
 import * as cheerio from 'cheerio';
 import puppeteer from 'puppeteer';
 import { BLOCKED_CITIES } from '../config';
 import { updateProgress } from '@/app/api/ihale-scraper/progress/route';
-import { ItemParser } from '../parsers/item-parser'; // 🆕 Item parsing için
 
 export class IhalebulScraper extends BaseScraper {
-  // 🆕 Constructor ile callback'i parent'a ilet
-  constructor(config: ScraperSourceConfig, onBatchComplete?: (tenders: ScrapedTender[]) => Promise<void>) {
-    super(config, onBatchComplete);
-  }
-
   async scrape(): Promise<ScrapedTender[]> {
     const username = process.env.IHALEBUL_USERNAME;
     const password = process.env.IHALEBUL_PASSWORD;
@@ -101,9 +94,6 @@ export class IhalebulScraper extends BaseScraper {
       throw error;
     }
   }
-
-  // 🆕 Metadata cache - List page'den gelen title/org bilgilerini sakla
-  private metadataCache: Map<string, { title: string; organization: string; city: string }> = new Map();
 
   private async scrapeWithLogin(username: string, password: string): Promise<ScrapedTender[]> {
     try {
@@ -237,43 +227,58 @@ export class IhalebulScraper extends BaseScraper {
 
       console.log('🔐 Submitting login form...');
 
-      // Click the desktop form's login button (index 1, same as the form we filled)
+      // ✅ IMPROVED: Type like human + wait for response
       try {
-        // Use page.evaluate to click the DESKTOP button (index 1)
-        console.log('🖱️  Clicking desktop login button...');
+        console.log('⌨️  Typing credentials like a human...');
 
-        // Click and wait for navigation
-        await Promise.all([
-          page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }),
-          page.evaluate(() => {
-            // Find all submit buttons with name="ok"
-            const buttons = document.querySelectorAll<HTMLButtonElement>('button[type="submit"][name="ok"]');
+        // Type slowly like human (anti-bot)
+        await page.type('input[name="kul_adi"]', username, { delay: 100 });
+        await page.waitForTimeout(500);
+        await page.type('input[name="sifre"]', password, { delay: 100 });
+        await page.waitForTimeout(500);
 
-            if (buttons.length >= 2) {
-              // Click desktop button (index 1)
-              console.log('Clicking desktop button (index 1)');
-              buttons[1].click();
-            } else if (buttons.length === 1) {
-              // Fallback to first button
-              console.log('Only one button found, clicking it');
-              buttons[0].click();
-            } else {
-              throw new Error('No submit buttons found!');
-            }
+        console.log('🖱️  Clicking login button...');
+
+        // Click button and wait for either navigation OR error message
+        const [response] = await Promise.all([
+          Promise.race([
+            page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 }).catch(() => null),
+            page.waitForSelector('.alert-danger, .error, [class*="error"]', { timeout: 10000 }).catch(() => null),
+          ]),
+          page.click('button[type="submit"][name="ok"]').catch(err => {
+            console.error('Button click failed:', err.message);
           })
         ]);
 
-        console.log('✅ Navigation completed after button click');
-      } catch (navError) {
-        console.error('❌ Form submission or navigation failed:', navError);
+        // Wait a bit for any post-submit JS
+        await page.waitForTimeout(2000);
+
+        console.log('✅ Form submitted');
+      } catch (navError: any) {
+        console.error('❌ Form submission failed:', navError?.message);
         const failHtml = await page.content();
         fs.writeFileSync('/tmp/ihalebul-submit-error.html', failHtml);
-        throw new Error('Login form submission failed - check /tmp/ihalebul-submit-error.html');
       }
 
       // Check if login was successful
       const afterLoginUrl = page.url();
       const afterLoginHtml = await page.content();
+
+      // ⚠️ CHECK FOR ACCOUNT BLOCK FIRST
+      if (afterLoginHtml.includes('Üye girişi engellendi') ||
+          afterLoginHtml.includes('Müşteri hizmetleri ile iletişime geçiniz') ||
+          afterLoginHtml.includes('hesabınız engellenmiştir') ||
+          afterLoginHtml.includes('account blocked')) {
+        console.error('🚨 ========================================');
+        console.error('🚨 HESAP ENGELLENMİŞ!');
+        console.error('🚨 ========================================');
+        console.error('💬 Çözüm: İhalebul müşteri hizmetleri ile iletişime geçin');
+        console.error('📞 İletişim: https://www.ihalebul.com/contact');
+        console.error('⏰ Alternatif: 24 saat bekleyin veya farklı hesap deneyin');
+        fs.writeFileSync('/tmp/ihalebul-account-blocked.html', afterLoginHtml);
+        console.error('📄 Hata sayfası: /tmp/ihalebul-account-blocked.html');
+        throw new Error('🚨 Account blocked - contact ihalebul.com support');
+      }
 
       // Debug: Check cookies after login
       const cookies = await page.cookies();
@@ -281,20 +286,33 @@ export class IhalebulScraper extends BaseScraper {
       const sessionCookies = cookies.filter(c => c.name.toLowerCase().includes('session') || c.name.toLowerCase().includes('auth'));
       console.log('🔑 Session cookies:', sessionCookies.map(c => c.name));
 
-      // Look for logout button or user menu (indicates successful login)
-      const isLoggedIn = afterLoginHtml.includes('logout') ||
-                        afterLoginHtml.includes('Çıkış') ||
-                        afterLoginHtml.includes('Hesabım') ||
-                        !afterLoginHtml.includes('name="kul_adi"');
+      // ✅ IMPROVED: Check if actually logged in
+      // 1. URL should NOT be /signin (should redirect away)
+      // 2. Should have session cookies
+      // 3. Should NOT see login form anymore
+
+      const urlCheck = !afterLoginUrl.includes('/signin') && !afterLoginUrl.includes('/login');
+      const cookieCheck = sessionCookies.length > 0 || cookies.length > 2; // CSRF + session cookies
+      const htmlCheck = afterLoginHtml.includes('Çıkış') ||
+                       afterLoginHtml.includes('Hesabım') ||
+                       afterLoginHtml.includes('Profilim') ||
+                       (!afterLoginHtml.includes('name="kul_adi"') && !afterLoginHtml.includes('name="sifre"'));
+
+      console.log(`🔍 Login checks: URL=${urlCheck}, Cookies=${cookieCheck}, HTML=${htmlCheck}`);
+
+      const isLoggedIn = urlCheck && (cookieCheck || htmlCheck);
 
       if (!isLoggedIn) {
-        // Still seeing login form = login failed
+        // Login failed
         fs.writeFileSync('/tmp/ihalebul-login-failed.html', afterLoginHtml);
-        console.error('❌ Login failed - still seeing login form or no logout button');
-        console.error('📍 Current URL:', afterLoginUrl);
+        console.error('❌ Login failed!');
+        console.error(`   URL check: ${urlCheck} (current: ${afterLoginUrl})`);
+        console.error(`   Cookie check: ${cookieCheck} (${cookies.length} total, ${sessionCookies.length} session)`);
+        console.error(`   HTML check: ${htmlCheck}`);
+        console.error('📍 Saved failed login HTML to /tmp/ihalebul-login-failed.html');
 
-        // Abort scraping as per user requirement
-        throw new Error('Login failed, aborting scraping. Check credentials or /tmp/ihalebul-login-failed.html');
+        // Abort scraping
+        throw new Error('Login failed - still at signin page or no session cookies. Check credentials.');
       }
 
       // Save session info for future use
@@ -307,15 +325,15 @@ export class IhalebulScraper extends BaseScraper {
       fs.writeFileSync('/tmp/ihalebul-session.json', JSON.stringify(sessionInfo, null, 2));
       console.log('💾 Session saved to /tmp/ihalebul-session.json');
 
-        console.log('✅ Login successful! Logout button detected.');
-        console.log(`📍 Current URL: ${afterLoginUrl}`);
-      } else {
-        // Using saved session
-        console.log('✅ Using saved session - skipping login');
-        // Go directly to tenders page with cookies already set
-        await page.goto('https://www.ihalebul.com/tenders', { waitUntil: 'networkidle2', timeout: 60000 });
-        console.log('📍 Navigated to tenders page with saved session');
-      }
+      console.log('✅ Login successful! Logout button detected.');
+      console.log(`📍 Current URL: ${afterLoginUrl}`);
+    } else {
+      // Using saved session
+      console.log('✅ Using saved session - skipping login');
+      // Go directly to tenders page with cookies already set
+      await page.goto('https://www.ihalebul.com/tenders', { waitUntil: 'networkidle2', timeout: 60000 });
+      console.log('📍 Navigated to tenders page with saved session');
+    }
 
       // Step 2: Navigate to /tenders first (required for session), then search
       console.log('📍 Navigating to /tenders first (to establish session)...');
@@ -323,7 +341,7 @@ export class IhalebulScraper extends BaseScraper {
       await new Promise(resolve => setTimeout(resolve, 2000));
 
       // Step 3: Now collect all tender URLs from search pages
-      console.log('🔍 Collecting tender URLs from list pages AND extracting metadata...');
+      console.log('🔍 Collecting tender URLs from list pages...');
       const tenderUrls: string[] = [];
       const maxPages = 250; // Increased to 250 to capture all tenders
 
@@ -365,9 +383,6 @@ export class IhalebulScraper extends BaseScraper {
           fs.writeFileSync('/tmp/ihalebul-category-page1.html', html);
           console.log('🐛 Category page 1 HTML saved to /tmp/ihalebul-category-page1.html');
         }
-
-        // 🆕 Extract metadata FROM LIST PAGE (title, org, city are here!)
-        this.extractMetadataFromListPage(html);
 
         // Extract tender URLs from this page
         const urls = this.extractTenderUrls(html);
@@ -463,20 +478,20 @@ export class IhalebulScraper extends BaseScraper {
           })
         );
 
-        // Collect successful results
-        // Collect batch results
+        // Collect successful results from this batch
         const batchTenders: ScrapedTender[] = [];
         for (const result of batchResults) {
           if (result.status === 'fulfilled' && result.value) {
-            allTenders.push(result.value);
             batchTenders.push(result.value);
+            allTenders.push(result.value);
           }
         }
 
         console.log(`✅ Batch complete: ${allTenders.length}/${tenderUrls.length} tenders scraped`);
 
-        // 🆕 PARTİ PARTİ: Her batch tamamlandığında ANINDA database'e kaydet!
+        // 🆕 DATABASE KAYDET: Her batch'ten sonra database'e kaydet
         if (this.onBatchComplete && batchTenders.length > 0) {
+          console.log(`💾 Saving ${batchTenders.length} tenders from this batch to database...`);
           await this.onBatchComplete(batchTenders);
         }
 
@@ -574,48 +589,30 @@ export class IhalebulScraper extends BaseScraper {
         const dataId = $link.attr('data-id') || '';
         const titleFromLink = this.cleanText($link.text()); // "2025/1634941 - Yemek Hizmeti Alınacaktır"
 
-        // 🎯 Extract title with precise selectors
+        // Extract title from "İhale başlığı" field (cleaner, without record number)
         const titleFromField = this.cleanText(
-          $card.find('b:contains("İhale başlığı:")').next('span').text() ||
-          $card.find('b:contains("İhale başlığı:")').siblings('span').first().text() ||
-          $card.find('.card-body:has(b:contains("İhale başlığı:"))').find('span').first().text()
+          $card.find('b:contains("İhale başlığı:")').parent().find('span').text() ||
+          $card.find('.card-body:contains("İhale başlığı:") span').text()
         );
         const title = titleFromField || titleFromLink.split(' - ').pop() || titleFromLink || 'Belirtilmemiş';
 
         // Extract Kayıt no (record number)
-        const recordNo = this.cleanText(
-          $card.find('b:contains("Kayıt no:")').next('span').text() ||
-          $card.find('b:contains("Kayıt no:")').siblings('span').first().text() ||
-          $card.find('.card-body:has(b:contains("Kayıt no:"))').find('span').first().text()
-        );
+        const recordNo = this.cleanText($card.find('.card-body:contains("Kayıt no:") span').text());
 
-        // 🎯 Extract organization with precise selectors
+        // Extract organization from "İdare adı" field
         const organization = this.cleanText(
-          $card.find('b:contains("İdare adı:")').next('span').text() ||
-          $card.find('b:contains("İdare adı:")').siblings('span').first().text() ||
-          $card.find('.card-body:has(b:contains("İdare adı:"))').find('span').first().text() ||
-          $card.find('b:contains("İhale mercii:")').next('span').text() ||
+          $card.find('b:contains("İdare adı:")').parent().find('span').text() ||
+          $card.find('.card-body:contains("İdare adı:") span').text() ||
+          $card.find('b:contains("İhale mercii:")').parent().find('span').text() ||
           'Belirtilmemiş'
         );
 
-        // 🎯 Extract city with precise selector - avoid getting all text
-        // Look for the specific element containing the city icon, then get only its direct text
-        const cityElement = $card.find('.text-dark-emphasis.fw-medium:has(iconify-icon[icon="fa6-solid:sign-hanging"])');
-        let cityText = '';
-        if (cityElement.length > 0) {
-          // Get only the text nodes, excluding nested elements
-          cityText = this.cleanText(
-            cityElement.clone().children().remove().end().text().replace('icon', '').trim()
-          );
-        }
-        // Fallback selectors
-        if (!cityText) {
-          cityText = this.cleanText(
-            $card.find('b:contains("İl:")').next('span').text() ||
-            $card.find('b:contains("İl:")').siblings('span').first().text() ||
-            $card.find('.card-body:has(b:contains("İl:"))').find('span').first().text()
-          );
-        }
+        // Extract city from icon indicator
+        const cityText = this.cleanText(
+          $card.find('.text-dark-emphasis.fw-medium:has(iconify-icon[icon="fa6-solid:sign-hanging"])').text().replace('icon', '').trim() ||
+          $card.find('.card-body:contains("İl:") span').text() ||
+          $card.find('.card-body:contains("Şehir:") span').text()
+        );
 
         // Extract budget from "Tahmini bedel" field
         const budgetText = this.cleanText(
@@ -638,7 +635,7 @@ export class IhalebulScraper extends BaseScraper {
         );
 
         // FILTER: Skip Doğu Bölgesi cities
-        const tenderCity = cityText || '';
+        const tenderCity = cityText || this.extractCity($card.text()) || '';
         if (tenderCity && BLOCKED_CITIES.includes(tenderCity)) {
           console.log(`🚫 Skipping Doğu Bölgesi city: ${tenderCity}`);
           return;
@@ -649,7 +646,7 @@ export class IhalebulScraper extends BaseScraper {
           source_id: dataId || recordNo || `IHB${Date.now()}${i}`,
           title: title,
           organization: organization,
-          organization_city: cityText || undefined, // Don't use extractCity on full card text!
+          organization_city: cityText || this.extractCity($card.text()),
           budget: this.parseBudget(budgetText) || undefined,
           currency: 'TRY',
           announcement_date: this.parseDate(announcementDateText) || undefined,
@@ -670,72 +667,6 @@ export class IhalebulScraper extends BaseScraper {
 
     console.log(`📊 İhalebul: ${tenders.length} tenders extracted from ${$('div.card.border-secondary').length} cards`);
     return tenders;
-  }
-
-  /**
-   * 🆕 Extract metadata from list page (title, org, city)
-   * Store in cache for later use in detail page
-   */
-  private extractMetadataFromListPage(html: string): void {
-    const $ = cheerio.load(html);
-
-    $('div.card.border-secondary').each((i, card) => {
-      try {
-        const $card = $(card);
-
-        // Get source_id from link
-        const $link = $card.find('.card-header a.details[href*="/tender/"]').first();
-        const href = $link.attr('href') || '';
-        const sourceIdMatch = href.match(/\/tender\/(\d+)/);
-        if (!sourceIdMatch) return;
-
-        const sourceId = sourceIdMatch[1];
-
-        // Extract title - multiple strategies
-        const titleFromLink = this.cleanText($link.text()); // "2025/1634941 - Yemek Hizmeti"
-        const titleFromField = this.cleanText(
-          $card.find('b:contains("İhale başlığı:")').next('span').text() ||
-          $card.find('b:contains("İhale başlığı:")').parent().text().replace('İhale başlığı:', '').trim()
-        );
-
-        // Title from link usually has format "2025/123456 - TITLE", extract just title part
-        let title = titleFromField || titleFromLink.split(' - ').pop() || titleFromLink || '';
-
-        // Clean registration number prefix if present
-        title = title.replace(/^\d{4}\/\d+\s*-?\s*/, '').trim();
-
-        // Extract organization
-        const organization = this.cleanText(
-          $card.find('b:contains("İdare adı:")').next('span').text() ||
-          $card.find('b:contains("İdare adı:")').parent().text().replace('İdare adı:', '').trim() ||
-          $card.find('b:contains("İhale mercii:")').next('span').text() ||
-          ''
-        );
-
-        // Extract city - ONLY from icon element, avoid getting all text
-        const cityElement = $card.find('.text-dark-emphasis.fw-medium:has(iconify-icon[icon="fa6-solid:sign-hanging"])');
-        let city = '';
-        if (cityElement.length > 0) {
-          // Clone element, remove all children, get only direct text
-          city = this.cleanText(
-            cityElement.clone().children().remove().end().text()
-          );
-        }
-
-        // Store in cache
-        if (sourceId && title) {
-          this.metadataCache.set(sourceId, {
-            title: title || 'Belirtilmemiş',
-            organization: organization || 'Belirtilmemiş',
-            city: city || ''
-          });
-        }
-      } catch (error) {
-        console.warn(`⚠️  Metadata extraction error:`, error);
-      }
-    });
-
-    console.log(`📦 Metadata cached for ${this.metadataCache.size} tenders`);
   }
 
   private extractTenderUrls(html: string): string[] {
@@ -769,60 +700,119 @@ export class IhalebulScraper extends BaseScraper {
 
   private parseDetailPage(html: string, url: string): ScrapedTender | null {
     const $ = cheerio.load(html);
+    const fs = require('fs'); // fs import (debug için gerekli)
 
     try {
-      // ============================================================
-      // 🚀 MINIMAL SCRAPING - Sadece temel bilgiler!
-      // AI analizi kullanıcı tıkladığında yapılacak (on-demand)
-      // ============================================================
-
-      // Extract source ID from URL FIRST
+      // Extract source ID from URL (needed for debug and tender object)
       const sourceId = url.split('/tender/')[1]?.split('?')[0] || `IHB${Date.now()}`;
 
-      // 🆕 GET CACHED METADATA FROM LIST PAGE (list page'de doğru veriler var!)
-      const cachedMetadata = this.metadataCache.get(sourceId);
-
-      // 🎯 Extract title - ÖNCE CACHE'DEN AL, sonra detail page'den
-      const titleFromLink = this.cleanText($('a.details[href*="/tender/"]').first().text());
-      const titleFromField = this.cleanText(
-        $('b:contains("İhale başlığı:")').next('span').text() ||
-        $('b:contains("İhale başlığı:")').siblings('span').first().text() ||
-        $('.card-body:has(b:contains("İhale başlığı:"))').find('span').first().text()
-      );
-      // 🆕 CACHE'DEN AL - List page'de doğru data var!
-      let title = cachedMetadata?.title || titleFromField || titleFromLink || 'Belirtilmemiş';
-
-      // 🎯 Extract organization - ÖNCE CACHE'DEN AL
-      const organizationFromField = this.cleanText(
-        $('b:contains("İdare adı:")').next('span').text() ||
-        $('b:contains("İdare adı:")').siblings('span').first().text() ||
-        $('.card-body:has(b:contains("İdare adı:"))').find('span').first().text() ||
-        'Belirtilmemiş'
-      );
-
-      // 🆕 CACHE'DEN AL - List page'de doğru data var!
-      let organization = cachedMetadata?.organization || organizationFromField;
-
-      // Eğer organization aslında title ile aynıysa, selector yanlış çalışmış demektir
-      if (organization === title && organization.length > 50 && !cachedMetadata) {
-        console.warn(`⚠️  Organization ve title aynı: ${organization.slice(0, 50)}...`);
-        organization = 'Belirtilmemiş';
+      // 🔍 DEBUG: İlk detay HTML'i kaydet
+      if (sourceId && parseInt(sourceId) % 50 === 1) {
+        const debugPath = `/tmp/ihalebul-detail-${sourceId}.html`;
+        fs.writeFileSync(debugPath, html);
+        console.log(`   🐛 DEBUG HTML saved: ${debugPath}`);
       }
 
-      // Eğer organization hala çok uzunsa (>200 char), ilk 200 karakteri al
-      if (organization.length > 200) {
-        organization = organization.slice(0, 200).trim();
+      // 🆕 NEW HTML STRUCTURE: row-based layout (without :has() which Cheerio doesn't support)
+
+      // Extract title - find label, then get next column
+      let title = 'Belirtilmemiş';
+      $('.bg-info-subtle').each((i, el) => {
+        const labelText = $(el).text().trim();
+        if (labelText === 'İhale başlığı') {
+          const valueCol = $(el).parent().find('.responsive-right').first();
+          title = this.cleanText(valueCol.text()) || 'Belirtilmemiş';
+        }
+      });
+
+      // Extract organization - İlan metni içinden parse et
+      let organization = 'Belirtilmemiş';
+
+      // Önce .htmlcontent içinde ara (ihale ilan metni)
+      const htmlContent = $('.htmlcontent').html() || '';
+      console.log(`🔍 [DEBUG] htmlContent length:`, htmlContent.length);
+
+      // "1.1. Adı : ORGANIZASYON ADI" pattern'ini bul
+      const orgMatch = htmlContent.match(/<b>\s*1\.1\.\s*<\/b>\s*Adı\s*<\/td><td>\s*:\s*<\/td><td><span>\s*([^<]+)/i);
+      console.log(`🔍 [DEBUG] orgMatch:`, orgMatch ? `Found: ${orgMatch[1]}` : 'NO MATCH');
+
+      if (orgMatch && orgMatch[1]) {
+        organization = this.cleanText(orgMatch[1]);
+        console.log(`🔍 [DEBUG] İdare adı bulundu (htmlcontent):`, organization);
+      } else {
+        // Fallback: .bg-info-subtle içinde ara
+        $('.bg-info-subtle').each((i, el) => {
+          const labelText = $(el).text().trim();
+          if (labelText === 'İdare adı') {
+            const valueCol = $(el).parent().find('.responsive-right').first();
+            const orgText = this.cleanText(
+              valueCol.find('.d-block.border-bottom.fw-bold').text() ||
+              valueCol.text()
+            );
+            console.log(`🔍 [DEBUG] İdare adı bulundu (bg-info-subtle):`, orgText);
+            organization = orgText || 'Belirtilmemiş';
+          }
+        });
       }
 
-      // Extract city - ÖNCE CACHE'DEN AL
-      const cityFromIcon = this.cleanText(
-        $('.text-dark-emphasis.fw-medium:has(iconify-icon[icon="fa6-solid:sign-hanging"])').text().replace('icon', '').trim()
-      );
-      const cityFromModal = this.cleanText(
-        $('.col-12.col-xs-9:has(iconify-icon[icon="fa6-solid:sign-hanging"]) .d-inline-block').text().trim()
-      );
-      // 🆕 CACHE'DEN AL - List page'de doğru data var!
-      const cityText = cachedMetadata?.city || cityFromIcon || cityFromModal || undefined;
+      // 🐛 DEBUG: Save HTML for inspection
+      const debugPath = `/tmp/ihalebul-detail-${sourceId}.html`;
+      fs.writeFileSync(debugPath, html);
+      console.log(`🐛 [DEBUG] HTML saved:`, debugPath, `(org: "${organization}", htmlContent.length: ${htmlContent.length})`);
+
+      // Extract city - İlan metninden parse et
+      let cityText: string | undefined = undefined;
+
+      // "1.2. Adresi : ... ŞEHIR" pattern'inden şehir çıkar
+      const cityMatch = htmlContent.match(/<b>\s*1\.2\.\s*<\/b>\s*Adresi\s*<\/td><td>\s*:\s*<\/td><td><span>\s*[^<]*?\s+([A-ZÇĞİÖŞÜ]+)\s*<\/span>/i);
+      if (cityMatch && cityMatch[1]) {
+        cityText = this.cleanText(cityMatch[1]);
+        console.log(`🔍 [DEBUG] Şehir bulundu (htmlcontent):`, cityText);
+      } else {
+        // Fallback: icon-based city detection
+        $('iconify-icon[icon="fa6-solid:sign-hanging"]').each((i, el) => {
+          const parent = $(el).parent();
+          const text = this.cleanText(parent.text());
+          if (text && text !== 'icon') {
+            cityText = text;
+            console.log(`🔍 [DEBUG] Şehir bulundu (icon):`, cityText);
+          }
+        });
+      }
+
+      // Extract budget
+      let budgetText = '';
+      $('.bg-info-subtle').each((i, el) => {
+        const labelText = $(el).text().trim();
+        if (labelText.includes('Yaklaşık maliyet') || labelText.includes('maliyet limiti')) {
+          const valueCol = $(el).parent().find('.responsive-right').first();
+          budgetText = this.cleanText(valueCol.text());
+        }
+      });
+
+      // Extract dates
+      let announcementDateText = '';
+      let deadlineDateText = '';
+      // "2.1. Tarih ve Saati : 06.11.2025 - 10:30" pattern'i - İhale/Teklif tarihi
+      const dateMatch = htmlContent.match(/<b>\s*2\.1\.\s*<\/b>\s*Tarih ve Saati\s*<\/td><td>\s*:\s*<\/td><td><span>\s*([^<]+)/i);
+      if (dateMatch && dateMatch[1]) {
+        deadlineDateText = this.cleanText(dateMatch[1]);
+        console.log(`🔍 [DEBUG] İhale tarihi bulundu (htmlcontent):`, deadlineDateText);
+      } else {
+        // Fallback: .bg-info-subtle içinde ara
+        $('.bg-info-subtle').each((i, el) => {
+          const labelText = $(el).text().trim();
+          if (labelText === 'Yayın tarihi') {
+            const valueCol = $(el).parent().find('.responsive-right').first();
+            announcementDateText = this.cleanText(valueCol.text());
+          }
+          if (labelText === 'Teklif tarihi') {
+            const valueCol = $(el).parent().find('.responsive-right').first();
+            deadlineDateText = this.cleanText(valueCol.text());
+            console.log(`🔍 [DEBUG] Teklif tarihi bulundu (bg-info-subtle):`, deadlineDateText);
+          }
+        });
+      }
 
       // Filter: Skip Doğu Bölgesi cities
       if (cityText && BLOCKED_CITIES.includes(cityText)) {
@@ -830,110 +820,21 @@ export class IhalebulScraper extends BaseScraper {
         return null;
       }
 
-      // 🆕 ZORUNLU: İhale kayıt numarasını çıkar (YYYY/NNNNNN formatı)
-      // HTML'den "Kayıt no" alanını çek
-      const recordNoFromField = this.cleanText($('.card-body:contains("Kayıt no:") span').text());
-
-      // Regex ile tüm sayfadan kayıt no'yu çıkar (eğer field'da yoksa)
-      let registrationNumber = recordNoFromField;
-      if (!registrationNumber) {
-        const bodyText = $('body').text();
-        const regexMatch = bodyText.match(/202\d\/\d{6,7}/); // 2020-2029 arası yıllar, 6-7 haneli numara
-        registrationNumber = regexMatch ? regexMatch[0] : '';
-      }
-
-      // 🆕 Kayıt numarasını raw_json içine minimal formatta kaydet
-      const rawJson = registrationNumber ? { 'Kayıt no': registrationNumber } : null;
-
-      // Extract tender date (İhale Tarihi) from table in announcement text
-      // Format: "2.1. Tarih ve Saati : 06.11.2025 - 10:30"
-      // Use Cheerio to find the specific table cell
-      let tenderDateText = '';
-      $('td:contains("2.1")').each((i, el) => {
-        const cellText = $(el).text();
-        if (cellText.includes('Tarih ve Saati')) {
-          // Found the label cell, get the value from next siblings
-          const nextCells = $(el).nextAll('td');
-          nextCells.each((j, valueCell) => {
-            const valueText = $(valueCell).text();
-            const match = valueText.match(/(\d{1,2}\.\d{1,2}\.\d{4})/);
-            if (match) {
-              tenderDateText = match[1];
-              return false; // Break loop
-            }
-          });
-          return false; // Break outer loop
-        }
-      });
-      const tenderDate = tenderDateText ? this.parseDate(tenderDateText) : undefined;
-
-      // Extract announcement date (Yayın Tarihi) from footer div
-      // Format: "Yayın tarihi: 7.10.2025"
-      const announcementDateEl = $('div:contains("Yayın tarihi:")').filter((i: number, el: any) => {
-        const text = $(el).text();
-        return text.includes('Yayın tarihi:') && !!text.match(/\d{1,2}\.\d{1,2}\.\d{4}/);
-      }).first();
-
-      let announcementDateText = '';
-      if (announcementDateEl.length > 0) {
-        const fullText = announcementDateEl.text();
-        const match = fullText.match(/Yayın tarihi[:\s]+(\d{1,2}\.\d{1,2}\.\d{4})/i);
-        announcementDateText = match ? match[1] : '';
-      }
-      const announcementDate = announcementDateText ? this.parseDate(announcementDateText) : undefined;
-
-      // Extract deadline date (Teklif / İhale Tarihi) - flexible search
-      // Format: "6 Kasım 2025 Perşembe 10:30" or "06.11.2025"
-      let deadlineDateText = '';
-      const deadlineLabelEl = $('div:contains("teklif")').add('div:contains("Teklif")').add('div:contains("İhale")').filter((i, el) => {
-        const text = $(el).text().trim().toLowerCase();
-        // Match variations: "teklif tarihi", "ihale tarihi", "son teklif tarihi"
-        return (text.includes('teklif') || text.includes('ihale')) && text.includes('tarih');
-      }).first();
-
-      if (deadlineLabelEl.length > 0) {
-        // Get next element (any type: div, span, p)
-        const dateValueEl = deadlineLabelEl.next();
-        if (dateValueEl.length > 0) {
-          const fullText = dateValueEl.text().trim();
-          // Match "6 Kasım 2025", "06.11.2025", "6/11/2025"
-          const match = fullText.match(/(\d{1,2}[\.\s\/]?\s?\w+\s?[\.\s\/]?\d{4})/);
-          deadlineDateText = match ? match[1] : '';
-        }
-      }
-      const deadlineDate = deadlineDateText ? this.parseDate(deadlineDateText) : undefined;
-
-      // 🔍 DEBUG
-      if (sourceId === '1759785131303') {
-        console.log(`🔍 NEW DEBUG [${sourceId}]:`);
-        console.log(`   tenderDateText="${tenderDateText}", tenderDate=${tenderDate}`);
-        console.log(`   announcementDateText="${announcementDateText}", announcementDate=${announcementDate}`);
-        console.log(`   deadlineDateText="${deadlineDateText}", deadlineDate=${deadlineDate}`);
-      }
-
-      // ✅ TEMEL BİLGİLER + TARİHLER
-      // ❌ Bütçe parsing YOK (AI tarafından yapılacak)
-      // ❌ AI kategorilendirme YOK (on-demand)
-      // ❌ Mal/hizmet listesi parsing YOK (on-demand)
       const tender: Partial<ScrapedTender> = {
         source: 'ihalebul',
         source_id: sourceId,
         title: title,
         organization: organization,
         organization_city: cityText || undefined,
-        tender_date: tenderDate || undefined, // İhale tarihi (2.1. Tarih ve Saati)
-        announcement_date: announcementDate || undefined, // Yayın tarihi (footer)
-        deadline_date: deadlineDate || undefined, // Teklif son tarihi (card-body)
+        budget: this.parseBudget(budgetText) || undefined,
+        currency: 'TRY',
+        announcement_date: this.parseDate(announcementDateText) || undefined,
+        deadline_date: this.parseDate(deadlineDateText) || undefined,
+        procurement_type: 'Hizmet Alımı',
+        category: 'Yemek Hazırlama, Dağıtım, Catering',
         source_url: url,
         scraped_at: new Date(),
-        raw_json: rawJson || undefined, // 🆕 Kayıt numarası burada saklanacak
-        // Diğer alanlar AI tarafından doldurulacak (on-demand)
       };
-
-      // 🚨 ZORUNLU KONTROL: Kayıt numarası bulunamadıysa uyar ama skip etme (bazı ihaleler farklı formatta olabilir)
-      if (!registrationNumber) {
-        console.warn(`  ⚠️ Kayıt numarası bulunamadı: ${title.slice(0, 50)}...`);
-      }
 
       if (this.validateTender(tender)) {
         return tender as ScrapedTender;
@@ -943,66 +844,6 @@ export class IhalebulScraper extends BaseScraper {
     } catch (error) {
       console.warn(`⚠️ Detail page parse error: ${error}`);
       return null;
-    }
-  }
-
-  /**
-   * 🆕 Şartname URL'lerini çıkart
-   * İdari Şartname tercih edilir, yoksa Teknik Şartname alınır
-   */
-  private extractSpecificationUrl($: cheerio.CheerioAPI, sourceId: string): string | undefined {
-    try {
-      // İdari Şartname linki (öncelikli)
-      const idariLink = $('a.details:contains("İdari Şartname")').attr('href');
-      if (idariLink) {
-        return idariLink.startsWith('http') ? idariLink : this.config.baseUrl + idariLink;
-      }
-
-      // Teknik Şartname linki (alternatif)
-      const teknikLink = $('a.details:contains("Teknik Şartname")').attr('href');
-      if (teknikLink) {
-        return teknikLink.startsWith('http') ? teknikLink : this.config.baseUrl + teknikLink;
-      }
-
-      // Fallback: /tender/{ID}/7 formatında oluştur (İdari Şartname ID'si genelde 7'dir)
-      if (sourceId) {
-        return `${this.config.baseUrl}/tender/${sourceId}/7`;
-      }
-
-      return undefined;
-    } catch (error) {
-      console.warn(`⚠️ Specification URL extraction error:`, error);
-      return undefined;
-    }
-  }
-
-  /**
-   * 🆕 İhale ilan metnini çıkart
-   * Temiz, okunabilir metin olarak
-   */
-  private extractAnnouncementText($: cheerio.CheerioAPI): string | undefined {
-    try {
-      // İhalebul'da ilan metni genelde .tender-content veya .description içinde
-      const announcementSelectors = [
-        '.tender-content',
-        '.description',
-        '.tender-description',
-        'div[class*="content"]',
-        'div[class*="description"]',
-      ];
-
-      for (const selector of announcementSelectors) {
-        const text = $(selector).first().text().trim();
-        if (text && text.length > 50) {
-          // En az 50 karakter olmalı
-          return text;
-        }
-      }
-
-      return undefined;
-    } catch (error) {
-      console.warn(`⚠️ Announcement text extraction error:`, error);
-      return undefined;
     }
   }
 }

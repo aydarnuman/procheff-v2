@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
     // Token kullanımını ve maliyeti hesapla (tahmini)
     const estimatedInputTokens = Math.ceil(text.length / 4); // Rough estimate: 1 token ≈ 4 chars
     const estimatedOutputTokens = 1000; // Structured output tahmini
-    const maliyet = hesaplaClaudeMaliyeti('claude-3-5-sonnet-20241022', estimatedInputTokens, estimatedOutputTokens);
+    const maliyet = hesaplaClaudeMaliyeti(process.env.DEFAULT_AI_MODEL || 'claude-sonnet-4-20250514', estimatedInputTokens, estimatedOutputTokens);
 
     logger.basarili(LogKategori.EXTRACTION, 'Veri başarıyla çıkarıldı', {
       kelimeSayisi: extractedData.kisi_sayisi ?? undefined,

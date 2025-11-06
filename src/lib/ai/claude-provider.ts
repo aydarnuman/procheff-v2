@@ -31,8 +31,8 @@ Mevcut durum:
       throw new Error("ANTHROPIC_API_KEY is missing or invalid. Cannot initialize ClaudeProvider.");
     }
 
-    // Geçici fix: doğru model adını kullan - HARD CODED to bypass env issues
-    const modelName = "claude-sonnet-4-20250514"; // Claude Sonnet 4 (May 2025) - Stable and working model
+    // Geçici fix: doğru model adını kullan - .env'den oku
+    const modelName = process.env.DEFAULT_AI_MODEL || "claude-sonnet-4-20250514"; // Fallback to known working model
 
     this.config = {
       provider: "claude",

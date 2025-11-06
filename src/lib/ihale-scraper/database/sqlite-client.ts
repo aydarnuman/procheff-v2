@@ -55,18 +55,26 @@ export function getDatabase(): Database.Database {
       return global.__dbInstance;
     }
 
-    // Check if tables already exist in database
-    const tableCheck = global.__dbInstance.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='ihale_listings'").get();
+    try {
+      // Check if tables already exist in database
+      const tableCheck = global.__dbInstance.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='ihale_listings'").get();
 
-    if (!tableCheck) {
-      console.log('🔧 Initializing database schema for the first time...');
-      initializeSchema(global.__dbInstance);
+      if (!tableCheck) {
+        console.log('🔧 Initializing database schema for the first time...');
+        initializeSchema(global.__dbInstance);
 
-      // Create lock file to prevent re-initialization
-      fs.writeFileSync(INIT_LOCK_FILE, new Date().toISOString());
+        // Create lock file to prevent re-initialization
+        fs.writeFileSync(INIT_LOCK_FILE, new Date().toISOString());
+        console.log('✅ Schema initialization completed and locked');
+      } else {
+        console.log('✅ Tables already exist, skipping initialization');
+      }
+
+      global.__dbSchemaInitialized = true;
+    } catch (error) {
+      console.error('❌ Database schema initialization failed:', error);
+      throw error; // Re-throw to prevent app from continuing with broken DB
     }
-
-    global.__dbSchemaInitialized = true;
   }
 
   return global.__dbInstance;

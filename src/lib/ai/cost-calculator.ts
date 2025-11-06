@@ -6,11 +6,21 @@
 // USD -> TRY kuru (güncellenebilir)
 const USD_TO_TRY = 34.50; // 2025 Ocak tahmini
 
-// Claude Pricing (per 1M tokens) - USD
+// Claude Pricing (per 1M tokens) - USD - Güncel (2025)
 const CLAUDE_PRICING = {
-  'claude-3-5-sonnet-20241022': {
+  // Yeni modeller (2025)
+  'claude-sonnet-4-20250514': {
     input: 3.00,   // $3 per 1M input tokens
     output: 15.00, // $15 per 1M output tokens
+  },
+  'claude-3-7-sonnet-20250219': {
+    input: 3.00,
+    output: 15.00,
+  },
+  // Eski modeller (backward compatibility)
+  'claude-3-5-sonnet-20241022': {
+    input: 3.00,
+    output: 15.00,
   },
   'claude-3-5-sonnet-20250929': {
     input: 3.00,
@@ -22,6 +32,14 @@ const CLAUDE_PRICING = {
   },
   'claude-3-haiku-20240307': {
     input: 0.25,
+    output: 1.25,
+  },
+  'claude-3-5-haiku-20241022': {
+    input: 0.80,   // $0.80 per 1M input tokens
+    output: 4.00,  // $4.00 per 1M output tokens
+  },
+  'claude-haiku-4-5-20251001': {
+    input: 0.25,   // Yeni nesil Haiku
     output: 1.25,
   },
 } as const;
@@ -63,7 +81,7 @@ export const hesaplaClaudeMaliyeti = (
   inputTokens: number,
   outputTokens: number
 ): MaliyetDetay => {
-  const pricing = CLAUDE_PRICING[model as keyof typeof CLAUDE_PRICING] || CLAUDE_PRICING['claude-3-5-sonnet-20241022'];
+  const pricing = CLAUDE_PRICING[model as keyof typeof CLAUDE_PRICING] || CLAUDE_PRICING['claude-sonnet-4-20250514'];
 
   // USD cinsinden maliyet (per 1M tokens)
   const inputMaliyetUSD = (inputTokens / 1_000_000) * pricing.input;
