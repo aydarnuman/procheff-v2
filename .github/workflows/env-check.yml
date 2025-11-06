@@ -1,0 +1,119 @@
+name: Environment Check
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  env-validation:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: 🔒 Validate Required Environment Variables
+        run: |
+          echo "🔍 Checking critical environment variables..."
+          
+          # Check GitHub Secrets (production)
+          missing_vars=()
+          
+          if [ -z "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+            missing_vars+=("ANTHROPIC_API_KEY")
+          fi
+          
+          if [ -z "${{ secrets.IHALEBUL_USERNAME }}" ]; then
+            missing_vars+=("IHALEBUL_USERNAME")
+          fi
+          
+          if [ -z "${{ secrets.IHALEBUL_PASSWORD }}" ]; then
+            missing_vars+=("IHALEBUL_PASSWORD")
+          fi
+          
+          if [ -z "${{ secrets.DEFAULT_AI_MODEL }}" ]; then
+            echo "⚠️ WARNING: DEFAULT_AI_MODEL not set, will use fallback"
+          fi
+          
+          # Fail if any critical var is missing
+          if [ ${#missing_vars[@]} -gt 0 ]; then
+            echo "❌ CRITICAL: Missing environment variables:"
+            printf '%s\n' "${missing_vars[@]}"
+            echo ""
+            echo "💡 Add these to GitHub Secrets:"
+            echo "   Repository → Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          
+          echo "✅ All critical environment variables are set!"
+      
+      - name: 🧪 Run TypeScript Type Check
+        run: npm run type-check || npx tsc --noEmit
+      
+      - name: 🧪 Test Environment Guard
+        run: |
+          # Create temporary .env for testing
+          cat > .env.local << EOF
+          ANTHROPIC_API_KEY=sk-ant-test-key-12345678901234567890123456789012345678901234567890
+          DEFAULT_AI_MODEL=claude-sonnet-4-20250514
+          IHALEBUL_USERNAME=test_user
+          IHALEBUL_PASSWORD=test_pass
+          GEMINI_API_KEY=test_gemini_key
+          NODE_ENV=test
+          EOF
+          
+          # Run env guard validation
+          npx tsx -e "
+          import { checkEnvironment } from './src/lib/env-guard';
+          const result = checkEnvironment();
+          if (!result.isValid) {
+            console.error('❌ Environment validation failed!');
+            process.exit(1);
+          }
+          console.log('✅ Environment guard passed!');
+          "
+          
+          # Cleanup
+          rm -f .env.local
+
+  build-check:
+    runs-on: ubuntu-latest
+    needs: env-validation
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: 🏗️ Build Application
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DEFAULT_AI_MODEL: ${{ secrets.DEFAULT_AI_MODEL }}
+          IHALEBUL_USERNAME: ${{ secrets.IHALEBUL_USERNAME }}
+          IHALEBUL_PASSWORD: ${{ secrets.IHALEBUL_PASSWORD }}
+        run: npm run build
+      
+      - name: 📦 Check Build Artifacts
+        run: |
+          if [ ! -d ".next" ]; then
+            echo "❌ Build failed - .next directory not found"
+            exit 1
+          fi
+          echo "✅ Build successful!"

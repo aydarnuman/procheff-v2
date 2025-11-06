@@ -12,14 +12,19 @@ import { ClaudeCategorizer } from './ai/claude-categorizer';
 import { TenderDatabase } from './database/sqlite-client';
 import { NotificationService } from './notifications/notification-service';
 import { getScrapersByPriority, GLOBAL_CONFIG } from './config';
+import { OrchestratorLogger } from './logger/orchestrator-logger';
 import type { ScrapedTender, CategorizedTender, ScrapeResult } from './types';
 
 export class ScraperOrchestrator {
   private categorizer: TenderCategorizer;
   private geminiCategorizer: GeminiCategorizer | null = null;
   private claudeCategorizer: ClaudeCategorizer | null = null;
+  private logger: OrchestratorLogger;
 
   constructor() {
+    this.logger = new OrchestratorLogger(`scraper_${Date.now()}`);
+    this.logger.info('orchestrator', 'Initializing ScraperOrchestrator');
+    
     this.categorizer = new TenderCategorizer();
 
     // 🚀 İlk önce Claude Haiku'yu dene (6x HIZLI!)
@@ -52,8 +57,16 @@ export class ScraperOrchestrator {
     totalNew: number;
     totalCatering: number;
   }> {
+    const startTime = Date.now();
+    this.logger.info('runAll', 'Starting scraping orchestration', { 
+      testMode, 
+      sourceFilter: sourceFilter || 'all',
+      logPath: this.logger.getLogPath()
+    });
+
     console.log('\n' + '='.repeat(70));
     console.log('🚀 SCRAPER ORCHESTRATOR -', sourceFilter ? sourceFilter.toUpperCase() : 'ALL SOURCES');
+    console.log('📝 Log file:', this.logger.getLogPath());
     console.log('='.repeat(70));
 
     let scrapers = getScrapersByPriority();
@@ -62,16 +75,25 @@ export class ScraperOrchestrator {
     if (sourceFilter) {
       scrapers = scrapers.filter(s => s.id === sourceFilter);
       if (scrapers.length === 0) {
+        this.logger.error('runAll', `Unknown source: ${sourceFilter}`);
         console.error(`❌ Unknown source: ${sourceFilter}`);
         return { success: false, results: [], totalNew: 0, totalCatering: 0 };
       }
     }
+    
+    this.logger.info('runAll', `Processing ${scrapers.length} scraper(s)`, {
+      scrapers: scrapers.map(s => s.id)
+    });
+    
     const results: ScrapeResult[] = [];
     let totalNew = 0;
     let totalCatering = 0;
 
     for (const config of scrapers) {
+      const scraperStartTime = Date.now();
+      
       try {
+        this.logger.info(config.id, `Starting scraper: ${config.name}`);
         console.log(`\n📍 Running: ${config.name}`);
 
         let scraper;
@@ -87,6 +109,7 @@ export class ScraperOrchestrator {
             scraper = new EkapScraper(config);
             break;
           default:
+            this.logger.warn(config.id, `Scraper not implemented`);
             console.warn(`⚠️ Scraper not implemented: ${config.id}`);
             continue;
         }
@@ -95,9 +118,20 @@ export class ScraperOrchestrator {
         const result = await scraper.execute();
         results.push(result);
 
+        this.logger.timed(config.id, `Scraping completed`, scraperStartTime, {
+          success: result.success,
+          totalScraped: result.totalScraped,
+          errors: result.errors.length
+        });
+
         // Save tenders to database
+        const saveStartTime = Date.now();
         const saved = await this.saveMinimalTenders(result.tenders, testMode);
         totalNew += saved.newCount;
+
+        this.logger.timed(config.id, `Database save completed`, saveStartTime, {
+          newTenders: saved.newCount
+        });
 
         // Log to database
         await TenderDatabase.logScraping({
@@ -110,16 +144,37 @@ export class ScraperOrchestrator {
           updatedListings: result.updatedTenders,
           errorMessage: result.errors.length > 0 ? result.errors[0].message : undefined,
         });
+
+        this.logger.success(config.id, `Pipeline completed successfully`, {
+          totalScraped: result.totalScraped,
+          newTenders: saved.newCount
+        });
+
       } catch (error: any) {
+        this.logger.error(config.id, `Scraper failed: ${error.message}`, {
+          stack: error.stack
+        });
         console.error(`❌ ${config.name} failed:`, error.message);
       }
     }
+
+    this.logger.timed('runAll', 'All scrapers completed', startTime, {
+      totalNew,
+      totalCatering,
+      successfulScrapers: results.filter(r => r.success).length,
+      failedScrapers: results.filter(r => !r.success).length
+    });
 
     console.log('\n' + '='.repeat(70));
     console.log('✅ SCRAPING COMPLETED');
     console.log(`   Total new tenders: ${totalNew}`);
     console.log(`   Total catering: ${totalCatering}`);
+    console.log('='.repeat(70));
+    console.log(this.logger.generateSummary());
     console.log('='.repeat(70) + '\n');
+
+    // Cleanup logger
+    this.logger.close();
 
     return {
       success: results.some(r => r.success),
