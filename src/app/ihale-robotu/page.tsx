@@ -1279,24 +1279,24 @@ function IhaleTakipPageInner() {
               <button
                 onClick={() => triggerScrape('new')}
                 disabled={scraping}
-                className="group relative flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:shadow-lg hover:shadow-emerald-500/30 disabled:from-gray-800 disabled:to-gray-800 disabled:text-gray-600 disabled:shadow-none disabled:cursor-not-allowed text-sm font-medium transition-all duration-300 hover:scale-[1.02] overflow-hidden"
-                title={scraping ? 'Scraping devam ediyor...' : 'Sadece yeni ihaleleri çek (duplicate sayfalarda dur)'}
+                className="group relative flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:shadow-lg hover:shadow-emerald-500/30 disabled:from-gray-800 disabled:to-gray-800 disabled:text-gray-600 disabled:shadow-none disabled:cursor-not-allowed text-sm font-medium transition-all duration-300 hover:scale-[1.02] overflow-hidden"
+                title={scraping ? 'Scraping devam ediyor...' : '⚡ Hızlı Mod: Sadece yeni eklenen ihaleleri çeker (zaten kayıtlı olanları atlar). Tavsiye edilen günlük kullanım modu.'}
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-emerald-700 to-teal-700 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                 <RefreshCw className={`w-4 h-4 relative z-10 ${scraping ? 'animate-spin' : ''}`} />
-                <span className="relative z-10">{scraping ? 'Çekiliyor...' : 'Yeni İhaleler Çek'}</span>
+                <span className="relative z-10 whitespace-nowrap">{scraping ? 'Çekiliyor...' : '⚡ Yeni İhaleler (Hızlı)'}</span>
               </button>
 
               {/* Tüm Aktif İhaleleri Yenile (mode=full - scrape all) */}
               <button
                 onClick={() => triggerScrape('full')}
                 disabled={scraping}
-                className="group relative flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-orange-600 to-amber-600 text-white rounded-xl hover:shadow-lg hover:shadow-orange-500/30 disabled:from-gray-800 disabled:to-gray-800 disabled:text-gray-600 disabled:shadow-none disabled:cursor-not-allowed text-sm font-medium transition-all duration-300 hover:scale-[1.02] overflow-hidden"
-                title={scraping ? 'Scraping devam ediyor...' : 'Tüm aktif ihaleleri yenile (tüm sayfaları tara)'}
+                className="group relative flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-orange-600 to-amber-600 text-white rounded-xl hover:shadow-lg hover:shadow-orange-500/30 disabled:from-gray-800 disabled:to-gray-800 disabled:text-gray-600 disabled:shadow-none disabled:cursor-not-allowed text-sm font-medium transition-all duration-300 hover:scale-[1.02] overflow-hidden"
+                title={scraping ? 'Scraping devam ediyor...' : '🔄 Tam Tarama: Tüm sayfaları baştan sona tarar (yavaş ama kapsamlı). İlk kurulum veya kapsamlı güncelleme için kullanın.'}
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-orange-700 to-amber-700 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                 <Database className={`w-4 h-4 relative z-10 ${scraping ? 'animate-spin' : ''}`} />
-                <span className="relative z-10">{scraping ? 'Yenileniyor...' : 'Tüm İhaleler Yenile'}</span>
+                <span className="relative z-10 whitespace-nowrap">{scraping ? 'Yenileniyor...' : '🔄 Tümünü Tara (Tam)'}</span>
               </button>
               <button
                 onClick={deleteAllTenders}
