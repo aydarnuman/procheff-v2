@@ -154,11 +154,11 @@ export class AILogger {
     isValid: boolean, 
     details?: string
   ): void {
-    const status = isValid ? '✅ ACTIVE' : '❌ INVALID';
+    const status = isValid ? '✅ AKTİF' : '❌ GEÇERSİZ';
     const color = isValid ? this.colors.green : this.colors.red;
     
     console.log(
-      `${this.emojis.key} ${color}API Key Status:${this.colors.reset} ` +
+      `${this.emojis.key} ${color}API Anahtar Durumu:${this.colors.reset} ` +
       `${provider.toUpperCase()} ${status}`
     );
     
@@ -178,10 +178,10 @@ export class AILogger {
     cachedTokens?: number
   ): void {
     const emoji = this.emojis.token;
-    const cached = cachedTokens ? ` (${this.emojis.cache} ${cachedTokens.toLocaleString()} cached)` : '';
+    const cached = cachedTokens ? ` (${this.emojis.cache} ${cachedTokens.toLocaleString()} önbellekli)` : '';
     
     console.log(
-      `${emoji} ${this.colors.cyan}Token Usage:${this.colors.reset} ` +
+      `${emoji} ${this.colors.cyan}Token Kullanımı:${this.colors.reset} ` +
       `${provider.toUpperCase()} - ` +
       `${this.colors.green}↓${inputTokens.toLocaleString()}${this.colors.reset} / ` +
       `${this.colors.yellow}↑${outputTokens.toLocaleString()}${this.colors.reset}` +
@@ -189,7 +189,7 @@ export class AILogger {
     );
     
     if (cost) {
-      console.log(`   ${this.colors.dim}Cost: ₺${cost.toFixed(4)}${this.colors.reset}`);
+      console.log(`   ${this.colors.dim}Maliyet: ₺${cost.toFixed(4)}${this.colors.reset}`);
     }
   }
 
@@ -201,14 +201,14 @@ export class AILogger {
     retryAfter?: number
   ): void {
     const retryText = retryAfter 
-      ? ` Retry after ${retryAfter} seconds` 
+      ? ` ${retryAfter} saniye sonra tekrar deneyin` 
       : '';
     
     console.log(
-      `${this.emojis.limit} ${this.colors.yellow}RATE LIMIT EXCEEDED:${this.colors.reset} ` +
+      `${this.emojis.limit} ${this.colors.yellow}İSTEK LİMİTİ AŞILDI:${this.colors.reset} ` +
       `${provider.toUpperCase()}${retryText}`
     );
-    console.log(`   ${this.colors.dim}💡 Tip: Consider reducing request frequency or upgrading tier${this.colors.reset}`);
+    console.log(`   ${this.colors.dim}💡 İpucu: İstek sıklığını azaltın veya planınızı yükseltin${this.colors.reset}`);
   }
 
   /**
@@ -220,15 +220,15 @@ export class AILogger {
     resetTime?: string
   ): void {
     console.log(
-      `${this.emojis.error} ${this.colors.red}${this.colors.bright}QUOTA EXCEEDED:${this.colors.reset} ` +
+      `${this.emojis.error} ${this.colors.red}${this.colors.bright}KOTA AŞILDI:${this.colors.reset} ` +
       `${provider.toUpperCase()} - ${limit}`
     );
     
     if (resetTime) {
-      console.log(`   ${this.colors.dim}Resets at: ${resetTime}${this.colors.reset}`);
+      console.log(`   ${this.colors.dim}Sıfırlanma zamanı: ${resetTime}${this.colors.reset}`);
     }
     
-    console.log(`   ${this.colors.dim}💡 Tip: Wait for quota reset or upgrade your plan${this.colors.reset}`);
+    console.log(`   ${this.colors.dim}💡 İpucu: Kota sıfırlanmasını bekleyin veya planınızı yükseltin${this.colors.reset}`);
   }
 
   /**
@@ -241,7 +241,7 @@ export class AILogger {
     suggestion?: string
   ): void {
     console.log(
-      `${this.emojis.error} ${this.colors.red}API ERROR:${this.colors.reset} ` +
+      `${this.emojis.error} ${this.colors.red}API HATASI:${this.colors.reset} ` +
       `${provider.toUpperCase()} [${errorCode}] ${message}`
     );
     
@@ -263,9 +263,9 @@ export class AILogger {
     const progress = '█'.repeat(Math.floor(percentage / 10)) + '░'.repeat(10 - Math.floor(percentage / 10));
     
     console.log(
-      `${this.emojis.info} ${this.colors.cyan}Scraper Progress:${this.colors.reset} ` +
-      `${source.toUpperCase()} - Page ${currentPage}/${totalPages} ` +
-      `[${progress}] ${percentage}% - ${this.colors.green}${newTenders} new${this.colors.reset}`
+      `${this.emojis.info} ${this.colors.cyan}Scraper İlerlemesi:${this.colors.reset} ` +
+      `${source.toUpperCase()} - Sayfa ${currentPage}/${totalPages} ` +
+      `[${progress}] %${percentage} - ${this.colors.green}${newTenders} yeni${this.colors.reset}`
     );
   }
 
@@ -279,19 +279,22 @@ export class AILogger {
   ): void {
     let emoji = this.emojis.info;
     let color = this.colors.cyan;
+    let statusText = 'başladı';
     
     if (status === 'completed') {
       emoji = this.emojis.success;
       color = this.colors.green;
+      statusText = 'tamamlandı';
     } else if (status === 'failed') {
       emoji = this.emojis.error;
       color = this.colors.red;
+      statusText = 'başarısız';
     }
     
     const durationText = duration ? ` (${(duration / 1000).toFixed(2)}s)` : '';
     
     console.log(
-      `${emoji} ${color}Analysis ${status}:${this.colors.reset} ` +
+      `${emoji} ${color}Analiz ${statusText}:${this.colors.reset} ` +
       `${stage}${durationText}`
     );
   }
