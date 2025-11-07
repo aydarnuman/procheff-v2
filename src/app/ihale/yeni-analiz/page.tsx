@@ -1967,26 +1967,8 @@ function PageInner() {
         </motion.div>
       )}
 
-      {currentStep === "processing" && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -20 }}
-          className="text-center"
-        >
-          <div className="max-w-md mx-auto">
-            <Loader2 className="w-16 h-16 text-accent-400 animate-spin mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-surface-primary mb-2">
-              Dosya İşleniyor...
-            </h3>
-            <p className="text-surface-secondary">
-              {uploadedFilesRef.current.length > 0
-                ? `${uploadedFilesRef.current.length} dosya metne dönüştürülüyor`
-                : "Dosyalar işleniyor..."}
-            </p>
-          </div>
-        </motion.div>
-      )}
+      {/* ✅ FIX: "processing" step kartı KALDIRILDI - Queue kartı zaten var! */}
+      {/* currentStep === "processing" kartı gereksiz çünkü artık queue sistemi kullanıyoruz */}
 
       {currentStep === "view" && (
         <>
