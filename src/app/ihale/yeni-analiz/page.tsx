@@ -837,7 +837,8 @@ function PageInner() {
             type: "error" 
           });
           setRetryCount(0); // Reset retry count
-          setCurrentStep("view");
+          // ✅ FIX: Adım değişikliğini KALDIRDIK - processing kartı açık kalsın
+          // setCurrentStep("view"); // ← Bu satırı kaldırdık!
           return;
         }
       }
@@ -901,7 +902,8 @@ function PageInner() {
         progressPercentage: 0
       });
       
-      setCurrentStep("view");
+      // ✅ FIX: Adım değişikliğini KALDIRDIK - processing kartı açık kalsın
+      // setCurrentStep("view"); // ← Bu satırı kaldırdık!
       
       // ❌ Hata durumunda progress'i sıfırla
       setAnalysisProgress(0);
