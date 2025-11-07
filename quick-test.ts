@@ -16,7 +16,12 @@ async function quickTest() {
            COUNT(deadline_date) as with_deadline
     FROM ihale_listings 
     WHERE source = 'ihalebul'
-  `).get();
+  `).get() as {
+    total: number;
+    with_city: number;
+    with_reg: number;
+    with_deadline: number;
+  };
   
   console.log('📊 Current database state:');
   console.log('  Total ihalebul records:', existing.total);

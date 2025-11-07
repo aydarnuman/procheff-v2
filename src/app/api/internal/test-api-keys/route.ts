@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
+import { AILogger } from "@/lib/utils/ai-logger";
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
+    // Parse request body
+    const body = await request.json();
+    const { provider } = body as { provider?: 'claude' | 'gemini' | 'all' };
+
     // Sadece development ortamında çalışsın
     if (process.env.NODE_ENV !== "development") {
       return NextResponse.json(
@@ -10,6 +15,14 @@ export async function POST() {
       );
     }
 
+    // Provider-specific test
+    if (provider === 'claude') {
+      return await testClaudeAPI();
+    } else if (provider === 'gemini') {
+      return await testGeminiAPI();
+    }
+
+    // Test all providers (legacy behavior)
     const results = {
       anthropic: {
         valid: false,
@@ -156,5 +169,151 @@ export async function POST() {
       { error: "Internal server error" },
       { status: 500 }
     );
+  }
+}
+
+/**
+ * Test Claude API Key
+ */
+async function testClaudeAPI() {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  
+  if (!apiKey || apiKey.trim() === "") {
+    AILogger.error("Claude API key not found in environment", { provider: 'claude' });
+    return NextResponse.json({
+      success: false,
+      error: "API key not configured",
+    });
+  }
+
+  try {
+    AILogger.info("Testing Claude API key...", { provider: 'claude' });
+    
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: process.env.DEFAULT_AI_MODEL || "claude-sonnet-4-20250514",
+        max_tokens: 10,
+        messages: [{ role: "user", content: "Hi" }],
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      AILogger.apiKeyStatus('claude', true, `Model: ${process.env.DEFAULT_AI_MODEL || "claude-sonnet-4-20250514"}`);
+      
+      return NextResponse.json({
+        success: true,
+        model: process.env.DEFAULT_AI_MODEL || "claude-sonnet-4-20250514",
+        usage: data.usage,
+      });
+    } else {
+      const errorText = await response.text();
+      let errorMessage = `HTTP ${response.status}`;
+      
+      try {
+        const errorData = JSON.parse(errorText);
+        errorMessage = errorData.error?.message || errorMessage;
+      } catch {
+        errorMessage = errorText;
+      }
+
+      AILogger.apiKeyStatus('claude', false, errorMessage);
+      
+      return NextResponse.json({
+        success: false,
+        error: errorMessage,
+      });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    AILogger.apiError('claude', 'NETWORK_ERROR', message);
+    
+    return NextResponse.json({
+      success: false,
+      error: `Network error: ${message}`,
+    });
+  }
+}
+
+/**
+ * Test Gemini API Key
+ */
+async function testGeminiAPI() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  
+  if (!apiKey || apiKey.trim() === "") {
+    AILogger.error("Gemini API key not found in environment", { provider: 'gemini' });
+    return NextResponse.json({
+      success: false,
+      error: "API key not configured",
+    });
+  }
+
+  try {
+    AILogger.info("Testing Gemini API key...", { provider: 'gemini' });
+    
+    const model = process.env.GEMINI_MODEL || "gemini-2.0-flash-exp";
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: "Hi"
+                }
+              ]
+            }
+          ]
+        }),
+      }
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      AILogger.apiKeyStatus('gemini', true, `Model: ${model}`);
+      
+      return NextResponse.json({
+        success: true,
+        model: model,
+        usage: data.usageMetadata,
+      });
+    } else {
+      const errorText = await response.text();
+      let errorMessage = `HTTP ${response.status}`;
+      
+      try {
+        const errorData = JSON.parse(errorText);
+        errorMessage = errorData.error?.message || errorMessage;
+      } catch {
+        errorMessage = errorText;
+      }
+
+      AILogger.apiKeyStatus('gemini', false, errorMessage);
+      
+      return NextResponse.json({
+        success: false,
+        error: errorMessage,
+      });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    AILogger.apiError('gemini', 'NETWORK_ERROR', message);
+    
+    return NextResponse.json({
+      success: false,
+      error: `Network error: ${message}`,
+    });
   }
 }

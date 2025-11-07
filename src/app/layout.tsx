@@ -6,6 +6,7 @@ import { CacheProvider } from "@/components/providers/cache-provider";
 import { ErrorSuppressor } from "@/components/providers/error-suppressor";
 import { Sidebar } from "@/components/nav/Sidebar";
 import { Topbar } from "@/components/nav/Topbar";
+import { Toaster } from "sonner";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -34,6 +35,13 @@ export default function RootLayout({
         <ErrorSuppressor />
         <CacheProvider>
           <ThemeProvider>
+            <Toaster 
+              position="top-right" 
+              expand={true}
+              richColors 
+              closeButton
+              duration={5000}
+            />
             <div className="flex h-screen overflow-hidden">
               {/* Sidebar */}
               <Sidebar />
