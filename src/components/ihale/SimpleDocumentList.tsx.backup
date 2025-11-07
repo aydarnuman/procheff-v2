@@ -1,6 +1,5 @@
 'use client';
 
-import React from 'react';
 import { FileProcessingStatus, CSVFileStatus } from '@/lib/stores/ihale-store';
 import { BelgeTuru, BELGE_TURU_LABELS } from '@/types/ai';
 import { FileText, Trash2, CheckCircle, AlertCircle, Loader2, Upload, FileImage, FileCode } from 'lucide-react';
@@ -27,7 +26,6 @@ export function SimpleDocumentList({
   onCSVRemove,
   onCSVProcess
 }: SimpleDocumentListProps) {
-  const [isDragging, setIsDragging] = React.useState(false);
 
   const handleFileInput = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
@@ -43,37 +41,6 @@ export function SimpleDocumentList({
       onCSVSelect(files);
     }
     event.target.value = '';
-  };
-
-  // Drag & Drop handlers
-  const handleDragEnter = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.currentTarget === e.target) {
-      setIsDragging(false);
-    }
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
-      onFileSelect(files);
-    }
   };
 
   const getStatusColor = (status: string) => {
@@ -215,56 +182,17 @@ export function SimpleDocumentList({
         {/* File List */}
         <div className="space-y-2">
           {fileStatuses.length === 0 ? (
-            <div 
-              className={`
-                text-center py-20 px-6 rounded-xl border-2 border-dashed transition-all duration-300
-                ${isDragging 
-                  ? 'border-blue-500 bg-blue-500/10 scale-[1.02]' 
-                  : 'border-slate-600 hover:border-blue-500/50 hover:bg-slate-800/30'
-                }
-              `}
-              onDragEnter={handleDragEnter}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-            >
-              <motion.div
-                initial={{ scale: 1 }}
-                animate={{ scale: isDragging ? 1.1 : 1 }}
-                transition={{ duration: 0.2 }}
-              >
-                <div className="relative inline-block mb-6">
-                  <div className={`absolute inset-0 blur-2xl rounded-full transition-all ${isDragging ? 'bg-blue-500/40' : 'bg-blue-500/20'}`}></div>
-                  <FileText className={`relative w-20 h-20 mx-auto transition-colors ${isDragging ? 'text-blue-400' : 'text-blue-400/60'}`} />
-                </div>
-              </motion.div>
-              
-              <h3 className="text-xl font-semibold text-white mb-2">
-                {isDragging ? '📂 Dosyaları buraya bırakın' : 'Henüz dosya eklenmedi'}
-              </h3>
-              <p className="text-gray-400 mb-8 max-w-md mx-auto">
-                {isDragging 
-                  ? 'Dosyaları serbest bırakarak yüklemeyi başlatın'
-                  : 'Dosyaları sürükleyip bırakın veya yüklemek için butona tıklayın'
-                }
-              </p>
-
-              {/* Dosya Tipi Örnekleri */}
-              <div className="flex items-center justify-center gap-6 mb-8">
-                <div className="flex flex-col items-center gap-2 p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
-                  <FileText className="w-8 h-8 text-red-400" />
-                  <span className="text-xs text-gray-400">PDF</span>
-                </div>
-                <div className="flex flex-col items-center gap-2 p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
-                  <FileCode className="w-8 h-8 text-blue-400" />
-                  <span className="text-xs text-gray-400">Word</span>
-                </div>
-                <div className="flex flex-col items-center gap-2 p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
-                  <FileImage className="w-8 h-8 text-purple-400" />
-                  <span className="text-xs text-gray-400">Resim</span>
-                </div>
+            <div className="text-center py-16 px-6">
+              <div className="relative inline-block mb-6">
+                <div className="absolute inset-0 bg-blue-500/20 blur-2xl rounded-full"></div>
+                <FileText className="relative w-20 h-20 mx-auto text-blue-400/60" />
               </div>
-
+              <h3 className="text-xl font-semibold text-white mb-2">
+                Henüz dosya eklenmedi
+              </h3>
+              <p className="text-gray-400 mb-6 max-w-md mx-auto">
+                PDF, Word veya resim dosyalarını yükleyerek analiz sürecini başlatın
+              </p>
               <div className="flex items-center justify-center gap-4 text-sm text-gray-500">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
