@@ -80,7 +80,59 @@ Auto-save with 2-second debounce to localStorage
 
 ## Recent Updates (v0.2.0 - Production Ready)
 
-### 🎯 Critical Bug Fixes (4-Day Resolution)
+### � UI/UX Enhancements (November 7, 2025)
+- **Toast Notification System**: Sonner integration for user-friendly notifications
+  - Success/error/warning/info variants with rich colors
+  - Non-blocking, positioned top-right
+  - Auto-dismiss after 5 seconds
+  - Replaced all blocking alert() dialogs
+- **AI Logger**: Comprehensive colored terminal logging with emojis
+  - Türkçe mesajlar (API Anahtar Durumu, Token Kullanımı, İSTEK LİMİTİ AŞILDI)
+  - ANSI color-coded output (green=success, red=error, yellow=warning)
+  - Specialized methods: tokenUsage(), rateLimitWarning(), quotaExceeded()
+  - API error categorization with actionable suggestions
+- **API Key Validator**: Real-time API key testing component
+  - Test Claude & Gemini keys independently
+  - Visual status indicators (✅ AKTİF / ❌ GEÇERSİZ)
+  - Toast notifications on test results
+  - Located at `/ai-settings`
+- **Token Cost Warnings**: Threshold-based alert system
+  - 3-tier thresholds: ₺50 (warning), ₺100 (danger), ₺200 (critical)
+  - Color-coded display with gradient borders
+  - Toast notifications on threshold violations (hourly rate limit)
+  - Visual AlertTriangle icon in TokenCostCard
+- **Scraper Progress Notifications**: Real-time scraper feedback
+  - Loading → Progress → Success/Error toast flow
+  - Live page counters ("Sayfa 3/10 tarandı")
+  - Duplicate count display
+  - Delete operation confirmations
+- **Enhanced Error Boundary**: AI-specific error detection
+  - Smart error categorization (401, 429, quota, network, model, 5xx)
+  - Actionable suggestions with links ("/ai-settings", external docs)
+  - User-friendly Türkçe error messages
+  - Quick actions (Tekrar Dene, Ana Sayfaya Dön)
+
+### 🛠️ Developer Experience Improvements (November 7, 2025)
+- **Environment Template**: Comprehensive `.env.example` file
+  - All required/optional variables documented
+  - API key acquisition guide
+  - Deployment notes for Vercel
+- **Quick Start Guide**: New `QUICKSTART.md` for 5-minute setup
+  - Prerequisites & installation steps
+  - Troubleshooting section
+  - Useful npm scripts reference
+- **Portable Scripts**: Dynamic path detection in cleanup-servers.sh
+  - No hardcoded paths (works on any machine)
+  - Uses `$BASH_SOURCE` for reliability
+- **New npm Scripts**:
+  - `npm run backup:db` - Database backup shortcut
+  - `npm run cleanup:servers` - Zombie server cleanup
+- **VS Code Tasks**: New task runner integrations
+  - 💾 Backup Database task
+  - 🧹 Cleanup Zombie Servers task
+  - Quick access from Command Palette
+
+### �🎯 Critical Bug Fixes (4-Day Resolution)
 - **İhalebul Scraper Fixed**: Resolved missing fields issue (City, Deadline, Registration Number)
   - City: 98%+ extraction success with 3-method fallback (HTML regex → icon div → metadata)
   - Deadline: Regex extraction from "2.1. Tarih ve Saati" field (87.8% success)

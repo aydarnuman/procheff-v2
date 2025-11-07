@@ -470,6 +470,250 @@ export const useMenuStore = create<MenuStore>()(
 
 ---
 
+## 🎨 UI/UX & Logging System (November 7, 2025)
+
+### Toast Notification System
+**Library**: Sonner (v2.0.7)
+**Location**: `src/app/layout.tsx` (Toaster component)
+
+**Configuration**:
+```tsx
+<Toaster 
+  position="top-right" 
+  duration={5000} 
+  richColors 
+/>
+```
+
+**Usage Patterns**:
+```typescript
+import { toast } from 'sonner';
+
+toast.success('İşlem başarılı!');
+toast.error('Hata oluştu!');
+toast.warning('Dikkat: Token limiti yaklaşıyor');
+toast.info('Yeni ihaleler bulundu');
+```
+
+**Replaced Components**:
+- ❌ `alert()` dialogs → ✅ `toast()` notifications
+- ❌ Blocking confirmations → ✅ Non-blocking toasts
+- Example: `src/app/ihale-robotu/page.tsx` - All scraper operations use toasts
+
+### AILogger Utility
+**Location**: `src/lib/utils/ai-logger.ts` (299 lines)
+
+**Purpose**: Unified, colored, Türkçe terminal logging for AI operations
+
+**Key Methods**:
+```typescript
+// Temel loglar
+AILogger.info(message, { provider, operation, metadata });
+AILogger.success(message);
+AILogger.warning(message);
+AILogger.error(message);
+AILogger.debug(message); // Sadece development
+
+// Özel loglar
+AILogger.apiKeyStatus('claude', true, 'API key geçerli');
+AILogger.tokenUsage('gemini', 1234, 567, 0.05, 89); // önbellekli token dahil
+AILogger.rateLimitWarning('claude', 60); // 60 saniye sonra tekrar dene
+AILogger.quotaExceeded('gemini', '1500 req/day', '02:00');
+AILogger.apiError('claude', 401, 'Invalid API key', 'API anahtarını kontrol edin');
+AILogger.scraperProgress('ihalebul', 3, 10, 15); // Sayfa 3/10, 15 yeni
+AILogger.analysisStage('Data Extraction', 'tamamlandı', 2500); // 2.5s
+```
+
+**Output Examples**:
+```
+🔑 API Anahtar Durumu: CLAUDE ✅ AKTİF
+💰 Token Kullanımı: GEMINI - ↓1,234 / ↑567 (📦 89 önbellekli)
+   Maliyet: ₺0.0543
+⏱️ İSTEK LİMİTİ AŞILDI: CLAUDE 60 saniye sonra tekrar deneyin
+   💡 İpucu: İstek sıklığını azaltın veya planınızı yükseltin
+```
+
+**Integration Points**:
+- `src/lib/ai/claude-provider.ts` - 62 console.log → AILogger calls
+- `src/lib/ai/gemini-extraction-provider.ts` - Full integration
+- `src/app/api/internal/test-api-keys/route.ts` - API key testing
+
+### API Key Validator Component
+**Location**: `src/components/ai/APIKeyValidator.tsx` (240 lines)
+**Page**: `/ai-settings`
+
+**Features**:
+- Real-time Claude & Gemini API key testing
+- Visual status badges (✅ AKTİF / ❌ GEÇERSİZ / ⏳ Test ediliyor)
+- Toast notifications on test results
+- Gradient card design (purple for Claude, emerald for Gemini)
+
+**API Endpoint**: `/api/internal/test-api-keys`
+- Provider-specific testing: `testClaudeAPI()`, `testGeminiAPI()`
+- Returns: success status, model info, usage metadata, error messages
+
+### Token Cost Warning System
+**Location**: `src/components/analytics/TokenCostCard.tsx`
+
+**Thresholds**:
+```typescript
+const thresholds = {
+  warning: 50,   // ₺50  - Sarı
+  danger: 100,   // ₺100 - Turuncu
+  critical: 200  // ₺200 - Kırmızı
+};
+```
+
+**Features**:
+- useEffect hook for real-time monitoring
+- Color-coded display with gradient borders
+- Toast notifications (hourly rate limit to prevent spam)
+- Visual AlertTriangle icon
+- Inline warning messages
+
+**Example**:
+```tsx
+{totalCost >= 200 && (
+  <toast.warning>
+    💰 Kritik: Aylık token maliyeti ₺200'ü aştı!
+  </toast.warning>
+)}
+```
+
+### Enhanced Error Boundary
+**Location**: `src/app/error.tsx`
+
+**Smart Error Detection**:
+```typescript
+function getErrorSuggestions(error: Error): ErrorSuggestion[] {
+  // API Key errors (401)
+  // Rate limit errors (429)
+  // Quota errors (quota exceeded)
+  // Network errors (fetch, connection)
+  // Invalid model errors
+  // Server errors (500, 502, 503)
+}
+```
+
+**UI Components**:
+- Error header with AlertTriangle icon
+- Actionable suggestion cards
+- Quick action buttons (Tekrar Dene, Ana Sayfaya Dön)
+- Internal/external links (e.g., /ai-settings, Anthropic pricing)
+- Error ID display for debugging
+
+**Example Suggestion**:
+```tsx
+{
+  title: '🔑 API Anahtarı Sorunu',
+  description: 'Claude veya Gemini API anahtarınız geçersiz',
+  action: {
+    label: 'API Ayarlarını Kontrol Et',
+    href: '/ai-settings'
+  }
+}
+```
+
+### Scraper Progress Notifications
+**Location**: `src/app/ihale-robotu/page.tsx`
+
+**Toast Flow**:
+```typescript
+// 1. Start
+toast.loading('İhaleler taranıyor...');
+
+// 2. Progress (live updates)
+toast.info(`📊 Sayfa ${currentPage}/${totalPages} - ${newCount} yeni ihale`);
+
+// 3. Completion
+toast.success(`✅ ${totalNew} yeni ihale eklendi!`);
+
+// 4. Error
+toast.error('Scraping hatası!');
+```
+
+**Features**:
+- Real-time page counters
+- Duplicate count display
+- Delete operation confirmations
+- Non-blocking feedback
+
+---
+
+## 🛠️ Developer Workflows & Scripts
+
+### Quick Start
+```bash
+# Hızlı kurulum (5 dakika)
+cp .env.example .env.local  # Template'i kopyala
+nano .env.local             # API keylerini ekle
+npm install                 # Bağımlılıkları yükle
+npm run dev                 # Sunucuyu başlat
+```
+
+See `QUICKSTART.md` for detailed guide.
+
+### Environment Variables
+**Template**: `.env.example` (comprehensive)
+- Required: ANTHROPIC_API_KEY, IHALEBUL credentials
+- Optional: GOOGLE_API_KEY, SCRAPER_CRON_SECRET, GCS_BACKUP_BUCKET
+- Deployment notes for Vercel
+
+### npm Scripts
+```bash
+# Geliştirme
+npm run dev          # Development server
+npm run build        # Production build
+npm run start        # Production server
+
+# Temizleme & Bakım
+npm run clean        # .next, cache temizle
+npm run fresh        # Tam temizlik + install + dev
+npm run cleanup:servers  # Zombie server'ları temizle
+npm run backup:db    # Database backup (GCS + local)
+
+# Test
+npm run test:ai      # AI extraction test
+npm run test:smoke   # Smoke test
+```
+
+### VS Code Tasks
+**Location**: `.vscode/tasks.json`
+
+**Available Tasks**:
+1. 🧹 Clean Restart - `./scripts/clean-restart.sh`
+2. 🚀 Start Dev Server - `npm run dev`
+3. 🛑 Kill All Servers - Kill node processes
+4. 📦 Build Production - `npm run build`
+5. 💾 Backup Database - `npm run backup:db` (NEW)
+6. 🧹 Cleanup Zombie Servers - `npm run cleanup:servers` (NEW)
+
+**Usage**: Cmd+Shift+P → "Tasks: Run Task"
+
+### Portable Scripts
+**Improvement**: Dynamic path detection (November 7, 2025)
+
+**Before**:
+```bash
+# ❌ Hardcoded path
+rm -rf /Users/numanaydar/Desktop/procheff-v2/.next
+```
+
+**After**:
+```bash
+# ✅ Dynamic detection
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
+rm -rf "$PROJECT_DIR/.next"
+```
+
+**Benefits**:
+- Works on any machine
+- No manual path edits
+- Reliable across different setups
+
+---
+
 ## 🔄 Recent Migration Context
 
 **Date**: January 2025
@@ -523,11 +767,14 @@ export const useMenuStore = create<MenuStore>()(
 ## 📚 Reference Documentation
 
 - **Project README**: `/README.md` - Feature overview, setup, tech stack
+- **Quick Start Guide**: `/QUICKSTART.md` - 5-minute setup guide (NEW)
+- **Environment Template**: `/.env.example` - Configuration template (NEW)
 - **Scraper README**: `/src/lib/ihale-scraper/README.md` - Detailed scraper architecture
 - **Migration Summary**: `/MIGRATION-SUMMARY.md` - Supabase → SQLite context
 - **Cron Setup**: `/CRON_SETUP.md` - Scheduled job configuration
 
 ---
 
-**Last Updated**: November 7, 2025
-**Version**: 0.2.0 (Production Ready)
+**Last Updated**: November 7, 2025 21:30 TST
+**Version**: 0.2.1 (UI/UX Enhanced)
+**Major Changes**: Toast notifications, AI logging, API key validator, enhanced error handling, developer workflow improvements
