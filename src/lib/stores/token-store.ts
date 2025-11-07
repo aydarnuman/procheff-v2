@@ -10,11 +10,13 @@ import { calculateTokenCost, formatTokenCost, formatTokenCount } from '@/lib/uti
 export interface TokenUsageEntry {
   id: string;
   timestamp: string;
-  model: 'claude' | 'gemini';
-  operation: 'scraper-categorization' | 'tender-analysis' | 'recipe-suggestion' | 'price-detection' | 'other';
+  provider: 'claude' | 'gemini';
+  model: string; // Artık specific model isimleri: claude-sonnet-4-20250514, gemini-2.0-flash-exp
+  operation: 'scraper-categorization' | 'tender-analysis' | 'document-extraction' | 'recipe-suggestion' | 'price-detection' | 'other';
   inputTokens: number;
   outputTokens: number;
-  cachedTokens?: number;
+  cacheCreationTokens?: number; // Claude prompt caching - ilk kez oluşturma
+  cacheReadTokens?: number;     // Claude prompt caching - cache'ten okuma (90% indirim)
   costTRY: number;
   metadata?: {
     tenderId?: string;
@@ -66,14 +68,20 @@ export const useTokenStore = create<TokenStore>()(
         const id = `token_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const timestamp = new Date().toISOString();
         
-        // Calculate cost
-        const inputCost = calculateTokenCost(entry.inputTokens, entry.model, 'input');
-        const outputCost = calculateTokenCost(entry.outputTokens, entry.model, 'output');
-        const cachedCost = entry.cachedTokens && entry.model === 'claude'
-          ? calculateTokenCost(entry.cachedTokens, entry.model, 'cached')
+        // Calculate cost - provider'ı model'dan çıkar
+        const provider = entry.provider;
+        const inputCost = calculateTokenCost(entry.inputTokens, provider, 'input');
+        const outputCost = calculateTokenCost(entry.outputTokens, provider, 'output');
+        
+        // Claude prompt caching costs
+        const cacheCreationCost = entry.cacheCreationTokens && provider === 'claude'
+          ? calculateTokenCost(entry.cacheCreationTokens, provider, 'input') // Cache creation = normal input cost
+          : 0;
+        const cacheReadCost = entry.cacheReadTokens && provider === 'claude'
+          ? calculateTokenCost(entry.cacheReadTokens, provider, 'cached') // 90% discount
           : 0;
         
-        const costTRY = inputCost + outputCost + cachedCost;
+        const costTRY = inputCost + outputCost + cacheCreationCost + cacheReadCost;
 
         const newEntry: TokenUsageEntry = {
           ...entry,
@@ -133,14 +141,19 @@ export const useTokenStore = create<TokenStore>()(
 
 // Helper function to calculate stats
 function calculateStats(entries: TokenUsageEntry[]): MonthlyStats {
-  const claudeEntries = entries.filter((e) => e.model === 'claude');
-  const geminiEntries = entries.filter((e) => e.model === 'gemini');
+  const claudeEntries = entries.filter((e) => e.provider === 'claude');
+  const geminiEntries = entries.filter((e) => e.provider === 'gemini');
 
   const claudeStats = {
-    totalTokens: claudeEntries.reduce((sum, e) => sum + e.inputTokens + e.outputTokens + (e.cachedTokens || 0), 0),
+    totalTokens: claudeEntries.reduce((sum, e) => {
+      const cached = (e.cacheCreationTokens || 0) + (e.cacheReadTokens || 0);
+      return sum + e.inputTokens + e.outputTokens + cached;
+    }, 0),
     inputTokens: claudeEntries.reduce((sum, e) => sum + e.inputTokens, 0),
     outputTokens: claudeEntries.reduce((sum, e) => sum + e.outputTokens, 0),
-    cachedTokens: claudeEntries.reduce((sum, e) => sum + (e.cachedTokens || 0), 0),
+    cachedTokens: claudeEntries.reduce((sum, e) => {
+      return sum + (e.cacheCreationTokens || 0) + (e.cacheReadTokens || 0);
+    }, 0),
     costTRY: claudeEntries.reduce((sum, e) => sum + e.costTRY, 0),
     requestCount: claudeEntries.length,
   };

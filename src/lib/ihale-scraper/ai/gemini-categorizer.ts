@@ -35,6 +35,24 @@ export class GeminiCategorizer {
       const response = result.response;
       const text = response.text();
 
+      // 📊 TOKEN TRACKING - Store usage metadata
+      if (response.usageMetadata) {
+        const { promptTokenCount, candidatesTokenCount } = response.usageMetadata;
+
+        // Import store dinamik olarak (server-side için)
+        if (typeof window !== 'undefined') {
+          import('@/lib/stores/token-store').then(({ useTokenStore }) => {
+            useTokenStore.getState().addUsage({
+              provider: 'gemini',
+              model: process.env.GEMINI_MODEL || 'gemini-2.0-flash-exp',
+              operation: 'scraper-categorization',
+              inputTokens: promptTokenCount,
+              outputTokens: candidatesTokenCount,
+            });
+          });
+        }
+      }
+
       // JSON parse et
       let cleaned = text.trim();
       if (cleaned.startsWith('```json')) {

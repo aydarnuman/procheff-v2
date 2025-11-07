@@ -10,7 +10,13 @@ export async function POST(request: NextRequest) {
     let url, maxPages = 10;
     
     const searchParams = request.nextUrl.searchParams;
-    const source = searchParams.get('source');
+    const sourceParam = searchParams.get('source');
+    
+    // Type guard for source parameter
+    const source: 'new' | 'full' | undefined = 
+      sourceParam === 'new' ? 'new' : 
+      sourceParam === 'full' ? 'full' : 
+      undefined;
     
     if (source) {
       // Query parameter mode - no body parsing needed
@@ -40,7 +46,7 @@ export async function POST(request: NextRequest) {
     });
 
     // ⚡ Run in background (no await!)
-    orchestrator.runAll(false, source || undefined).then(result => {
+    orchestrator.runAll(false, source).then(result => {
       console.log('\n✅ SCRAPING TAMAMLANDI:', {
         success: result.success,
         totalNew: result.totalNew,

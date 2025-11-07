@@ -41,6 +41,24 @@ export class ClaudeCategorizer {
         ],
       });
 
+      // 📊 TOKEN TRACKING - Store usage metadata
+      if (message.usage) {
+        const { input_tokens, output_tokens } = message.usage;
+
+        // Import store dinamik olarak (server-side için)
+        if (typeof window !== 'undefined') {
+          import('@/lib/stores/token-store').then(({ useTokenStore }) => {
+            useTokenStore.getState().addUsage({
+              provider: 'claude',
+              model: this.model,
+              operation: 'scraper-categorization',
+              inputTokens: input_tokens,
+              outputTokens: output_tokens,
+            });
+          });
+        }
+      }
+
       const textContent = message.content[0];
       if (textContent.type !== 'text') {
         throw new Error('Unexpected response type from Claude');

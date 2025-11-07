@@ -118,6 +118,7 @@ export async function POST(req: NextRequest) {
     console.log("Validation süzgeci çalıştırılıyor...");
     const validationResult = DataValidator.validate({
       ...extractedData,
+      registration_number: null, // BasicExtraction'da yok, null olarak ekle
       personel_sayisi: null, // BasicExtraction'da yok, null olarak ekle
       riskler: [],
       ozel_sartlar: [],

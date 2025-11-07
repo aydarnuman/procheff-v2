@@ -65,6 +65,29 @@ export class GeminiExtractionProvider {
       console.log(`Gemini API response time: ${requestTime}ms`);
       console.log("Response length:", output.length);
 
+      // 📊 TOKEN TRACKING - Store usage metadata
+      if (response.usageMetadata) {
+        const { promptTokenCount, candidatesTokenCount } = response.usageMetadata;
+
+        // Import store dinamik olarak (server-side için)
+        if (typeof window !== 'undefined') {
+          import('@/lib/stores/token-store').then(({ useTokenStore }) => {
+            useTokenStore.getState().addUsage({
+              provider: 'gemini',
+              model: this.model,
+              operation: 'document-extraction',
+              inputTokens: promptTokenCount,
+              outputTokens: candidatesTokenCount,
+            });
+
+            console.log('💰 Token Usage Logged:', {
+              input: promptTokenCount,
+              output: candidatesTokenCount,
+            });
+          });
+        }
+      }
+
       // Parse JSON response
       const extractedData = this.parseResponse(output);
 

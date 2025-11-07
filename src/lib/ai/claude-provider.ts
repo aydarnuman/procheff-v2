@@ -297,6 +297,35 @@ Mevcut durum:
       const result = await response.json();
       console.log("Claude API response received");
 
+      // 📊 TOKEN TRACKING - Store usage metadata
+      if (result.usage) {
+        const { input_tokens, output_tokens } = result.usage;
+        const cache_creation_tokens = result.usage.cache_creation_input_tokens || 0;
+        const cache_read_tokens = result.usage.cache_read_input_tokens || 0;
+
+        // Import store dinamik olarak (server-side için)
+        if (typeof window !== 'undefined') {
+          import('@/lib/stores/token-store').then(({ useTokenStore }) => {
+            useTokenStore.getState().addUsage({
+              provider: 'claude',
+              model: this.config.model,
+              operation: 'document-extraction',
+              inputTokens: input_tokens,
+              outputTokens: output_tokens,
+              cacheCreationTokens: cache_creation_tokens,
+              cacheReadTokens: cache_read_tokens,
+            });
+
+            console.log('💰 Token Usage Logged:', {
+              input: input_tokens,
+              output: output_tokens,
+              cache_creation: cache_creation_tokens,
+              cache_read: cache_read_tokens,
+            });
+          });
+        }
+      }
+
       if (
         !result.content ||
         !Array.isArray(result.content) ||
