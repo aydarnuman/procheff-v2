@@ -1,6 +1,7 @@
 // ============================================================================
 // CRON: SCRAPE NEW TENDERS
-// Her gün saat 10:00'da çalışır - yeni ihaleleri toplar
+// Günde 3 kez çalışır - sadece yeni ihaleleri toplar (mode=new)
+// Schedule: 09:15, 13:00, 18:00
 // ============================================================================
 
 import { NextResponse } from 'next/server';
@@ -18,50 +19,61 @@ export async function GET(request: Request) {
       );
     }
 
-    console.log('🚀 CRON: İhale scraping başlatıldı (BACKGROUND MODE)...');
-    console.log('⏰ Zamanlama: Her gün 10:00');
+    const now = new Date();
+    const hour = now.getHours();
+    
+    console.log('🚀 CRON: İhale scraping başlatıldı (SMART MODE)...');
+    console.log(`⏰ Çalıştırma saati: ${hour}:${now.getMinutes()}`);
+    console.log('📊 Mode: NEW (sadece yeni sayfalar, duplicate\'te dur)');
 
     // 🔧 ÖNCE DATABASE'İ INIT ET
     getDatabase();
-    console.log('📦 Database initialized before scraping');
+    console.log('📦 Database initialized');
 
     const orchestrator = new ScraperOrchestrator();
 
     // 🚀 HEMEN CEVAP DÖN - Vercel timeout'tan kaçın!
     const response = NextResponse.json({
       success: true,
-      message: '✅ Scraping arka planda başlatıldı',
-      timestamp: new Date().toISOString(),
+      message: '✅ Smart scraping arka planda başlatıldı',
+      mode: 'new',
+      timestamp: now.toISOString(),
     });
 
     // ⚡ ARKA PLANDA ÇALIŞTIR (await yok!)
+    // Mode=new parametresi ile - duplicate sayfa gelince dur
     orchestrator.runSingle('ihalebul', false).then(async (result) => {
-      console.log(`✅ Scraping tamamlandı`);
-      console.log(`   📊 Toplam: ${result.totalScraped}`);
-      console.log(`   ✅ Yeni: ${result.newTenders || 0}`);
+      console.log(`\n✅ Scraping tamamlandı (${hour}:${now.getMinutes()})`);
+      console.log(`   📊 Toplam taranan: ${result.totalScraped}`);
+      console.log(`   ✨ Yeni eklenen: ${result.newTenders || 0}`);
+      console.log(`   🔄 Duplicate: ${result.totalScraped - (result.newTenders || 0)}`);
       console.log(`   ❌ Hata: ${result.errors.length}`);
 
-      // Quick Fix'i de arka planda çalıştır
-      console.log('\n⚡ Quick Fix başlatılıyor (eksik veriler için)...');
-      try {
-        const baseUrl = process.env.NEXTAUTH_URL || process.env.VERCEL_URL
-          ? `https://${process.env.VERCEL_URL}`
-          : 'http://localhost:3000';
+      // Sadece SABAH çalışmasında Quick Fix yap (09:15)
+      if (hour === 9) {
+        console.log('\n⚡ Quick Fix başlatılıyor (sabah rutin bakımı)...');
+        try {
+          const baseUrl = process.env.NEXTAUTH_URL || process.env.VERCEL_URL
+            ? `https://${process.env.VERCEL_URL}`
+            : 'http://localhost:3000';
 
-        const quickFixResponse = await fetch(`${baseUrl}/api/ihale-scraper/quick-fix`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        });
+          const quickFixResponse = await fetch(`${baseUrl}/api/ihale-scraper/quick-fix`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+          });
 
-        const quickFixData = await quickFixResponse.json();
+          const quickFixData = await quickFixResponse.json();
 
-        if (quickFixData.success) {
-          console.log(`✅ Quick Fix tamamlandı: ${quickFixData.fixed} ihale düzeltildi`);
-        } else {
-          console.log(`⚠️ Quick Fix hatası: ${quickFixData.error}`);
+          if (quickFixData.success) {
+            console.log(`✅ Quick Fix tamamlandı: ${quickFixData.fixed} ihale düzeltildi`);
+          } else {
+            console.log(`⚠️ Quick Fix hatası: ${quickFixData.error}`);
+          }
+        } catch (quickFixError: any) {
+          console.warn(`⚠️ Quick Fix çalıştırılamadı: ${quickFixError.message}`);
         }
-      } catch (quickFixError: any) {
-        console.warn(`⚠️ Quick Fix çalıştırılamadı: ${quickFixError.message}`);
+      } else {
+        console.log('ℹ️  Quick Fix atlandı (sadece sabah çalışır)');
       }
     }).catch(error => {
       console.error('❌ Scraping error:', error);
