@@ -198,47 +198,56 @@ export function SimpleDocumentList({
         </div>
       </div>
 
-      {/* Upload Section */}
-      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
-        <div className="flex items-center justify-end gap-3 mb-4">
-          <label className="cursor-pointer" htmlFor="document-file-input">
-            <input
-              id="document-file-input"
-              name="document-files"
-              type="file"
-              multiple
-              accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
-              onChange={handleFileInput}
-              className="hidden"
-              aria-label="PDF, Word veya resim dosyası yükle"
-            />
-            <div className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2 font-medium">
-              <Upload className="w-5 h-5" />
-              Belge Ekle
-            </div>
-          </label>
-
-          {onCSVSelect && (
-            <label className="cursor-pointer" htmlFor="csv-file-input">
+      {/* Upload Section - Premium Card */}
+      <div className="relative group">
+        {/* Background Gradient Glow */}
+        <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-blue-500/20 rounded-2xl blur opacity-30 group-hover:opacity-50 transition-opacity"></div>
+        
+        {/* Main Card */}
+        <div className="relative bg-gradient-to-br from-slate-800/80 via-slate-800/60 to-slate-900/80 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-8 shadow-2xl">
+          {/* Upload Buttons */}
+          <div className="flex items-center justify-end gap-4 mb-6">
+            <label className="cursor-pointer group/btn" htmlFor="document-file-input">
               <input
-                id="csv-file-input"
-                name="csv-files"
+                id="document-file-input"
+                name="document-files"
                 type="file"
                 multiple
-                accept=".csv"
-                onChange={handleCSVInput}
+                accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+                onChange={handleFileInput}
                 className="hidden"
-                aria-label="CSV maliyet dosyası yükle"
+                aria-label="PDF, Word veya resim dosyası yükle"
               />
-              <div className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center gap-2 font-medium">
-                📊 CSV Ekle
+              <div className="relative overflow-hidden px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white rounded-xl transition-all duration-300 flex items-center gap-3 font-semibold shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 hover:scale-105">
+                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 translate-x-[-100%] group-hover/btn:translate-x-[100%] transition-transform duration-700"></div>
+                <Upload className="w-5 h-5 relative z-10" />
+                <span className="relative z-10">Belge Ekle</span>
               </div>
             </label>
-          )}
-        </div>
 
-        {/* File List */}
-        <div className="space-y-2">
+            {onCSVSelect && (
+              <label className="cursor-pointer group/btn" htmlFor="csv-file-input">
+                <input
+                  id="csv-file-input"
+                  name="csv-files"
+                  type="file"
+                  multiple
+                  accept=".csv"
+                  onChange={handleCSVInput}
+                  className="hidden"
+                  aria-label="CSV maliyet dosyası yükle"
+                />
+                <div className="relative overflow-hidden px-6 py-3 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 text-white rounded-xl transition-all duration-300 flex items-center gap-3 font-semibold shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 hover:scale-105">
+                  <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 translate-x-[-100%] group-hover/btn:translate-x-[100%] transition-transform duration-700"></div>
+                  <span className="relative z-10 text-lg">📊</span>
+                  <span className="relative z-10">CSV Ekle</span>
+                </div>
+              </label>
+            )}
+          </div>
+
+          {/* File List */}
+          <div className="space-y-3">
           {fileStatuses.length === 0 ? (
             <div 
               className={`
@@ -497,35 +506,75 @@ export function SimpleDocumentList({
               </div>
             </div>
           ))}
+          </div>
         </div>
       </div>
 
-      {/* Summary */}
+      {/* Summary - Premium Stats Cards */}
       {(fileStatuses.length > 0 || csvFiles.length > 0) && (
         <div className="grid grid-cols-4 gap-4">
-          <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-4">
-            <div className="text-2xl font-bold text-white">
-              {fileStatuses.length + csvFiles.length}
+          {/* Toplam Dosya */}
+          <div className="relative group/stat">
+            <div className="absolute -inset-0.5 bg-gradient-to-br from-slate-600/20 to-slate-700/20 rounded-xl blur opacity-40 group-hover/stat:opacity-60 transition-opacity"></div>
+            <div className="relative bg-gradient-to-br from-slate-800/80 to-slate-900/80 border border-slate-700/50 rounded-xl p-5 backdrop-blur-sm hover:scale-105 transition-transform duration-300">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="p-2 bg-slate-700/50 rounded-lg">
+                  <FileText className="w-5 h-5 text-slate-300" />
+                </div>
+                <div className="text-3xl font-bold text-white">
+                  {fileStatuses.length + csvFiles.length}
+                </div>
+              </div>
+              <div className="text-sm text-gray-400 font-medium">Toplam Dosya</div>
             </div>
-            <div className="text-sm text-gray-400 mt-1">Toplam Dosya</div>
           </div>
-          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
-            <div className="text-2xl font-bold text-yellow-400">
-              {fileStatuses.filter(f => f.status === 'pending').length + csvFiles.filter(c => c.status === 'pending').length}
+
+          {/* Bekliyor */}
+          <div className="relative group/stat">
+            <div className="absolute -inset-0.5 bg-gradient-to-br from-yellow-500/20 to-orange-500/20 rounded-xl blur opacity-40 group-hover/stat:opacity-60 transition-opacity"></div>
+            <div className="relative bg-gradient-to-br from-slate-800/80 to-slate-900/80 border border-yellow-500/30 rounded-xl p-5 backdrop-blur-sm hover:scale-105 transition-transform duration-300">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="p-2 bg-yellow-500/10 rounded-lg">
+                  <span className="text-2xl">⏸</span>
+                </div>
+                <div className="text-3xl font-bold text-yellow-400">
+                  {fileStatuses.filter(f => f.status === 'pending').length + csvFiles.filter(c => c.status === 'pending').length}
+                </div>
+              </div>
+              <div className="text-sm text-gray-400 font-medium">Bekliyor</div>
             </div>
-            <div className="text-sm text-gray-400 mt-1">Bekliyor</div>
           </div>
-          <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
-            <div className="text-2xl font-bold text-blue-400">
-              {fileStatuses.filter(f => f.status === 'processing').length + csvFiles.filter(c => c.status === 'processing').length}
+
+          {/* İşleniyor */}
+          <div className="relative group/stat">
+            <div className="absolute -inset-0.5 bg-gradient-to-br from-blue-500/20 to-purple-500/20 rounded-xl blur opacity-40 group-hover/stat:opacity-60 transition-opacity"></div>
+            <div className="relative bg-gradient-to-br from-slate-800/80 to-slate-900/80 border border-blue-500/30 rounded-xl p-5 backdrop-blur-sm hover:scale-105 transition-transform duration-300">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="p-2 bg-blue-500/10 rounded-lg">
+                  <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
+                </div>
+                <div className="text-3xl font-bold text-blue-400">
+                  {fileStatuses.filter(f => f.status === 'processing').length + csvFiles.filter(c => c.status === 'processing').length}
+                </div>
+              </div>
+              <div className="text-sm text-gray-400 font-medium">İşleniyor</div>
             </div>
-            <div className="text-sm text-gray-400 mt-1">İşleniyor</div>
           </div>
-          <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
-            <div className="text-2xl font-bold text-green-400">
-              {fileStatuses.filter(f => f.status === 'completed').length + csvFiles.filter(c => c.status === 'completed').length}
+
+          {/* Tamamlandı */}
+          <div className="relative group/stat">
+            <div className="absolute -inset-0.5 bg-gradient-to-br from-green-500/20 to-emerald-500/20 rounded-xl blur opacity-40 group-hover/stat:opacity-60 transition-opacity"></div>
+            <div className="relative bg-gradient-to-br from-slate-800/80 to-slate-900/80 border border-green-500/30 rounded-xl p-5 backdrop-blur-sm hover:scale-105 transition-transform duration-300">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="p-2 bg-green-500/10 rounded-lg">
+                  <CheckCircle className="w-5 h-5 text-green-400" />
+                </div>
+                <div className="text-3xl font-bold text-green-400">
+                  {fileStatuses.filter(f => f.status === 'completed').length + csvFiles.filter(c => c.status === 'completed').length}
+                </div>
+              </div>
+              <div className="text-sm text-gray-400 font-medium">Tamamlandı</div>
             </div>
-            <div className="text-sm text-gray-400 mt-1">Tamamlandı</div>
           </div>
         </div>
       )}
