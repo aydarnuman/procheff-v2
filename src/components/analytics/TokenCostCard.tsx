@@ -2,18 +2,70 @@
 
 // ============================================================================
 // TOKEN COST CARD COMPONENT
-// Aylık token kullanımını ve maliyetini gösterir
+// Aylık token kullanımını ve maliyetini gösterir + threshold uyarıları
 // ============================================================================
 
-import { DollarSign, TrendingUp, Zap, Database as DatabaseIcon } from 'lucide-react';
+import { useEffect } from 'react';
+import { DollarSign, TrendingUp, Zap, Database as DatabaseIcon, AlertTriangle } from 'lucide-react';
+import { toast } from 'sonner';
 import { useTokenStore } from '@/lib/stores/token-store';
 import { formatTokenCount, formatTokenCost } from '@/lib/utils/token-cost';
+
+// Cost thresholds (TRY)
+const COST_THRESHOLDS = {
+  WARNING: 50,   // ₺50 - Sarı uyarı
+  DANGER: 100,   // ₺100 - Kırmızı uyarı
+  CRITICAL: 200, // ₺200 - Kritik uyarı
+};
 
 export const TokenCostCard = () => {
   const { getMonthlyStats } = useTokenStore();
   const monthly = getMonthlyStats();
 
   const hasUsage = monthly.total.requestCount > 0;
+  const totalCost = monthly.total.costTRY;
+
+  // Warning level calculation
+  const getWarningLevel = (cost: number): 'safe' | 'warning' | 'danger' | 'critical' => {
+    if (cost >= COST_THRESHOLDS.CRITICAL) return 'critical';
+    if (cost >= COST_THRESHOLDS.DANGER) return 'danger';
+    if (cost >= COST_THRESHOLDS.WARNING) return 'warning';
+    return 'safe';
+  };
+
+  const warningLevel = getWarningLevel(totalCost);
+
+  // Toast notifications for threshold violations
+  useEffect(() => {
+    if (!hasUsage) return;
+
+    const lastWarningKey = 'lastTokenWarning';
+    const lastWarning = localStorage.getItem(lastWarningKey);
+    const now = Date.now();
+
+    // Only show toast once per hour
+    if (lastWarning && now - parseInt(lastWarning) < 3600000) return;
+
+    if (warningLevel === 'critical') {
+      toast.error('🚨 Token Maliyeti Kritik Seviyede!', {
+        description: `Bu ay ₺${totalCost.toFixed(2)} harcandı. Limitiniz aşılıyor!`,
+        duration: 10000,
+      });
+      localStorage.setItem(lastWarningKey, now.toString());
+    } else if (warningLevel === 'danger') {
+      toast.warning('⚠️ Token Maliyeti Yüksek!', {
+        description: `Bu ay ₺${totalCost.toFixed(2)} harcandı. Dikkatli kullanın.`,
+        duration: 7000,
+      });
+      localStorage.setItem(lastWarningKey, now.toString());
+    } else if (warningLevel === 'warning') {
+      toast('💡 Token Maliyeti Artıyor', {
+        description: `Bu ay ₺${totalCost.toFixed(2)} harcandı.`,
+        duration: 5000,
+      });
+      localStorage.setItem(lastWarningKey, now.toString());
+    }
+  }, [hasUsage, warningLevel, totalCost]);
 
   return (
     <div className="bg-gradient-to-r from-purple-900/20 to-blue-900/20 border border-purple-500/30 rounded-xl p-4">
@@ -115,17 +167,53 @@ export const TokenCostCard = () => {
           )}
 
           {/* Total */}
-          <div className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 rounded-lg p-3 border border-purple-500/30">
+          <div className={`rounded-lg p-3 border ${
+            warningLevel === 'critical' ? 'bg-red-900/20 border-red-500/50' :
+            warningLevel === 'danger' ? 'bg-orange-900/20 border-orange-500/50' :
+            warningLevel === 'warning' ? 'bg-yellow-900/20 border-yellow-500/50' :
+            'bg-gradient-to-r from-purple-500/10 to-blue-500/10 border-purple-500/30'
+          }`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
+                {warningLevel !== 'safe' && (
+                  <AlertTriangle className={`w-4 h-4 ${
+                    warningLevel === 'critical' ? 'text-red-400' :
+                    warningLevel === 'danger' ? 'text-orange-400' :
+                    'text-yellow-400'
+                  }`} />
+                )}
                 <DatabaseIcon className="w-4 h-4 text-purple-400" />
                 <span className="text-sm font-semibold text-white">Toplam Maliyet</span>
               </div>
               <div className="text-right">
-                <p className="text-2xl font-bold text-purple-400 font-mono">{formatTokenCost(monthly.total.costTRY)}</p>
+                <p className={`text-2xl font-bold font-mono ${
+                  warningLevel === 'critical' ? 'text-red-400' :
+                  warningLevel === 'danger' ? 'text-orange-400' :
+                  warningLevel === 'warning' ? 'text-yellow-400' :
+                  'text-purple-400'
+                }`}>{formatTokenCost(monthly.total.costTRY)}</p>
                 <p className="text-xs text-gray-500">{formatTokenCount(monthly.total.totalTokens)} token</p>
               </div>
             </div>
+            
+            {/* Warning Message */}
+            {warningLevel !== 'safe' && (
+              <div className={`mt-2 pt-2 border-t ${
+                warningLevel === 'critical' ? 'border-red-500/30' :
+                warningLevel === 'danger' ? 'border-orange-500/30' :
+                'border-yellow-500/30'
+              }`}>
+                <p className={`text-xs ${
+                  warningLevel === 'critical' ? 'text-red-300' :
+                  warningLevel === 'danger' ? 'text-orange-300' :
+                  'text-yellow-300'
+                }`}>
+                  {warningLevel === 'critical' && '🚨 Kritik limit! Kullanımı durdurun.'}
+                  {warningLevel === 'danger' && '⚠️ Yüksek maliyet! Dikkatli kullanın.'}
+                  {warningLevel === 'warning' && '💡 Maliyet artıyor. İzleyin.'}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Cost Comparison */}
