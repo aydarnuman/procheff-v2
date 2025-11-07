@@ -3,6 +3,7 @@
 import { FileProcessingStatus, CSVFileStatus } from '@/lib/stores/ihale-store';
 import { BelgeTuru, BELGE_TURU_LABELS } from '@/types/ai';
 import { FileText, Trash2, CheckCircle, AlertCircle, Loader2, Upload } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface SimpleDocumentListProps {
   fileStatuses: FileProcessingStatus[];
@@ -86,9 +87,36 @@ export function SimpleDocumentList({
         <div className="h-8 w-px bg-gradient-to-b from-transparent via-slate-600 to-transparent"></div>
         <h3 className="text-2xl font-bold text-white tracking-tight">Dosya İşleme (OCR)</h3>
         <div className="flex-1"></div>
-        <p className="text-sm text-gray-400 font-medium">
-          📁 {fileStatuses.length} PDF/DOC {csvFiles.length > 0 && `+ ${csvFiles.length} CSV`} • ✅ {fileStatuses.filter(f => f.status === 'completed').length + csvFiles.filter(c => c.status === 'completed').length} işlendi
-        </p>
+        
+        {/* 🆕 Enhanced Stats with Colors */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 border border-slate-700 rounded-lg">
+            <span className="text-xs text-gray-400">Toplam:</span>
+            <span className="text-sm font-semibold text-white">{fileStatuses.length}</span>
+          </div>
+          {fileStatuses.filter(f => f.status === 'completed').length > 0 && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-green-500/10 border border-green-500/30 rounded-lg">
+              <span className="text-xs text-green-400">✓ İşlendi:</span>
+              <span className="text-sm font-semibold text-green-300">
+                {fileStatuses.filter(f => f.status === 'completed').length}
+              </span>
+            </div>
+          )}
+          {fileStatuses.filter(f => f.status === 'processing').length > 0 && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 border border-blue-500/30 rounded-lg animate-pulse">
+              <span className="text-xs text-blue-400">⏳ İşleniyor:</span>
+              <span className="text-sm font-semibold text-blue-300">
+                {fileStatuses.filter(f => f.status === 'processing').length}
+              </span>
+            </div>
+          )}
+          {csvFiles.length > 0 && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
+              <span className="text-xs text-emerald-400">📊 CSV:</span>
+              <span className="text-sm font-semibold text-emerald-300">{csvFiles.length}</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Upload Section */}
@@ -133,26 +161,48 @@ export function SimpleDocumentList({
         {/* File List */}
         <div className="space-y-2">
           {fileStatuses.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              <FileText className="w-16 h-16 mx-auto mb-4 opacity-50" />
-              <p>Henüz dosya eklenmedi</p>
-              <p className="text-sm mt-2">PDF, Word veya resim dosyalarını yükleyin</p>
+            <div className="text-center py-16 px-6">
+              <div className="relative inline-block mb-6">
+                <div className="absolute inset-0 bg-blue-500/20 blur-2xl rounded-full"></div>
+                <FileText className="relative w-20 h-20 mx-auto text-blue-400/60" />
+              </div>
+              <h3 className="text-xl font-semibold text-white mb-2">
+                Henüz dosya eklenmedi
+              </h3>
+              <p className="text-gray-400 mb-6 max-w-md mx-auto">
+                PDF, Word veya resim dosyalarını yükleyerek analiz sürecini başlatın
+              </p>
+              <div className="flex items-center justify-center gap-4 text-sm text-gray-500">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                  <span>Maksimum 50MB</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                  <span>Çoklu dosya desteği</span>
+                </div>
+              </div>
             </div>
           ) : (
-            fileStatuses.map((file, index) => (
-              <div
-                key={file.fileMetadata.name}
-                className={`flex items-center gap-4 p-4 rounded-lg border transition-all ${getStatusColor(file.status)}`}
-              >
-                {/* Status Icon */}
-                <div className="flex-shrink-0">
-                  {getStatusIcon(file.status)}
-                </div>
+            <AnimatePresence mode="popLayout">
+              {fileStatuses.map((file, index) => (
+                <motion.div
+                  key={file.fileMetadata.name}
+                  initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, x: -100, scale: 0.9 }}
+                  transition={{ duration: 0.3, delay: index * 0.05 }}
+                  className={`flex items-center gap-4 p-4 rounded-lg border transition-all ${getStatusColor(file.status)}`}
+                >
+                  {/* Status Icon */}
+                  <div className="flex-shrink-0">
+                    {getStatusIcon(file.status)}
+                  </div>
 
-                {/* File Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3">
-                    <h4 className="font-medium text-white truncate">
+                  {/* File Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-3">
+                      <h4 className="font-medium text-white truncate">
                       {file.fileMetadata.name}
                     </h4>
                     {file.detectedType && (
@@ -216,8 +266,9 @@ export function SimpleDocumentList({
                     </button>
                   )}
                 </div>
-              </div>
-            ))
+              </motion.div>
+            ))}
+            </AnimatePresence>
           )}
 
           {/* CSV Files */}

@@ -677,6 +677,12 @@ function PageInner() {
             } else {
               setAnalysisStage(`✅ Analiz tamamlandı! (${totalTime}s)`);
             }
+            
+            // 🎉 SUCCESS TOAST
+            setToast({ 
+              message: `✅ ${file.name} başarıyla işlendi! (${totalTime}s)`, 
+              type: "success" 
+            });
           } else if (data.type === 'error') {
             throw new Error(data.error || 'Bilinmeyen streaming hatası');
           }
