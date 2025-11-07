@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { RefreshCw, ExternalLink, ChevronUp, ChevronDown, Search, Trash2, Sparkles, Bot, FileText, Download, Loader2, Calendar, Building2, MapPin, Clock, AlertCircle, AlertTriangle, Wand2, Eye, CheckCircle, Database } from 'lucide-react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { toast } from 'sonner';
 import { useIhaleStore } from '@/lib/stores/ihale-store';
 import { TokenCostCard } from '@/components/analytics/TokenCostCard';
 
@@ -239,6 +240,11 @@ function IhaleTakipPageInner() {
       setIsScrapingActive(true);
       console.log(`🚀 Scraping arka planda başlatılıyor... (mode: ${mode})`);
 
+      // Show initial toast
+      toast.loading(mode === 'new' ? '⚡ Yeni ihaleler aranıyor...' : '🔄 Tüm ihaleler taranıyor...', {
+        id: 'scraper-progress',
+      });
+
       // Test endpoint kullan (async mode - hemen döner) + mode parametresi
       const response = await fetch(`/api/ihale-scraper/test?mode=${mode}`);
       const data = await response.json();
@@ -246,17 +252,29 @@ function IhaleTakipPageInner() {
       if (data.success) {
         console.log('✅ Scraping arka planda başlatıldı:', data.message);
 
+        toast.success('🚀 Tarama başlatıldı!', {
+          id: 'scraper-progress',
+          description: mode === 'new' ? 'Yeni ihaleler aranıyor...' : 'Tüm sayfalar taranıyor...',
+          duration: 3000,
+        });
+
         // Progress tracking başlat
         startProgressTracking();
       } else {
         console.error('❌ Scraping başlatma hatası:', data.error);
-        alert(`❌ Hata: ${data.error}`);
+        toast.error('❌ Tarama başlatılamadı', {
+          id: 'scraper-progress',
+          description: data.error,
+        });
         setScraping(false);
         setIsScrapingActive(false);
       }
     } catch (error: any) {
       console.error('❌ Scraping hatası:', error);
-      alert(`❌ Hata: ${error.message}`);
+      toast.error('❌ Bağlantı hatası', {
+        id: 'scraper-progress',
+        description: error.message,
+      });
       setScraping(false);
       setIsScrapingActive(false);
     }
@@ -282,6 +300,14 @@ function IhaleTakipPageInner() {
             const progress = JSON.parse(jsonStr);
             setScrapingProgress(progress);
 
+            // Progress toast update
+            if (progress.status === 'scraping') {
+              toast.loading(`📊 Sayfa ${progress.current_page || 0}/${progress.total_pages || 10}`, {
+                id: 'scraper-progress',
+                description: `${progress.new_tenders || 0} yeni ihale bulundu`,
+              });
+            }
+
             // Tamamlandıysa durdur
             if (progress.status === 'completed' || progress.status === 'error') {
               clearInterval(intervalId);
@@ -292,7 +318,20 @@ function IhaleTakipPageInner() {
               await loadTenders();
 
               if (progress.status === 'error') {
-                alert(`❌ Scraping hatası: ${progress.message || 'Bilinmeyen hata'}`);
+                toast.error('❌ Tarama hatası', {
+                  id: 'scraper-progress',
+                  description: progress.message || 'Bilinmeyen hata',
+                });
+              } else {
+                // Success toast
+                const newCount = progress.new_tenders || 0;
+                const duplicateCount = progress.duplicate_count || 0;
+                
+                toast.success(`✅ Tarama tamamlandı!`, {
+                  id: 'scraper-progress',
+                  description: `${newCount} yeni ihale eklendi${duplicateCount > 0 ? `, ${duplicateCount} duplicate atlandı` : ''}`,
+                  duration: 5000,
+                });
               }
             }
           }
@@ -325,6 +364,8 @@ function IhaleTakipPageInner() {
     if (!confirm('TÜM İHALELER SİLİNECEK! Emin misiniz?')) return;
     try {
       setDeleting(true);
+      toast.loading('🗑️ Tüm ihaleler siliniyor...', { id: 'delete-progress' });
+      
       const response = await fetch('/api/cron/delete-tenders', {
         method: 'GET',
         headers: {
@@ -332,14 +373,21 @@ function IhaleTakipPageInner() {
         },
       });
       const data = await response.json();
+      
       if (data.success) {
-        alert(`✅ ${data.deletedCount} ihale silindi`);
+        toast.success(`✅ ${data.deletedCount} ihale silindi`, { id: 'delete-progress' });
         loadTenders();
       } else {
-        alert('Hata: ' + data.error);
+        toast.error('❌ Silme hatası', { 
+          id: 'delete-progress',
+          description: data.error 
+        });
       }
     } catch (error: any) {
-      alert('Bağlantı hatası: ' + error.message);
+      toast.error('❌ Bağlantı hatası', {
+        id: 'delete-progress',
+        description: error.message
+      });
     } finally {
       setDeleting(false);
     }
