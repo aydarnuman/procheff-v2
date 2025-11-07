@@ -129,40 +129,40 @@ export function SimpleDocumentList({
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-4">
-      {/* Stage Indicator - Premium Design */}
-      <div className="flex items-center gap-6">
+    <div className="w-full mx-auto space-y-6">
+      {/* Stage Indicator - Dark & Noble */}
+      <div className="flex items-center gap-6 bg-black/40 border-y border-slate-800 py-5 px-8 backdrop-blur-md">
         {/* İlk Aşama Badge */}
         <div className="relative group">
-          {/* Glow Effect */}
-          <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 via-purple-500 to-blue-500 rounded-2xl blur-lg opacity-40 group-hover:opacity-60 transition-opacity"></div>
+          {/* Subtle Glow */}
+          <div className="absolute -inset-1 bg-slate-700/30 rounded-xl blur-md opacity-0 group-hover:opacity-100 transition-opacity"></div>
           
           {/* Badge Content */}
-          <div className="relative px-6 py-3 bg-gradient-to-br from-slate-800 via-slate-800/95 to-slate-900 border-2 border-blue-500/30 rounded-xl shadow-xl backdrop-blur-sm">
+          <div className="relative px-6 py-3 bg-slate-900 border border-slate-700 rounded-xl shadow-xl">
             <div className="flex items-center gap-3">
               {/* Number Circle */}
-              <div className="flex items-center justify-center w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full shadow-lg shadow-blue-500/50">
-                <span className="text-white font-bold text-sm">1</span>
+              <div className="flex items-center justify-center w-10 h-10 bg-slate-800 border border-slate-600 rounded-full">
+                <span className="text-slate-300 font-bold text-base">1</span>
               </div>
               
               {/* Text */}
               <div className="flex flex-col">
-                <span className="text-[10px] text-blue-300/70 font-medium uppercase tracking-wider">Aşama</span>
-                <span className="text-sm font-bold text-white">Dosya İşleme</span>
+                <span className="text-[10px] text-slate-500 font-medium uppercase tracking-widest">AŞAMA</span>
+                <span className="text-base font-semibold text-slate-200">Dosya İşleme</span>
               </div>
             </div>
           </div>
         </div>
 
         {/* Separator */}
-        <div className="h-10 w-px bg-gradient-to-b from-transparent via-slate-600 to-transparent"></div>
+        <div className="h-10 w-px bg-slate-700"></div>
         
         {/* Title with Icon */}
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-blue-500/10 rounded-lg border border-blue-500/30">
-            <FileText className="w-5 h-5 text-blue-400" />
+          <div className="p-2.5 bg-slate-800 border border-slate-700 rounded-lg">
+            <FileText className="w-5 h-5 text-slate-400" />
           </div>
-          <h3 className="text-xl font-bold text-white">OCR & Metin Çıkarma</h3>
+          <h3 className="text-xl font-semibold text-slate-200">OCR & Metin Çıkarma</h3>
         </div>
         
         <div className="flex-1"></div>
@@ -198,15 +198,12 @@ export function SimpleDocumentList({
         </div>
       </div>
 
-      {/* Upload Section - Premium Card */}
-      <div className="relative group">
-        {/* Background Gradient Glow */}
-        <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-blue-500/20 rounded-2xl blur opacity-30 group-hover:opacity-50 transition-opacity"></div>
-        
+      {/* Upload Section - Dark Noble Card */}
+      <div className="relative mx-8">
         {/* Main Card */}
-        <div className="relative bg-gradient-to-br from-slate-800/80 via-slate-800/60 to-slate-900/80 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-8 shadow-2xl">
+        <div className="bg-slate-900/95 border border-slate-800 rounded-2xl p-10 shadow-2xl shadow-black/50">
           {/* Upload Buttons */}
-          <div className="flex items-center justify-end gap-4 mb-6">
+          <div className="flex items-center justify-end gap-4 mb-8">
             <label className="cursor-pointer group/btn" htmlFor="document-file-input">
               <input
                 id="document-file-input"
@@ -218,15 +215,14 @@ export function SimpleDocumentList({
                 className="hidden"
                 aria-label="PDF, Word veya resim dosyası yükle"
               />
-              <div className="relative overflow-hidden px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white rounded-xl transition-all duration-300 flex items-center gap-3 font-semibold shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 hover:scale-105">
-                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 translate-x-[-100%] group-hover/btn:translate-x-[100%] transition-transform duration-700"></div>
-                <Upload className="w-5 h-5 relative z-10" />
-                <span className="relative z-10">Belge Ekle</span>
+              <div className="px-6 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-slate-200 rounded-lg transition-all duration-200 flex items-center gap-3 font-medium shadow-lg hover:shadow-xl">
+                <Upload className="w-5 h-5" />
+                <span>Belge Ekle</span>
               </div>
             </label>
 
             {onCSVSelect && (
-              <label className="cursor-pointer group/btn" htmlFor="csv-file-input">
+              <label className="cursor-pointer" htmlFor="csv-file-input">
                 <input
                   id="csv-file-input"
                   name="csv-files"
@@ -237,10 +233,9 @@ export function SimpleDocumentList({
                   className="hidden"
                   aria-label="CSV maliyet dosyası yükle"
                 />
-                <div className="relative overflow-hidden px-6 py-3 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 text-white rounded-xl transition-all duration-300 flex items-center gap-3 font-semibold shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 hover:scale-105">
-                  <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 translate-x-[-100%] group-hover/btn:translate-x-[100%] transition-transform duration-700"></div>
-                  <span className="relative z-10 text-lg">📊</span>
-                  <span className="relative z-10">CSV Ekle</span>
+                <div className="px-6 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-slate-200 rounded-lg transition-all duration-200 flex items-center gap-3 font-medium shadow-lg hover:shadow-xl">
+                  <span className="text-lg">📊</span>
+                  <span>CSV Ekle</span>
                 </div>
               </label>
             )}
@@ -512,69 +507,57 @@ export function SimpleDocumentList({
 
       {/* Summary - Premium Stats Cards */}
       {(fileStatuses.length > 0 || csvFiles.length > 0) && (
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-4 gap-4 mx-8">
           {/* Toplam Dosya */}
-          <div className="relative group/stat">
-            <div className="absolute -inset-0.5 bg-gradient-to-br from-slate-600/20 to-slate-700/20 rounded-xl blur opacity-40 group-hover/stat:opacity-60 transition-opacity"></div>
-            <div className="relative bg-gradient-to-br from-slate-800/80 to-slate-900/80 border border-slate-700/50 rounded-xl p-5 backdrop-blur-sm hover:scale-105 transition-transform duration-300">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="p-2 bg-slate-700/50 rounded-lg">
-                  <FileText className="w-5 h-5 text-slate-300" />
-                </div>
-                <div className="text-3xl font-bold text-white">
-                  {fileStatuses.length + csvFiles.length}
-                </div>
+          <div className="bg-slate-900 border border-slate-800 rounded-lg p-5 hover:border-slate-700 transition-colors">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-slate-800 rounded">
+                <FileText className="w-5 h-5 text-slate-400" />
               </div>
-              <div className="text-sm text-gray-400 font-medium">Toplam Dosya</div>
+              <div className="text-2xl font-bold text-slate-200">
+                {fileStatuses.length + csvFiles.length}
+              </div>
             </div>
+            <div className="text-sm text-slate-500 font-medium">Toplam Dosya</div>
           </div>
 
           {/* Bekliyor */}
-          <div className="relative group/stat">
-            <div className="absolute -inset-0.5 bg-gradient-to-br from-yellow-500/20 to-orange-500/20 rounded-xl blur opacity-40 group-hover/stat:opacity-60 transition-opacity"></div>
-            <div className="relative bg-gradient-to-br from-slate-800/80 to-slate-900/80 border border-yellow-500/30 rounded-xl p-5 backdrop-blur-sm hover:scale-105 transition-transform duration-300">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="p-2 bg-yellow-500/10 rounded-lg">
-                  <span className="text-2xl">⏸</span>
-                </div>
-                <div className="text-3xl font-bold text-yellow-400">
-                  {fileStatuses.filter(f => f.status === 'pending').length + csvFiles.filter(c => c.status === 'pending').length}
-                </div>
+          <div className="bg-slate-900 border border-slate-800 rounded-lg p-5 hover:border-yellow-900/50 transition-colors">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-yellow-950/50 rounded">
+                <span className="text-xl">⏸</span>
               </div>
-              <div className="text-sm text-gray-400 font-medium">Bekliyor</div>
+              <div className="text-2xl font-bold text-yellow-600">
+                {fileStatuses.filter(f => f.status === 'pending').length + csvFiles.filter(c => c.status === 'pending').length}
+              </div>
             </div>
+            <div className="text-sm text-slate-500 font-medium">Bekliyor</div>
           </div>
 
           {/* İşleniyor */}
-          <div className="relative group/stat">
-            <div className="absolute -inset-0.5 bg-gradient-to-br from-blue-500/20 to-purple-500/20 rounded-xl blur opacity-40 group-hover/stat:opacity-60 transition-opacity"></div>
-            <div className="relative bg-gradient-to-br from-slate-800/80 to-slate-900/80 border border-blue-500/30 rounded-xl p-5 backdrop-blur-sm hover:scale-105 transition-transform duration-300">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="p-2 bg-blue-500/10 rounded-lg">
-                  <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
-                </div>
-                <div className="text-3xl font-bold text-blue-400">
-                  {fileStatuses.filter(f => f.status === 'processing').length + csvFiles.filter(c => c.status === 'processing').length}
-                </div>
+          <div className="bg-slate-900 border border-slate-800 rounded-lg p-5 hover:border-blue-900/50 transition-colors">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-blue-950/50 rounded">
+                <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
               </div>
-              <div className="text-sm text-gray-400 font-medium">İşleniyor</div>
+              <div className="text-2xl font-bold text-blue-600">
+                {fileStatuses.filter(f => f.status === 'processing').length + csvFiles.filter(c => c.status === 'processing').length}
+              </div>
             </div>
+            <div className="text-sm text-slate-500 font-medium">İşleniyor</div>
           </div>
 
           {/* Tamamlandı */}
-          <div className="relative group/stat">
-            <div className="absolute -inset-0.5 bg-gradient-to-br from-green-500/20 to-emerald-500/20 rounded-xl blur opacity-40 group-hover/stat:opacity-60 transition-opacity"></div>
-            <div className="relative bg-gradient-to-br from-slate-800/80 to-slate-900/80 border border-green-500/30 rounded-xl p-5 backdrop-blur-sm hover:scale-105 transition-transform duration-300">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="p-2 bg-green-500/10 rounded-lg">
-                  <CheckCircle className="w-5 h-5 text-green-400" />
-                </div>
-                <div className="text-3xl font-bold text-green-400">
-                  {fileStatuses.filter(f => f.status === 'completed').length + csvFiles.filter(c => c.status === 'completed').length}
-                </div>
+          <div className="bg-slate-900 border border-slate-800 rounded-lg p-5 hover:border-green-900/50 transition-colors">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-green-950/50 rounded">
+                <CheckCircle className="w-5 h-5 text-green-700" />
               </div>
-              <div className="text-sm text-gray-400 font-medium">Tamamlandı</div>
+              <div className="text-2xl font-bold text-green-700">
+                {fileStatuses.filter(f => f.status === 'completed').length + csvFiles.filter(c => c.status === 'completed').length}
+              </div>
             </div>
+            <div className="text-sm text-slate-500 font-medium">Tamamlandı</div>
           </div>
         </div>
       )}
