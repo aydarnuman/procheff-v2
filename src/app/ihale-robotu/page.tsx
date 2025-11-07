@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, Suspense } from 'react';
 import { RefreshCw, ExternalLink, ChevronUp, ChevronDown, Search, Trash2, Sparkles, Bot, FileText, Download, Loader2, Calendar, Building2, MapPin, Clock, AlertCircle, AlertTriangle, Wand2, Eye, CheckCircle, Database } from 'lucide-react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useIhaleStore } from '@/lib/stores/ihale-store';
+import { TokenCostCard } from '@/components/analytics/TokenCostCard';
 
 interface Tender {
   id: string;
@@ -1307,6 +1308,7 @@ function IhaleTakipPageInner() {
                 <Trash2 className={`w-4 h-4 ${deleting ? 'animate-pulse' : ''}`} />
               </button>
             </div>
+            </div>
           </div>
 
           {/* Search Bar */}
@@ -2264,7 +2266,6 @@ function IhaleTakipPageInner() {
           </div>
         )}
       </div>
-    </div>
     </>
   );
 }
