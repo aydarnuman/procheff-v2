@@ -20,17 +20,21 @@ if (useTurso) {
   console.log('   ⚠️  Production requires TURSO_DATABASE_URL + TURSO_AUTH_TOKEN');
 }
 
-// Export based on environment
-export const { TenderDatabase, getDatabase } = useTurso
-  ? require('./turso-adapter')
-  : require('./sqlite-client');
+// ============================================================================
+// EXPORTS - Dynamic based on environment
+// ============================================================================
 
-// Export query utilities (Turso-specific, but not needed for SQLite)
-export const { executeQuery, executeQuerySingle, executeWrite, getTursoClient } = useTurso
-  ? require('./turso-client')
-  : {
-      executeQuery: undefined,
-      executeQuerySingle: undefined,
-      executeWrite: undefined,
-      getTursoClient: undefined,
-    };
+// Import both adapters
+import * as TursoAdapter from './turso-adapter';
+import * as SQLiteAdapter from './sqlite-client';
+import * as TursoClient from './turso-client';
+
+// Export TenderDatabase and getDatabase based on environment
+export const TenderDatabase = (useTurso ? TursoAdapter.TenderDatabase : SQLiteAdapter.TenderDatabase) as typeof TursoAdapter.TenderDatabase;
+export const getDatabase = useTurso ? TursoAdapter.getDatabase : SQLiteAdapter.getDatabase;
+
+// Export Turso utilities (only available in Turso mode)
+export const executeQuery = useTurso ? TursoClient.executeQuery : undefined;
+export const executeQuerySingle = useTurso ? TursoClient.executeQuerySingle : undefined;
+export const executeWrite = useTurso ? TursoClient.executeWrite : undefined;
+export const getTursoClient = useTurso ? TursoClient.getTursoClient : undefined;
