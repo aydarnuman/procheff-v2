@@ -10,7 +10,9 @@
     "clean": "rm -rf .next .turbo node_modules/.cache dist out build",
     "fresh": "npm run clean && npm install && npm run dev",
     "test:smoke": "npx tsx tests/smoke-test.ts",
-    "test:ai": "npx tsx tests/ai-extraction-test.ts"
+    "test:ai": "npx tsx tests/ai-extraction-test.ts",
+    "backup:db": "./scripts/backup-database.sh",
+    "cleanup:servers": "./scripts/cleanup-servers.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",

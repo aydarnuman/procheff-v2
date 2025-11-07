@@ -5,14 +5,20 @@
 
 echo "🔍 ProCheff server'ları aranıyor..."
 
-# Sadece procheff-v2 dizininde çalışan Next.js server'larını bul
-PROCHEFF_PIDS=$(ps aux | grep "next dev" | grep "procheff-v2" | grep -v grep | awk '{print $2}')
+# Dinamik olarak proje dizinini bul
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
+
+echo "📂 Proje dizini: $PROJECT_DIR"
+
+# Sadece bu projede çalışan Next.js server'larını bul
+PROCHEFF_PIDS=$(ps aux | grep "next dev" | grep "$PROJECT_DIR" | grep -v grep | awk '{print $2}')
 
 if [ -z "$PROCHEFF_PIDS" ]; then
     echo "✅ Temizlenecek server bulunamadı"
 else
     echo "🗑️  Bulunan server'lar:"
-    ps aux | grep "next dev" | grep "procheff-v2" | grep -v grep
+    ps aux | grep "next dev" | grep "$PROJECT_DIR" | grep -v grep
 
     echo ""
     echo "🔪 Temizleniyor..."
@@ -22,12 +28,12 @@ else
 fi
 
 # .next cache'ini temizle (opsiyonel)
-if [ -d "/Users/numanaydar/Desktop/procheff-v2/.next" ]; then
+if [ -d "$PROJECT_DIR/.next" ]; then
     echo ""
     echo "🗑️  .next cache temizleniyor..."
-    rm -rf /Users/numanaydar/Desktop/procheff-v2/.next
+    rm -rf "$PROJECT_DIR/.next"
     echo "✅ Cache temizlendi!"
 fi
 
 echo ""
-echo "🚀 Yeni server başlatmak için: cd /Users/numanaydar/Desktop/procheff-v2 && npm run dev"
+echo "🚀 Yeni server başlatmak için: cd $PROJECT_DIR && npm run dev"

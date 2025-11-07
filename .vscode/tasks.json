@@ -73,6 +73,26 @@
       ],
       "label": "npm: test:ai",
       "detail": "npx tsx tests/ai-extraction-test.ts"
+    },
+    {
+      "label": "💾 Backup Database",
+      "type": "npm",
+      "script": "backup:db",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "🧹 Cleanup Zombie Servers",
+      "type": "npm",
+      "script": "cleanup:servers",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
     }
   ]
 }
