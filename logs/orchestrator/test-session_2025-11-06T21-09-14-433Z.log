@@ -1,0 +1,15 @@
+[2025-11-06T21:09:14.434Z] ℹ️ [orchestrator] Logger initialized
+   Data: {
+     "sessionId": "test-session"
+   }
+[2025-11-06T21:09:14.434Z] ℹ️ [test] This is an info message
+   Data: {
+     "foo": "bar"
+   }
+[2025-11-06T21:09:14.434Z] ✅ [test] This is a success message
+[2025-11-06T21:09:14.434Z] ⚠️ [test] This is a warning
+[2025-11-06T21:09:14.434Z] ❌ [test] This is an error
+   Data: {
+     "code": 500
+   }
+[2025-11-06T21:09:15.435Z] ℹ️ [test] Timed operation completed (1001ms)

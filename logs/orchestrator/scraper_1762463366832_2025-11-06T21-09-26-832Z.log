@@ -1,0 +1,40 @@
+[2025-11-06T21:09:26.833Z] ℹ️ [orchestrator] Logger initialized
+   Data: {
+     "sessionId": "scraper_1762463366832"
+   }
+[2025-11-06T21:09:26.833Z] ℹ️ [orchestrator] Initializing ScraperOrchestrator
+[2025-11-06T21:09:26.834Z] ℹ️ [runAll] Starting scraping orchestration
+   Data: {
+     "testMode": false,
+     "sourceFilter": "ihalebul",
+     "logPath": "/Users/numanaydar/Desktop/procheff-v2/logs/orchestrator/scraper_1762463366832_2025-11-06T21-09-26-832Z.log"
+   }
+[2025-11-06T21:09:26.835Z] ℹ️ [runAll] Processing 1 scraper(s)
+   Data: {
+     "scrapers": [
+       "ihalebul"
+     ]
+   }
+[2025-11-06T21:09:26.835Z] ℹ️ [ihalebul] Starting scraper: İhalebul.com
+[2025-11-06T23:30:33.138Z] ℹ️ [ihalebul] Scraping completed (8466303ms)
+   Data: {
+     "success": false,
+     "totalScraped": 0,
+     "errors": 4
+   }
+[2025-11-06T23:30:33.147Z] ℹ️ [ihalebul] Database save completed (9ms)
+   Data: {
+     "newTenders": 0
+   }
+[2025-11-06T23:30:33.148Z] ✅ [ihalebul] Pipeline completed successfully
+   Data: {
+     "totalScraped": 0,
+     "newTenders": 0
+   }
+[2025-11-06T23:30:33.148Z] ℹ️ [runAll] All scrapers completed (8466314ms)
+   Data: {
+     "totalNew": 0,
+     "totalCatering": 0,
+     "successfulScrapers": 0,
+     "failedScrapers": 1
+   }

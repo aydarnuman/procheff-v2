@@ -13,8 +13,12 @@ import { updateProgress } from '@/app/api/ihale-scraper/progress/route';
 import * as fs from 'fs';
 
 export class IhalebulScraper extends BaseScraper {
-  constructor() {
+  private mode: 'new' | 'full'; // 🆕 Scraping mode
+
+  constructor(mode: 'new' | 'full' = 'new') {
     super(SCRAPER_CONFIG.ihalebul);
+    this.mode = mode;
+    console.log(`🎯 IhalebulScraper initialized in ${mode} mode (${mode === 'new' ? 'stop on duplicates' : 'scrape all pages'})`);
   }
   /**
    * Universal tenderInfo parser: #tender .row içindeki tüm key-value alanları map'ler
@@ -873,6 +877,39 @@ Sadece executable JavaScript kodu döndür. Örnek:
 
         // Extract tender URLs from this page
         const urls = this.extractTenderUrls(html);
+
+        // 🆕 EARLY DUPLICATE CHECK (mode=new only)
+        if (this.mode === 'new' && urls.length > 0) {
+          const { getDatabase } = await import('../database/sqlite-client');
+          const db = getDatabase();
+          
+          // Extract source_ids from URLs (regex: /tender/(\d+))
+          const sourceIds = urls.map(url => {
+            const match = url.match(/\/tender\/(\d+)/);
+            return match ? match[1] : null;
+          }).filter(Boolean) as string[];
+
+          // Check how many already exist in DB
+          const placeholders = sourceIds.map(() => '?').join(',');
+          const existingCount = db.prepare(`
+            SELECT COUNT(*) as count 
+            FROM tenders 
+            WHERE source = 'ihalebul' AND source_id IN (${placeholders})
+          `).get(...sourceIds) as { count: number };
+
+          const duplicatesOnPage = existingCount.count;
+          const newTendersOnPage = urls.length - duplicatesOnPage;
+
+          console.log(`📊 Duplicate analysis: ${duplicatesOnPage}/${urls.length} exist, ${newTendersOnPage} new`);
+
+          // ✋ STOP PAGINATION: If entire page is duplicates, we've reached known tenders
+          if (duplicatesOnPage === urls.length) {
+            console.log(`\n🛑 MODE=NEW: All ${urls.length} tenders on page ${pageNum} already exist`);
+            console.log(`✅ Stopping pagination early (no new tenders found)`);
+            break; // Exit pagination loop
+          }
+        }
+
         tenderUrls.push(...urls);
 
         console.log(`✅ Page ${pageNum}: ${urls.length} tender URLs collected`);
