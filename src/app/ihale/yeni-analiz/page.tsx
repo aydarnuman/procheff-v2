@@ -30,6 +30,7 @@ import {
 } from "@/lib/utils/quick-document-detector";
 
 import { Toast } from "@/components/ui/Toast";
+import { ErrorBoundary } from "@/components/providers/ErrorBoundary";
 
 // Types
 interface FileStatus {
@@ -113,16 +114,18 @@ const handleDeletePage = (pageNumber: number) => console.log("delete", pageNumbe
 // === Zustand Store Destructure ===
 export default function Page() {
   return (
-    <Suspense fallback={
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-          <p>Yükleniyor...</p>
+    <ErrorBoundary>
+      <Suspense fallback={
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+            <p>Yükleniyor...</p>
+          </div>
         </div>
-      </div>
-    }>
-      <PageInner />
-    </Suspense>
+      }>
+        <PageInner />
+      </Suspense>
+    </ErrorBoundary>
   );
 }
 
@@ -167,14 +170,14 @@ function PageInner() {
   const sseHeartbeatRef = useRef<NodeJS.Timeout | null>(null);
   const sseAbortRef = useRef<AbortController | null>(null);
 
-  // Steps configuration
-  const steps = [
+  // Steps configuration - useMemo for performance
+  const steps = React.useMemo(() => [
     { id: "upload", label: "Yükle", icon: Upload },
     { id: "processing", label: "Sayfalara Böl", icon: FileText },
     { id: "view", label: "Görüntüle", icon: Eye },
     { id: "analyze", label: "AI Analizi", icon: Brain },
     { id: "results", label: "Sonuç", icon: CheckCircle },
-  ];
+  ], []);
 
   // Toast function (assuming it's from a context or hook)
   const setToast = useCallback((toast: { message: string; type: "success" | "error" | "info" }) => {
@@ -810,7 +813,7 @@ function PageInner() {
     }
   };
 
-  const resetProcess = () => {
+  const resetProcess = useCallback(() => {
     // Abort any ongoing streaming and clear heartbeat
     if (sseAbortRef.current) {
       try { sseAbortRef.current.abort(); } catch {}
@@ -838,7 +841,7 @@ function PageInner() {
       localStorage.removeItem('ihale_document_text');
       console.log('🧹 localStorage temizlendi - yeni analiz için hazır');
     }
-  };
+  }, [setCurrentStep, clearFileStatuses, setCurrentAnalysis, setIsProcessing, setAutoDeepAnalysisTriggered, resetAutoAnalysisPreview]);
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
@@ -849,6 +852,16 @@ function PageInner() {
     const newFiles: File[] = [];
 
     for (const file of files) {
+      // ⚠️ Dosya boyutu kontrolü
+      if (file.size > maxSize) {
+        setToast({
+          message: `❌ ${file.name} çok büyük! Maksimum dosya boyutu: 50MB`,
+          type: "error"
+        });
+        console.error(`File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
+        continue; // Bu dosyayı atla, diğerlerine devam et
+      }
+
       // Dosya tipi kontrolü - TXT, JSON eklendi
       const isValidType =
         file.type.includes("pdf") ||
@@ -946,10 +959,10 @@ function PageInner() {
     event.target.value = '';
   };
 
-  const handleProcessAllFiles = () => {
+  const handleProcessAllFiles = useCallback(() => {
     console.log('🔄 Tüm dosyalar işlendi, view adımına geçiliyor...');
     setCurrentStep('view');
-  };
+  }, [setCurrentStep]);
 
   return (
 <div className="min-h-screen bg-platinum-900 p-6">

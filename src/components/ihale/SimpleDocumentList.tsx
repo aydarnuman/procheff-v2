@@ -103,6 +103,7 @@ export function SimpleDocumentList({
               accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
               onChange={handleFileInput}
               className="hidden"
+              aria-label="PDF, Word veya resim dosyası yükle"
             />
             <div className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2 font-medium">
               <Upload className="w-5 h-5" />
@@ -120,6 +121,7 @@ export function SimpleDocumentList({
                 accept=".csv"
                 onChange={handleCSVInput}
                 className="hidden"
+                aria-label="CSV maliyet dosyası yükle"
               />
               <div className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center gap-2 font-medium">
                 📊 CSV Ekle
@@ -198,6 +200,7 @@ export function SimpleDocumentList({
                     <button
                       onClick={() => onFileProcess(file.fileMetadata.name)}
                       className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium"
+                      aria-label={`${file.fileMetadata.name} dosyasını işle`}
                     >
                       İşle
                     </button>
@@ -207,6 +210,7 @@ export function SimpleDocumentList({
                       onClick={() => onFileRemove(file.fileMetadata.name)}
                       className="p-2 hover:bg-red-500/20 rounded-lg transition-colors"
                       title="Sil"
+                      aria-label={`${file.fileMetadata.name} dosyasını sil`}
                     >
                       <Trash2 className="w-5 h-5 text-red-400" />
                     </button>
@@ -271,6 +275,7 @@ export function SimpleDocumentList({
                   <button
                     onClick={() => onCSVProcess(csv.fileMetadata.name)}
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors text-sm font-medium"
+                    aria-label={`${csv.fileMetadata.name} CSV dosyasını işle`}
                   >
                     İşle
                   </button>
@@ -280,6 +285,7 @@ export function SimpleDocumentList({
                     onClick={() => onCSVRemove(csv.fileMetadata.name)}
                     className="p-2 hover:bg-red-500/20 rounded-lg transition-colors"
                     title="Sil"
+                    aria-label={`${csv.fileMetadata.name} CSV dosyasını sil`}
                   >
                     <Trash2 className="w-5 h-5 text-red-400" />
                   </button>
