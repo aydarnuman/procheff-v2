@@ -130,45 +130,84 @@ export function SimpleDocumentList({
 
   return (
     <div className="w-full mx-auto space-y-6">
-      {/* Stage Indicator - Dark & Noble */}
-      <div className="flex items-center gap-6 bg-black/40 border-y border-slate-800 py-5 px-8 backdrop-blur-md">
-        {/* İlk Aşama Badge */}
-        <div className="relative group">
-          {/* Subtle Glow */}
-          <div className="absolute -inset-1 bg-slate-700/30 rounded-xl blur-md opacity-0 group-hover:opacity-100 transition-opacity"></div>
+      {/* Stage Indicator - Creative Dark Design */}
+      <div className="relative overflow-hidden">
+        {/* Animated Background Pattern */}
+        <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950"></div>
+        <div className="absolute inset-0 opacity-30" style={{
+          backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(148, 163, 184, 0.15) 1px, transparent 0)',
+          backgroundSize: '32px 32px'
+        }}></div>
+        
+        <div className="relative flex items-center gap-8 py-8 px-10">
+          {/* Vertical Accent Line */}
+          <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-transparent via-slate-600 to-transparent"></div>
           
-          {/* Badge Content */}
-          <div className="relative px-6 py-3 bg-slate-900 border border-slate-700 rounded-xl shadow-xl">
-            <div className="flex items-center gap-3">
-              {/* Number Circle */}
-              <div className="flex items-center justify-center w-10 h-10 bg-slate-800 border border-slate-600 rounded-full">
-                <span className="text-slate-300 font-bold text-base">1</span>
-              </div>
+          {/* İlk Aşama Badge - Hexagon Style */}
+          <div className="relative group">
+            {/* Hexagon Glow Effect */}
+            <div className="absolute -inset-3 bg-gradient-to-r from-slate-600/0 via-slate-500/30 to-slate-600/0 blur-xl group-hover:via-slate-400/40 transition-all duration-500"></div>
+            
+            {/* Badge Container */}
+            <div className="relative">
+              {/* Corner Accents */}
+              <div className="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-slate-600"></div>
+              <div className="absolute -top-1 -right-1 w-3 h-3 border-t-2 border-r-2 border-slate-600"></div>
+              <div className="absolute -bottom-1 -left-1 w-3 h-3 border-b-2 border-l-2 border-slate-600"></div>
+              <div className="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-slate-600"></div>
               
-              {/* Text */}
-              <div className="flex flex-col">
-                <span className="text-[10px] text-slate-500 font-medium uppercase tracking-widest">AŞAMA</span>
-                <span className="text-base font-semibold text-slate-200">Dosya İşleme</span>
+              {/* Badge Content */}
+              <div className="px-8 py-4 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 border border-slate-700/50 shadow-2xl">
+                <div className="flex items-center gap-4">
+                  {/* Animated Number Circle */}
+                  <div className="relative">
+                    <div className="absolute inset-0 bg-slate-600/50 rounded-full blur-lg animate-pulse"></div>
+                    <div className="relative flex items-center justify-center w-14 h-14 bg-gradient-to-br from-slate-700 to-slate-800 rounded-full border-2 border-slate-600 shadow-xl">
+                      <span className="text-slate-200 font-black text-2xl">1</span>
+                    </div>
+                  </div>
+                  
+                  {/* Text Stack */}
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-px bg-gradient-to-r from-slate-600 to-transparent"></div>
+                      <span className="text-xs text-slate-500 font-bold uppercase tracking-[0.2em]">AŞAMA</span>
+                    </div>
+                    <span className="text-xl font-bold text-white tracking-tight">Dosya İşleme</span>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <div className="w-12 h-px bg-gradient-to-r from-slate-600 to-transparent"></div>
+                      <span className="text-xs text-slate-600 uppercase tracking-wide">PHASE ONE</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Separator */}
-        <div className="h-10 w-px bg-slate-700"></div>
-        
-        {/* Title with Icon */}
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-slate-800 border border-slate-700 rounded-lg">
-            <FileText className="w-5 h-5 text-slate-400" />
+          {/* Diagonal Separator */}
+          <div className="relative h-20 w-px">
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-slate-600 to-transparent skew-x-12"></div>
           </div>
-          <h3 className="text-xl font-semibold text-slate-200">OCR & Metin Çıkarma</h3>
-        </div>
-        
-        <div className="flex-1"></div>
-        
-        {/* Enhanced Stats with Colors */}
-        <div className="flex items-center gap-3">
+          
+          {/* Title Section with Icon Badge */}
+          <div className="flex items-center gap-5 flex-1">
+            {/* Icon Badge */}
+            <div className="relative">
+              <div className="absolute inset-0 bg-slate-600/30 rounded-2xl blur-xl"></div>
+              <div className="relative p-4 bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl border border-slate-700 shadow-2xl">
+                <FileText className="w-7 h-7 text-slate-400" />
+              </div>
+            </div>
+            
+            {/* Title Stack */}
+            <div className="flex flex-col">
+              <h3 className="text-2xl font-black text-white tracking-tight">OCR & Metin Çıkarma</h3>
+              <p className="text-sm text-slate-500 mt-1">Belgeleri metne dönüştür • Analiz hazırlığı</p>
+            </div>
+          </div>
+          
+          {/* Enhanced Stats with Colors */}
+          <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 border border-slate-700 rounded-lg">
             <span className="text-xs text-gray-400">Toplam:</span>
             <span className="text-sm font-semibold text-white">{fileStatuses.length}</span>
@@ -195,6 +234,7 @@ export function SimpleDocumentList({
               <span className="text-sm font-semibold text-emerald-300">{csvFiles.length}</span>
             </div>
           )}
+        </div>
         </div>
       </div>
 
