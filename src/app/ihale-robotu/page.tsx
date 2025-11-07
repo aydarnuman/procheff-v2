@@ -1137,15 +1137,22 @@ function IhaleTakipPageInner() {
 
   const filteredTenders = tenders.filter((t) => {
     if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    const registrationNumber = (t.registration_number || t.raw_json?.['Kayıt no'] || '').toLowerCase(); // 🆕 Kayıt no
+    
+    // Türkçe karakter desteği ile küçük harfe çevir
+    const query = searchQuery.toLocaleLowerCase('tr-TR');
+    
+    // Güvenli string dönüşümü ve küçük harfe çevirme fonksiyonu
+    const toLower = (str: any) => (str || '').toString().toLocaleLowerCase('tr-TR');
+    
+    const registrationNumber = toLower(t.registration_number || t.raw_json?.['Kayıt no'] || '');
+    
     return (
-      t.organization?.toLowerCase().includes(query) ||
-      t.organization_city?.toLowerCase().includes(query) ||
-      t.title?.toLowerCase().includes(query) ||
-      t.tender_type?.toLowerCase().includes(query) ||
-      t.procurement_type?.toLowerCase().includes(query) ||
-      registrationNumber.includes(query) // 🆕 Kayıt no arama
+      toLower(t.organization).includes(query) ||
+      toLower(t.organization_city).includes(query) ||
+      toLower(t.title).includes(query) ||
+      toLower(t.tender_type).includes(query) ||
+      toLower(t.procurement_type).includes(query) ||
+      registrationNumber.includes(query)
     );
   });
 
