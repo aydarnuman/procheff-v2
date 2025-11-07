@@ -133,16 +133,18 @@ else
     # Critical keys kontrolü
     MISSING_KEYS=()
     
-    if ! grep -q "ANTHROPIC_API_KEY=sk-" .env.local 2>/dev/null; then
+    # ANTHROPIC_API_KEY kontrolü (hem tırnaklı hem tırnaksız)
+    if ! grep -qE 'ANTHROPIC_API_KEY=["'\'']?sk-ant-' .env.local 2>/dev/null; then
         MISSING_KEYS+=("ANTHROPIC_API_KEY")
     fi
     
-    if ! grep -q "IHALEBUL_USERNAME=" .env.local 2>/dev/null; then
+    # IHALEBUL_USERNAME kontrolü (boş olmamalı)
+    if ! grep -qE 'IHALEBUL_USERNAME=["'\'']?.+["'\'']?' .env.local 2>/dev/null; then
         MISSING_KEYS+=("IHALEBUL_USERNAME")
     fi
     
     if [ ${#MISSING_KEYS[@]} -gt 0 ]; then
-        echo -e "   ${YELLOW}⚠️  Eksik API keys: ${MISSING_KEYS[*]}${NC}"
+        echo -e "   ${YELLOW}⚠️  Eksik veya geçersiz API keys: ${MISSING_KEYS[*]}${NC}"
     else
         echo -e "   ${GREEN}✅ Temel environment variables mevcut${NC}"
     fi
