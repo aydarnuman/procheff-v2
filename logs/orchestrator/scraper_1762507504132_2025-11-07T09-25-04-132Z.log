@@ -1,0 +1,61 @@
+[2025-11-07T09:25:04.132Z] ℹ️ [orchestrator] Logger initialized
+   Data: {
+     "sessionId": "scraper_1762507504132"
+   }
+[2025-11-07T09:25:04.132Z] ℹ️ [orchestrator] Initializing ScraperOrchestrator
+[2025-11-07T09:25:04.137Z] ℹ️ [runAll] Starting scraping orchestration
+   Data: {
+     "testMode": true,
+     "mode": "new",
+     "sourceFilter": "all",
+     "logPath": "/Users/numanaydar/Desktop/procheff-v2/logs/orchestrator/scraper_1762507504132_2025-11-07T09-25-04-132Z.log"
+   }
+[2025-11-07T09:25:04.138Z] ℹ️ [runAll] Processing 3 scraper(s)
+   Data: {
+     "scrapers": [
+       "ihalebul",
+       "ilan_gov",
+       "ihale_takip"
+     ]
+   }
+[2025-11-07T09:25:04.138Z] ℹ️ [ihalebul] Starting scraper: İhalebul.com
+[2025-11-07T09:26:16.602Z] ℹ️ [ihalebul] Scraping completed (72464ms)
+   Data: {
+     "success": false,
+     "totalScraped": 0,
+     "errors": 4
+   }
+[2025-11-07T09:26:16.602Z] ℹ️ [ihalebul] Database save completed
+   Data: {
+     "newTenders": 0
+   }
+[2025-11-07T09:26:17.262Z] ✅ [ihalebul] Pipeline completed successfully
+   Data: {
+     "totalScraped": 0,
+     "newTenders": 0
+   }
+[2025-11-07T09:26:17.263Z] ℹ️ [ilan_gov] Starting scraper: İlan.gov.tr (Resmi Basın İlan Kurumu)
+[2025-11-07T09:27:17.537Z] ℹ️ [ilan_gov] Scraping completed (60274ms)
+   Data: {
+     "success": true,
+     "totalScraped": 0,
+     "errors": 0
+   }
+[2025-11-07T09:27:17.537Z] ℹ️ [ilan_gov] Database save completed
+   Data: {
+     "newTenders": 0
+   }
+[2025-11-07T09:27:18.333Z] ✅ [ilan_gov] Pipeline completed successfully
+   Data: {
+     "totalScraped": 0,
+     "newTenders": 0
+   }
+[2025-11-07T09:27:18.334Z] ℹ️ [ihale_takip] Starting scraper: İhaleTakip.com.tr
+[2025-11-07T09:27:18.335Z] ⚠️ [ihale_takip] Scraper not implemented
+[2025-11-07T09:27:18.336Z] ℹ️ [runAll] All scrapers completed (134199ms)
+   Data: {
+     "totalNew": 0,
+     "totalCatering": 0,
+     "successfulScrapers": 1,
+     "failedScrapers": 1
+   }

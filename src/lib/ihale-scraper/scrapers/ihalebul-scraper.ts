@@ -880,8 +880,7 @@ Sadece executable JavaScript kodu döndür. Örnek:
 
         // 🆕 EARLY DUPLICATE CHECK (mode=new only)
         if (this.mode === 'new' && urls.length > 0) {
-          const { getDatabase } = await import('../database/sqlite-client');
-          const db = getDatabase();
+          const { TenderDatabase } = await import('../database');
           
           // Extract source_ids from URLs (regex: /tender/(\d+))
           const sourceIds = urls.map(url => {
@@ -889,15 +888,13 @@ Sadece executable JavaScript kodu döndür. Örnek:
             return match ? match[1] : null;
           }).filter(Boolean) as string[];
 
-          // Check how many already exist in DB
-          const placeholders = sourceIds.map(() => '?').join(',');
-          const existingCount = db.prepare(`
-            SELECT COUNT(*) as count 
-            FROM tenders 
-            WHERE source = 'ihalebul' AND source_id IN (${placeholders})
-          `).get(...sourceIds) as { count: number };
+          // Check how many already exist in DB (async)
+          let duplicatesOnPage = 0;
+          for (const sourceId of sourceIds) {
+            const exists = await TenderDatabase.tenderExists('ihalebul', sourceId);
+            if (exists) duplicatesOnPage++;
+          }
 
-          const duplicatesOnPage = existingCount.count;
           const newTendersOnPage = urls.length - duplicatesOnPage;
 
           console.log(`📊 Duplicate analysis: ${duplicatesOnPage}/${urls.length} exist, ${newTendersOnPage} new`);
