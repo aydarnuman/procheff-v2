@@ -93,6 +93,49 @@
         "reveal": "always",
         "panel": "shared"
       }
+    },
+    {
+      "label": "🏥 Dev Health Check",
+      "type": "npm",
+      "script": "dev:check",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "focus": true
+      }
+    },
+    {
+      "label": "🚀 Smart Dev Server (with health check)",
+      "type": "npm",
+      "script": "dev:safe",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "focus": false
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      }
+    },
+    {
+      "label": "📊 Port Monitor - Start",
+      "type": "npm",
+      "script": "monitor:start",
+      "problemMatcher": []
+    },
+    {
+      "label": "📊 Port Monitor - Stop",
+      "type": "npm",
+      "script": "monitor:stop",
+      "problemMatcher": []
+    },
+    {
+      "label": "📊 Port Monitor - Status",
+      "type": "npm",
+      "script": "monitor:status",
+      "problemMatcher": []
     }
   ]
 }

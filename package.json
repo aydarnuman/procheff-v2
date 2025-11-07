@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:safe": "./scripts/smart-dev.sh",
+    "dev:check": "./scripts/dev-healthcheck.sh",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -12,7 +14,10 @@
     "test:smoke": "npx tsx tests/smoke-test.ts",
     "test:ai": "npx tsx tests/ai-extraction-test.ts",
     "backup:db": "./scripts/backup-database.sh",
-    "cleanup:servers": "./scripts/cleanup-servers.sh"
+    "cleanup:servers": "./scripts/cleanup-servers.sh",
+    "monitor:start": "./scripts/port-monitor.sh start",
+    "monitor:stop": "./scripts/port-monitor.sh stop",
+    "monitor:status": "./scripts/port-monitor.sh status"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",
