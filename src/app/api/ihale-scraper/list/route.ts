@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
     const result = await TenderDatabase.getTendersFiltered(filters);
 
     // Serialize data to plain objects (fix "Only plain objects" error)
-    const serializedData = result.data.map(tender => {
+    const serializedData = result.data.map((tender: any) => {
       const plainTender: any = {};
       for (const [key, value] of Object.entries(tender)) {
         if (value === null || value === undefined) {

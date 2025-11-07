@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     let failed = 0;
     const BATCH_SIZE = 10; // 10 ihale paralel
 
-    const processTender = async (tender: any, index: number, total: number) => {
+    const processTender = async (tender: any, index: number, total: number): Promise<{ success: boolean }> => {
       console.log(`\n[${index + 1}/${total}] İşleniyor: ${tender.id}`);
       console.log(`   URL: ${tender.source_url}`);
 
@@ -204,7 +204,7 @@ SADECE JSON döndür!`;
       console.log(`\n🚀 Batch ${Math.floor(i / BATCH_SIZE) + 1} başlatıldı (${batch.length} ihale paralel)`);
 
       const results = await Promise.all(
-        batch.map((tender, batchIndex) => processTender(tender, i + batchIndex, tenders.length))
+        batch.map((tender: any, batchIndex: number) => processTender(tender, i + batchIndex, tenders.length))
       );
 
       // Sonuçları say
