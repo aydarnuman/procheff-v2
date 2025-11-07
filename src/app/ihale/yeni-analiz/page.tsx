@@ -202,13 +202,27 @@ function PageInner() {
     return `${friendlyStage}${detailInfo}${timeInfo}`;
   }, []);
 
+  // 🆕 Sayfa direkt açıldığında (from parametresi yoksa) eski analizi temizle
+  useEffect(() => {
+    if (!from && currentAnalysis) {
+      console.log('🧹 Sayfa manuel açıldı, eski analiz temizleniyor...');
+      setCurrentAnalysis(null);
+      // currentStep zaten 'upload' olarak başlıyor, tekrar set etmeye gerek yok
+    }
+  }, [from, currentAnalysis, setCurrentAnalysis]); // Dependencies ekledik
+
   // 🆕 İhale robotundan gelen sessionStorage verilerini işle
   useEffect(() => {
+    console.log('🔍 useEffect çalıştı - from parametresi:', from);
+    console.log('🔍 currentStep:', currentStep);
+    
     if (from && from.startsWith('ihale_docs_') && currentStep === 'upload') {
       console.log('🎯 İhale robotundan gelen veri tespit edildi, sessionStorage\'dan yükleniyor...');
 
       try {
         const sessionData = sessionStorage.getItem(from);
+        console.log('📦 sessionStorage\'dan okunan data:', sessionData ? 'VAR' : 'YOK');
+        
         if (sessionData) {
           const payload = JSON.parse(sessionData);
           console.log('📦 Session data bulundu:', {
@@ -1118,78 +1132,32 @@ function PageInner() {
             </motion.div>
           )}
 
-          {/* Eğer analiz tamamlanmışsa sadece özet göster */}
-          {currentAnalysis ? (
-            <div className="bg-gradient-to-r from-green-500/20 to-blue-500/20 rounded-2xl p-8 border border-green-500/30">
-              <div className="flex items-start justify-between mb-6">
-                <div className="flex items-center space-x-3">
-                  <CheckCircle className="w-8 h-8 text-green-400" />
-                  <div>
-                    <h3 className="text-xl font-bold text-surface-primary">
-                      Analiz Tamamlandı!
-                    </h3>
-                    <p className="text-surface-secondary text-sm">
-                      İhale analizi başarıyla tamamlandı
-                    </p>
-                  </div>
+          {/* Eğer önceki analiz varsa, bilgilendirme banner'ı göster */}
+          {currentAnalysis && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 mb-6"
+            >
+              <div className="flex items-start gap-3">
+                <div className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5">ℹ️</div>
+                <div className="flex-1">
+                  <p className="text-sm text-blue-300">
+                    Daha önce tamamlanmış bir analiz var. Yeni bir analiz başlatmak için aşağıdan dosyalarınızı yükleyin.
+                  </p>
+                  <button
+                    onClick={() => setCurrentStep("results")}
+                    className="mt-2 text-xs text-blue-400 hover:text-blue-300 underline"
+                  >
+                    Önceki analiz sonuçlarını görüntüle →
+                  </button>
                 </div>
               </div>
+            </motion.div>
+          )}
 
-              {/* Hızlı Özet - Modern Animated Stats */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                {[
-                  { label: "Kurum", value: currentAnalysis.extracted_data.kurum || "Belirtilmemiş", icon: FileText },
-                  { label: "İhale Türü", value: currentAnalysis.extracted_data.ihale_turu || "Belirtilmemiş", icon: Brain },
-                  { label: "Tahmini Bütçe", value: currentAnalysis.extracted_data.tahmini_butce ? `${currentAnalysis.extracted_data.tahmini_butce.toLocaleString()} TL` : "Belirtilmemiş", icon: TrendingUp }
-                ].map((stat, idx) => (
-                  <motion.div
-                    key={stat.label}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: idx * 0.1 }}
-                    className="relative group p-6 rounded-xl bg-gradient-to-br from-gray-800/60 to-gray-900/60 border border-gray-700 hover:border-accent-500/50 overflow-hidden"
-                  >
-                    {/* Glow effect */}
-                    <div className="absolute inset-0 bg-gradient-to-br from-accent-500/0 to-purple-500/0 group-hover:from-accent-500/10 group-hover:to-purple-500/10 transition-all duration-500" />
-
-                    {/* Icon */}
-                    <div className="relative mb-3 flex items-center justify-between">
-                      <stat.icon className="w-6 h-6 text-accent-400" />
-                    </div>
-
-                    {/* Label */}
-                    <div className="relative text-xs text-gray-400 uppercase tracking-wider mb-2">{stat.label}</div>
-
-                    {/* Value */}
-                    <div className="relative text-lg font-bold text-white truncate">
-                      {stat.value}
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-
-              {/* Aksiyon Butonları */}
-              <div className="flex space-x-4">
-                <button
-                  onClick={() => setCurrentStep("results")}
-                  className="flex-1 flex items-center justify-center px-6 py-4 bg-accent-500 text-white rounded-xl hover:bg-accent-600 transition-colors font-semibold"
-                >
-                  <Eye className="w-5 h-5 mr-2" />
-                  Detaylı Sonuçları Gör
-                </button>
-                <button
-                  onClick={resetProcess}
-                  className="flex items-center justify-center px-6 py-4 bg-platinum-700 text-surface-primary rounded-xl hover:bg-platinum-600 transition-colors font-semibold"
-                >
-                  <Upload className="w-5 h-5 mr-2" />
-                  Yeni Analiz Başlat
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
-              {/* 🆕 Auto-Analysis Preview Card */}
-              {(autoAnalysisPreview.isProcessing || autoAnalysisPreview.stage === 'completed') && (
+          {/* 🆕 Auto-Analysis Preview Card */}
+          {(autoAnalysisPreview.isProcessing || autoAnalysisPreview.stage === 'completed') && (
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -1632,8 +1600,6 @@ function PageInner() {
                   )}
                 </div>
               )}
-            </>
-          )}
         </motion.div>
       )}
 

@@ -12,8 +12,22 @@ export async function GET(request: NextRequest) {
 
     // 🆕 Eğer ID parametresi varsa, tek tender getir
     const tenderIdStr = searchParams.get('id');
-    if (tenderIdStr) {
-      const tender = await TenderDatabase.getTenderById(parseInt(tenderIdStr, 10));
+    const sourceIdStr = searchParams.get('source_id');
+    
+    if (tenderIdStr || sourceIdStr) {
+      let tender = null;
+      
+      // Try by internal ID first
+      if (tenderIdStr) {
+        tender = await TenderDatabase.getTenderById(parseInt(tenderIdStr, 10));
+      }
+      
+      // If not found and source_id provided, try by source_id
+      if (!tender && sourceIdStr) {
+        const source = searchParams.get('source') || 'ihalebul'; // default to ihalebul
+        tender = await TenderDatabase.getTenderBySourceId(source, sourceIdStr);
+      }
+      
       if (!tender) {
         return NextResponse.json(
           { success: false, error: 'Tender bulunamadı' },

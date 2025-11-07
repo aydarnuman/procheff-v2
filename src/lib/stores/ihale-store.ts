@@ -295,7 +295,7 @@ export const useIhaleStore = create<IhaleState>()(
           ...fs,
           extractedText: undefined, // Text persist edilmesin (50-200KB tasarruf per file)
         })),
-        currentStep: state.currentStep, // 🆕 Hangi adımda olduğumuzu sakla
+        // currentStep persist edilMEsin - her zaman upload ile başlasın
         // csvFiles, isProcessing SAKLANMAZ
       }),
     }

@@ -68,7 +68,8 @@ async function tryDB(tenderId: string): Promise<any> {
 async function fetchAI(tenderId: string): Promise<any> {
   try {
     // İlk önce tender bilgilerini al (URL gerekli)
-    const tenderRes = await fetch(`/api/ihale-scraper/list?id=${tenderId}`);
+    // tenderId burada source_id olarak geliyor, source parametresini de ekle
+    const tenderRes = await fetch(`/api/ihale-scraper/list?source_id=${tenderId}&source=ihalebul`);
     const tenderData = await tenderRes.json();
 
     if (!tenderData.success || !tenderData.data || tenderData.data.length === 0) {

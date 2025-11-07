@@ -253,6 +253,31 @@ export class TursoTenderDatabase {
   }
 
   /**
+   * Get tender by source and source_id
+   */
+  static async getTenderBySourceId(source: string, sourceId: string): Promise<any | null> {
+    try {
+      const row = await executeQuerySingle(
+        'SELECT * FROM ihale_listings WHERE source = ? AND source_id = ?',
+        [source, sourceId]
+      );
+
+      if (!row) return null;
+
+      return {
+        ...(row as any),
+        raw_json: (row as any).raw_json ? JSON.parse((row as any).raw_json) : null,
+        is_catering: Boolean((row as any).is_catering),
+        is_active: Boolean((row as any).is_active),
+        ai_analyzed: Boolean((row as any).ai_analyzed),
+      };
+    } catch (error) {
+      console.error('❌ Turso getTenderBySourceId error:', error);
+      return null;
+    }
+  }
+
+  /**
    * Update tender
    */
   static async updateTender(id: number, updates: Partial<TenderInsertPayload>): Promise<{ success: boolean }> {
