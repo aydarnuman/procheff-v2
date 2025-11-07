@@ -173,9 +173,9 @@ function PageInner() {
   // Steps configuration - useMemo for performance
   const steps = React.useMemo(() => [
     { id: "upload", label: "Yükle", icon: Upload },
-    { id: "processing", label: "Sayfalara Böl", icon: FileText },
+    { id: "processing", label: "İşle", icon: FileText },
     { id: "view", label: "Görüntüle", icon: Eye },
-    { id: "analyze", label: "AI Analizi", icon: Brain },
+    { id: "analyze", label: "Analiz", icon: Brain },
     { id: "results", label: "Sonuç", icon: CheckCircle },
   ], []);
 
@@ -971,31 +971,100 @@ function PageInner() {
   }, [setCurrentStep]);
 
   return (
-<div className="min-h-screen bg-platinum-900 p-6">
-  <div className="max-w-6xl mx-auto space-y-8">
-    {/* Header - Sadece results dışında göster */}
+<div className="min-h-screen bg-slate-950 p-4">
+  <div className="max-w-7xl mx-auto space-y-4">
+    {/* Header - Modern Dark Compact */}
     {currentStep !== "results" && (
-      <div className="text-center space-y-3">
-        <h1 className="text-3xl font-bold text-surface-primary">
-          İhale Şartname Analizi
-        </h1>
-        <p className="text-surface-secondary">
-          PDF, Word, TXT, JSON, PNG, JPG dosyaları yükleyip AI ile analiz edin
-        </p>
+      <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800">
+        {/* Dot Pattern Background */}
+        <div className="absolute inset-0 opacity-20" style={{
+          backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(148, 163, 184, 0.15) 1px, transparent 0)',
+          backgroundSize: '24px 24px'
+        }}></div>
+        
+        <div className="relative px-6 py-4">
+          <div className="flex items-center justify-between">
+            {/* Left: Title */}
+            <div className="flex items-center gap-4">
+              <div className="relative">
+                <div className="absolute inset-0 bg-blue-600/20 rounded-lg blur-lg"></div>
+                <div className="relative p-2.5 bg-gradient-to-br from-slate-800 to-slate-900 rounded-lg border border-slate-700">
+                  <Brain className="w-5 h-5 text-blue-400" />
+                </div>
+              </div>
+              <div>
+                <h1 className="text-lg font-black text-white tracking-tight">İhale Şartname Analizi</h1>
+                <p className="text-xs text-slate-500 mt-0.5">PDF • Word • TXT • JSON • Görsel • AI Destekli</p>
+              </div>
+            </div>
+            
+            {/* Right: AI Status */}
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 border border-slate-700 rounded-full">
+              <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></div>
+              <span className="text-xs text-slate-400 font-medium">Claude AI</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
 
-        {/* AI Status */}
-        <div className="flex items-center justify-center space-x-2 mt-4">
-          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-          <span className="text-surface-secondary text-sm">
-            Claude AI Aktif
-          </span>
+    {/* Progress Steps - Compact Horizontal Only */}
+    {currentStep !== "results" && (
+      <div className="w-full">
+        <div className="flex items-center justify-center gap-3 px-4 py-3 bg-slate-900/50 border border-slate-800 rounded-xl">
+          {steps.map((step, index) => {
+            const StepIcon = step.icon;
+            const isActive = currentStep === step.id;
+            const isCompleted =
+              steps.findIndex((s) => s.id === currentStep) > index;
+
+            return (
+              <React.Fragment key={step.id}>
+                <div
+                  className={`relative flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all duration-300 ${
+                    isActive
+                      ? "border-blue-600 bg-blue-600/10 shadow-lg shadow-blue-600/20"
+                      : isCompleted
+                      ? "border-green-600 bg-green-600/10"
+                      : "border-slate-700 bg-slate-800/50"
+                  }`}
+                >
+                  <StepIcon
+                    className={`w-4 h-4 ${
+                      isActive
+                        ? "text-blue-400"
+                        : isCompleted
+                        ? "text-green-400"
+                        : "text-slate-500"
+                    }`}
+                  />
+                  <span className={`text-xs font-medium ${
+                    isActive
+                      ? "text-white"
+                      : isCompleted
+                      ? "text-green-300"
+                      : "text-slate-500"
+                  }`}>
+                    {step.label}
+                  </span>
+                </div>
+                
+                {/* Separator Line */}
+                {index < steps.length - 1 && (
+                  <div className={`h-px w-8 ${
+                    isCompleted ? "bg-green-600" : "bg-slate-700"
+                  }`}></div>
+                )}
+              </React.Fragment>
+            );
+          })}
         </div>
       </div>
     )}
 
     {/* Progress Steps - Sadece results dışında göster */}
     {currentStep !== "results" && (
-      <div className="w-full max-w-4xl mx-auto px-4">
+      <div className="w-full max-w-4xl mx-auto px-4 hidden">
         {/* Desktop: Horizontal steps */}
         <div className="hidden md:flex items-center justify-center space-x-8">
           {steps.map((step, index) => {

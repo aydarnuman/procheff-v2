@@ -129,121 +129,97 @@ export function SimpleDocumentList({
   };
 
   return (
-    <div className="w-full mx-auto space-y-6">
-      {/* Stage Indicator - Creative Dark Design */}
-      <div className="relative overflow-hidden">
-        {/* Animated Background Pattern */}
-        <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950"></div>
-        <div className="absolute inset-0 opacity-30" style={{
+    <div className="w-full mx-auto space-y-4">
+      {/* Stage Indicator - Compact Dark Design */}
+      <div className="relative overflow-hidden rounded-xl border border-slate-800">
+        {/* Background */}
+        <div className="absolute inset-0 bg-gradient-to-r from-slate-900 via-slate-900 to-slate-800"></div>
+        <div className="absolute inset-0 opacity-20" style={{
           backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(148, 163, 184, 0.15) 1px, transparent 0)',
-          backgroundSize: '32px 32px'
+          backgroundSize: '24px 24px'
         }}></div>
         
-        <div className="relative flex items-center gap-8 py-8 px-10">
-          {/* Vertical Accent Line */}
+        <div className="relative flex items-center gap-6 py-4 px-6">
+          {/* Vertical Accent */}
           <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-transparent via-slate-600 to-transparent"></div>
           
-          {/* İlk Aşama Badge - Hexagon Style */}
-          <div className="relative group">
-            {/* Hexagon Glow Effect */}
-            <div className="absolute -inset-3 bg-gradient-to-r from-slate-600/0 via-slate-500/30 to-slate-600/0 blur-xl group-hover:via-slate-400/40 transition-all duration-500"></div>
-            
-            {/* Badge Container */}
-            <div className="relative">
-              {/* Corner Accents */}
-              <div className="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-slate-600"></div>
-              <div className="absolute -top-1 -right-1 w-3 h-3 border-t-2 border-r-2 border-slate-600"></div>
-              <div className="absolute -bottom-1 -left-1 w-3 h-3 border-b-2 border-l-2 border-slate-600"></div>
-              <div className="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-slate-600"></div>
-              
-              {/* Badge Content */}
-              <div className="px-8 py-4 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 border border-slate-700/50 shadow-2xl">
-                <div className="flex items-center gap-4">
-                  {/* Animated Number Circle */}
-                  <div className="relative">
-                    <div className="absolute inset-0 bg-slate-600/50 rounded-full blur-lg animate-pulse"></div>
-                    <div className="relative flex items-center justify-center w-14 h-14 bg-gradient-to-br from-slate-700 to-slate-800 rounded-full border-2 border-slate-600 shadow-xl">
-                      <span className="text-slate-200 font-black text-2xl">1</span>
-                    </div>
-                  </div>
-                  
-                  {/* Text Stack */}
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-px bg-gradient-to-r from-slate-600 to-transparent"></div>
-                      <span className="text-xs text-slate-500 font-bold uppercase tracking-[0.2em]">AŞAMA</span>
-                    </div>
-                    <span className="text-xl font-bold text-white tracking-tight">Dosya İşleme</span>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <div className="w-12 h-px bg-gradient-to-r from-slate-600 to-transparent"></div>
-                      <span className="text-xs text-slate-600 uppercase tracking-wide">PHASE ONE</span>
-                    </div>
-                  </div>
+          {/* Stage Badge - Compact */}
+          <div className="relative">
+            <div className="absolute -inset-2 bg-slate-600/20 blur-lg"></div>
+            <div className="relative flex items-center gap-3 px-4 py-2 bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 rounded-lg">
+              {/* Number Circle */}
+              <div className="relative">
+                <div className="absolute inset-0 bg-slate-600/30 rounded-full blur animate-pulse"></div>
+                <div className="relative flex items-center justify-center w-10 h-10 bg-gradient-to-br from-slate-700 to-slate-800 rounded-full border-2 border-slate-600">
+                  <span className="text-slate-200 font-black text-lg">1</span>
                 </div>
+              </div>
+              
+              {/* Text */}
+              <div className="flex flex-col">
+                <span className="text-xs text-slate-500 uppercase tracking-wide">AŞAMA</span>
+                <span className="text-base font-bold text-white">Dosya İşleme</span>
               </div>
             </div>
           </div>
 
-          {/* Diagonal Separator */}
-          <div className="relative h-20 w-px">
-            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-slate-600 to-transparent skew-x-12"></div>
-          </div>
+          {/* Separator */}
+          <div className="h-12 w-px bg-gradient-to-b from-transparent via-slate-600 to-transparent"></div>
           
-          {/* Title Section with Icon Badge */}
-          <div className="flex items-center gap-5 flex-1">
-            {/* Icon Badge */}
+          {/* Title */}
+          <div className="flex items-center gap-3 flex-1">
             <div className="relative">
-              <div className="absolute inset-0 bg-slate-600/30 rounded-2xl blur-xl"></div>
-              <div className="relative p-4 bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl border border-slate-700 shadow-2xl">
-                <FileText className="w-7 h-7 text-slate-400" />
+              <div className="absolute inset-0 bg-slate-600/20 rounded-lg blur-lg"></div>
+              <div className="relative p-2 bg-gradient-to-br from-slate-800 to-slate-900 rounded-lg border border-slate-700">
+                <FileText className="w-5 h-5 text-slate-400" />
               </div>
             </div>
-            
-            {/* Title Stack */}
-            <div className="flex flex-col">
-              <h3 className="text-2xl font-black text-white tracking-tight">OCR & Metin Çıkarma</h3>
-              <p className="text-sm text-slate-500 mt-1">Belgeleri metne dönüştür • Analiz hazırlığı</p>
+            <div>
+              <h3 className="text-lg font-black text-white">OCR & Metin Çıkarma</h3>
+              <p className="text-xs text-slate-500">Belgeleri metne dönüştür • Analiz hazırlığı</p>
             </div>
           </div>
           
-          {/* Enhanced Stats with Colors */}
-          <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 border border-slate-700 rounded-lg">
-            <span className="text-xs text-gray-400">Toplam:</span>
-            <span className="text-sm font-semibold text-white">{fileStatuses.length}</span>
+          {/* Stats - Inline */}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-800/50 border border-slate-700 rounded">
+              <span className="text-xs text-slate-500">Toplam:</span>
+              <span className="text-sm font-bold text-white">{fileStatuses.length}</span>
+            </div>
+            {fileStatuses.some(f => f.status === 'pending') && (
+              <div className="flex items-center gap-1.5 px-2 py-1 bg-yellow-950/30 border border-yellow-900/50 rounded">
+                <span className="text-xs text-yellow-600">Bekleyen:</span>
+                <span className="text-sm font-bold text-yellow-500">
+                  {fileStatuses.filter(f => f.status === 'pending').length}
+                </span>
+              </div>
+            )}
+            {fileStatuses.some(f => f.status === 'processing') && (
+              <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-950/30 border border-blue-900/50 rounded">
+                <Loader2 className="w-3 h-3 text-blue-600 animate-spin" />
+                <span className="text-sm font-bold text-blue-500">
+                  {fileStatuses.filter(f => f.status === 'processing').length}
+                </span>
+              </div>
+            )}
+            {fileStatuses.some(f => f.status === 'completed') && (
+              <div className="flex items-center gap-1.5 px-2 py-1 bg-green-950/30 border border-green-900/50 rounded">
+                <CheckCircle className="w-3 h-3 text-green-700" />
+                <span className="text-sm font-bold text-green-600">
+                  {fileStatuses.filter(f => f.status === 'completed').length}
+                </span>
+              </div>
+            )}
           </div>
-          {fileStatuses.filter(f => f.status === 'completed').length > 0 && (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-green-500/10 border border-green-500/30 rounded-lg">
-              <span className="text-xs text-green-400">✓ İşlendi:</span>
-              <span className="text-sm font-semibold text-green-300">
-                {fileStatuses.filter(f => f.status === 'completed').length}
-              </span>
-            </div>
-          )}
-          {fileStatuses.filter(f => f.status === 'processing').length > 0 && (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 border border-blue-500/30 rounded-lg animate-pulse">
-              <span className="text-xs text-blue-400">⏳ İşleniyor:</span>
-              <span className="text-sm font-semibold text-blue-300">
-                {fileStatuses.filter(f => f.status === 'processing').length}
-              </span>
-            </div>
-          )}
-          {csvFiles.length > 0 && (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
-              <span className="text-xs text-emerald-400">📊 CSV:</span>
-              <span className="text-sm font-semibold text-emerald-300">{csvFiles.length}</span>
-            </div>
-          )}
-        </div>
         </div>
       </div>
 
       {/* Upload Section - Dark Noble Card */}
-      <div className="relative mx-8">
+      <div className="relative">
         {/* Main Card */}
-        <div className="bg-slate-900/95 border border-slate-800 rounded-2xl p-10 shadow-2xl shadow-black/50">
+        <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6">
           {/* Upload Buttons */}
-          <div className="flex items-center justify-end gap-4 mb-8">
+          <div className="flex items-center justify-end gap-2 mb-4">
             <label className="cursor-pointer group/btn" htmlFor="document-file-input">
               <input
                 id="document-file-input"
@@ -255,8 +231,8 @@ export function SimpleDocumentList({
                 className="hidden"
                 aria-label="PDF, Word veya resim dosyası yükle"
               />
-              <div className="px-6 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-slate-200 rounded-lg transition-all duration-200 flex items-center gap-3 font-medium shadow-lg hover:shadow-xl">
-                <Upload className="w-5 h-5" />
+              <div className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-blue-600 text-slate-200 rounded-lg transition-all flex items-center gap-2 text-sm font-medium">
+                <Upload className="w-4 h-4" />
                 <span>Belge Ekle</span>
               </div>
             </label>
@@ -273,8 +249,8 @@ export function SimpleDocumentList({
                   className="hidden"
                   aria-label="CSV maliyet dosyası yükle"
                 />
-                <div className="px-6 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-slate-200 rounded-lg transition-all duration-200 flex items-center gap-3 font-medium shadow-lg hover:shadow-xl">
-                  <span className="text-lg">📊</span>
+                <div className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-emerald-600 text-slate-200 rounded-lg transition-all flex items-center gap-2 text-sm font-medium">
+                  <span className="text-base">📊</span>
                   <span>CSV Ekle</span>
                 </div>
               </label>
@@ -282,14 +258,14 @@ export function SimpleDocumentList({
           </div>
 
           {/* File List */}
-          <div className="space-y-3">
+          <div className="space-y-2">
           {fileStatuses.length === 0 ? (
             <div 
               className={`
-                text-center py-20 px-6 rounded-xl border-2 border-dashed transition-all duration-300
+                text-center py-12 px-6 rounded-xl border-2 border-dashed transition-all
                 ${isDragging 
-                  ? 'border-blue-500 bg-blue-500/10 scale-[1.02]' 
-                  : 'border-slate-600 hover:border-blue-500/50 hover:bg-slate-800/30'
+                  ? 'border-blue-500 bg-blue-500/10 scale-[1.01]' 
+                  : 'border-slate-700 hover:border-blue-500/50 hover:bg-slate-800/30'
                 }
               `}
               onDragEnter={handleDragEnter}
@@ -299,50 +275,45 @@ export function SimpleDocumentList({
             >
               <motion.div
                 initial={{ scale: 1 }}
-                animate={{ scale: isDragging ? 1.1 : 1 }}
+                animate={{ scale: isDragging ? 1.05 : 1 }}
                 transition={{ duration: 0.2 }}
               >
-                <div className="relative inline-block mb-6">
-                  <div className={`absolute inset-0 blur-2xl rounded-full transition-all ${isDragging ? 'bg-blue-500/40' : 'bg-blue-500/20'}`}></div>
-                  <FileText className={`relative w-20 h-20 mx-auto transition-colors ${isDragging ? 'text-blue-400' : 'text-blue-400/60'}`} />
+                <div className="relative inline-block mb-4">
+                  <div className={`absolute inset-0 blur-xl rounded-full transition-all ${isDragging ? 'bg-blue-500/30' : 'bg-blue-500/10'}`}></div>
+                  <FileText className={`relative w-12 h-12 mx-auto transition-colors ${isDragging ? 'text-blue-400' : 'text-slate-500'}`} />
                 </div>
               </motion.div>
               
-              <h3 className="text-xl font-semibold text-white mb-2">
-                {isDragging ? '📂 Dosyaları buraya bırakın' : 'Henüz dosya eklenmedi'}
+              <h3 className="text-base font-bold text-white mb-1">
+                {isDragging ? '📂 Dosyaları buraya bırakın' : 'Dosya Bekleniyor'}
               </h3>
-              <p className="text-gray-400 mb-8 max-w-md mx-auto">
+              <p className="text-xs text-slate-500 mb-6">
                 {isDragging 
-                  ? 'Dosyaları serbest bırakarak yüklemeyi başlatın'
-                  : 'Dosyaları sürükleyip bırakın veya yüklemek için butona tıklayın'
+                  ? 'Serbest bırakın'
+                  : 'Sürükle-bırak veya butona tıklayın'
                 }
               </p>
 
-              {/* Dosya Tipi Örnekleri */}
-              <div className="flex items-center justify-center gap-6 mb-8">
-                <div className="flex flex-col items-center gap-2 p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
-                  <FileText className="w-8 h-8 text-red-400" />
-                  <span className="text-xs text-gray-400">PDF</span>
+              {/* Dosya Tipi Örnekleri - Kompakt */}
+              <div className="flex items-center justify-center gap-3 mb-4">
+                <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-800/50 rounded border border-slate-700/50">
+                  <FileText className="w-4 h-4 text-red-400" />
+                  <span className="text-xs text-slate-500">PDF</span>
                 </div>
-                <div className="flex flex-col items-center gap-2 p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
-                  <FileCode className="w-8 h-8 text-blue-400" />
-                  <span className="text-xs text-gray-400">Word</span>
+                <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-800/50 rounded border border-slate-700/50">
+                  <FileCode className="w-4 h-4 text-blue-400" />
+                  <span className="text-xs text-slate-500">Word</span>
                 </div>
-                <div className="flex flex-col items-center gap-2 p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
-                  <FileImage className="w-8 h-8 text-purple-400" />
-                  <span className="text-xs text-gray-400">Resim</span>
+                <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-800/50 rounded border border-slate-700/50">
+                  <FileImage className="w-4 h-4 text-purple-400" />
+                  <span className="text-xs text-slate-500">Resim</span>
                 </div>
               </div>
 
-              <div className="flex items-center justify-center gap-4 text-sm text-gray-500">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                  <span>Maksimum 50MB</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                  <span>Çoklu dosya desteği</span>
-                </div>
+              <div className="flex items-center justify-center gap-3 text-xs text-slate-600">
+                <span>Max 50MB</span>
+                <span>•</span>
+                <span>Çoklu dosya</span>
               </div>
             </div>
           ) : (
@@ -350,43 +321,38 @@ export function SimpleDocumentList({
               {fileStatuses.map((file, index) => (
                 <motion.div
                   key={file.fileMetadata.name}
-                  initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                  initial={{ opacity: 0, y: 10, scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, x: -100, scale: 0.9 }}
-                  transition={{ duration: 0.3, delay: index * 0.05 }}
+                  exit={{ opacity: 0, x: -50, scale: 0.95 }}
+                  transition={{ duration: 0.2, delay: index * 0.03 }}
                   className={`
-                    group relative flex items-center gap-4 p-5 rounded-xl border-2 
-                    transition-all duration-300 cursor-default
-                    hover:scale-[1.02] hover:shadow-2xl hover:shadow-blue-500/20
+                    group relative flex items-center gap-3 p-4 rounded-lg border
+                    transition-all hover:scale-[1.01] hover:shadow-lg
                     ${file.status === 'processing' 
-                      ? 'bg-gradient-to-br from-blue-500/10 to-purple-500/10 border-transparent animate-gradient-x' 
+                      ? 'bg-blue-500/5 border-blue-600/30' 
                       : getStatusColor(file.status)
                     }
                   `}
-                  style={file.status === 'processing' ? {
-                    backgroundImage: 'linear-gradient(45deg, rgba(59, 130, 246, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%)',
-                    borderImage: 'linear-gradient(45deg, rgba(59, 130, 246, 0.5), rgba(168, 85, 247, 0.5)) 1',
-                  } : undefined}
                 >
                   {/* Dosya Tipi İkonu */}
-                  <div className="flex-shrink-0 transform group-hover:scale-110 transition-transform">
+                  <div className="flex-shrink-0 transform group-hover:scale-105 transition-transform">
                     {getFileTypeIcon(file.fileMetadata.name)}
                   </div>
 
                   {/* File Info */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-3 mb-2">
-                      <h4 className="font-medium text-white truncate">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <h4 className="font-medium text-white text-sm truncate">
                         {file.fileMetadata.name}
                       </h4>
                       
-                      {/* Status Badge (Modern Pill Tasarım) */}
+                      {/* Status Badge */}
                       <div className={`
-                        flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium
-                        ${file.status === 'completed' ? 'bg-green-500/20 text-green-300 border border-green-500/30' :
-                          file.status === 'processing' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30 animate-pulse' :
-                          file.status === 'error' ? 'bg-red-500/20 text-red-300 border border-red-500/30' :
-                          'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
+                        flex items-center gap-1 px-2 py-0.5 rounded text-xs
+                        ${file.status === 'completed' ? 'bg-green-500/20 text-green-400' :
+                          file.status === 'processing' ? 'bg-blue-500/20 text-blue-400 animate-pulse' :
+                          file.status === 'error' ? 'bg-red-500/20 text-red-400' :
+                          'bg-yellow-500/20 text-yellow-400'
                         }
                       `}>
                         {getStatusIcon(file.status)}
@@ -394,47 +360,39 @@ export function SimpleDocumentList({
                       </div>
                       
                       {file.detectedType && (
-                        <span className="px-2.5 py-1 bg-purple-500/20 text-purple-300 rounded-full text-xs font-medium border border-purple-500/30 flex-shrink-0">
+                        <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded text-xs">
                           {BELGE_TURU_LABELS[file.detectedType as BelgeTuru]}
                         </span>
                       )}
                     </div>
                     
-                    {/* Dosya Bilgileri + Word Count Badge */}
-                    <div className="flex items-center gap-3 text-sm">
-                      <span className="text-gray-400 flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 bg-gray-500 rounded-full"></span>
-                        {(file.fileMetadata.size / 1024 / 1024).toFixed(2)} MB
-                      </span>
+                    {/* Dosya Bilgileri */}
+                    <div className="flex items-center gap-2 text-xs text-slate-500">
+                      <span>{(file.fileMetadata.size / 1024 / 1024).toFixed(2)} MB</span>
                       
-                      {/* Word Count Badge (sadece tamamlanan dosyalar için) */}
                       {file.status === 'completed' && file.wordCount && (
-                        <span className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/20 text-emerald-300 rounded-full text-xs font-medium border border-emerald-500/30">
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
-                          {file.wordCount.toLocaleString('tr-TR')} kelime
-                        </span>
+                        <>
+                          <span>•</span>
+                          <span className="text-emerald-400">
+                            {file.wordCount.toLocaleString('tr-TR')} kelime
+                          </span>
+                        </>
                       )}
                     </div>
 
-                    {/* Progress Bar for Processing */}
+                    {/* Progress Bar */}
                     {file.status === 'processing' && (
-                      <div className="mt-3 space-y-1">
-                        <div className="h-2 bg-slate-900/50 rounded-full overflow-hidden relative">
-                          {/* Animasyonlu gradient progress bar */}
+                      <div className="mt-2">
+                        <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
                           <div
-                            className="h-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 transition-all duration-500 relative overflow-hidden"
+                            className="h-full bg-blue-600 transition-all"
                             style={{ width: `${file.progressPercentage || 0}%` }}
-                          >
-                            {/* Shimmer effect */}
-                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer"></div>
-                          </div>
+                          ></div>
                         </div>
                         {file.progress && (
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="text-blue-300 font-medium">{file.progress}</span>
-                            <span className="text-gray-400 font-mono tabular-nums">{file.progressPercentage || 0}%</span>
+                          <div className="flex items-center justify-between text-xs mt-1">
+                            <span className="text-blue-400">{file.progress}</span>
+                            <span className="text-slate-500">{file.progressPercentage || 0}%</span>
                           </div>
                         )}
                       </div>
@@ -446,7 +404,7 @@ export function SimpleDocumentList({
                   {file.status === 'pending' && (
                     <button
                       onClick={() => onFileProcess(file.fileMetadata.name)}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium"
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium"
                       aria-label={`${file.fileMetadata.name} dosyasını işle`}
                     >
                       İşle
@@ -455,11 +413,11 @@ export function SimpleDocumentList({
                   {file.status !== 'processing' && (
                     <button
                       onClick={() => onFileRemove(file.fileMetadata.name)}
-                      className="p-2 hover:bg-red-500/20 rounded-lg transition-colors"
+                      className="p-1.5 hover:bg-red-500/20 rounded transition-colors"
                       title="Sil"
                       aria-label={`${file.fileMetadata.name} dosyasını sil`}
                     >
-                      <Trash2 className="w-5 h-5 text-red-400" />
+                      <Trash2 className="w-4 h-4 text-red-400" />
                     </button>
                   )}
                 </div>
