@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { ExtractedData, ContextualAnalysis } from "@/types/ai";
+import { AILogger } from "@/lib/utils/ai-logger";
 
 /**
  * Gemini AI Provider for Tender Document (Şartname) Extraction
@@ -21,15 +22,19 @@ export class GeminiExtractionProvider {
     this.model = process.env.GEMINI_MODEL || "gemini-2.0-flash-exp";
 
     if (!this.apiKey) {
+      AILogger.error("GEMINI_API_KEY is missing", { provider: 'gemini' });
       throw new Error("GEMINI_API_KEY is missing in environment variables");
     }
 
     this.genAI = new GoogleGenerativeAI(this.apiKey);
 
-    console.log("=== GEMINI EXTRACTION PROVIDER INIT ===");
-    console.log("API Key exists:", !!this.apiKey);
-    console.log("API Key length:", this.apiKey.length);
-    console.log("Model:", this.model);
+    AILogger.success("Gemini Provider initialized", {
+      provider: 'gemini',
+      metadata: {
+        model: this.model,
+        keyLength: this.apiKey.length
+      }
+    });
   }
 
   /**
@@ -38,9 +43,11 @@ export class GeminiExtractionProvider {
    * No chunking needed - Gemini's 1M context window handles entire documents!
    */
   async extractStructuredData(text: string): Promise<ExtractedData> {
-    console.log("=== GEMINI EXTRACTION BAŞLADI ===");
-    console.log("Text length:", text.length);
-    console.log("Model:", this.model);
+    AILogger.info("Starting Gemini extraction", {
+      provider: 'gemini',
+      operation: 'document-extraction',
+      metadata: { textLength: text.length, model: this.model }
+    });
 
     try {
       const model = this.genAI.getGenerativeModel({
@@ -54,7 +61,6 @@ export class GeminiExtractionProvider {
 
       const prompt = this.buildExtractionPrompt(text);
 
-      console.log("Gemini API'ye istek gönderiliyor...");
       const requestStart = Date.now();
 
       const result = await model.generateContent(prompt);
@@ -62,12 +68,17 @@ export class GeminiExtractionProvider {
       const output = response.text();
 
       const requestTime = Date.now() - requestStart;
-      console.log(`Gemini API response time: ${requestTime}ms`);
-      console.log("Response length:", output.length);
+      AILogger.debug(`Gemini API response time: ${requestTime}ms`, {
+        provider: 'gemini',
+        metadata: { outputLength: output.length }
+      });
 
       // 📊 TOKEN TRACKING - Store usage metadata
       if (response.usageMetadata) {
         const { promptTokenCount, candidatesTokenCount } = response.usageMetadata;
+
+        // Log token usage
+        AILogger.tokenUsage('gemini', promptTokenCount, candidatesTokenCount);
 
         // Import store dinamik olarak (server-side için)
         if (typeof window !== 'undefined') {
@@ -91,12 +102,30 @@ export class GeminiExtractionProvider {
       // Parse JSON response
       const extractedData = this.parseResponse(output);
 
-      console.log("=== GEMINI EXTRACTION TAMAMLANDI ===");
-      console.log("Confidence score:", extractedData.guven_skoru);
+      AILogger.success("Gemini extraction completed", {
+        provider: 'gemini',
+        metadata: { 
+          confidence: extractedData.guven_skoru,
+          fields: Object.keys(extractedData).length
+        }
+      });
 
       return extractedData;
     } catch (error) {
-      console.error("=== GEMINI EXTRACTION ERROR ===", error);
+      AILogger.error("Gemini extraction failed", {
+        provider: 'gemini',
+        metadata: { error: error instanceof Error ? error.message : 'Unknown' }
+      });
+      
+      // Check for specific error types
+      if (error instanceof Error) {
+        if (error.message.includes('429') || error.message.includes('quota')) {
+          AILogger.quotaExceeded('gemini', 'Free tier: 1500 requests/day');
+        } else if (error.message.includes('API key')) {
+          AILogger.apiKeyStatus('gemini', false, error.message);
+        }
+      }
+      
       throw error;
     }
   }

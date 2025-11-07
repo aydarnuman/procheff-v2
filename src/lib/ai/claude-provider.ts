@@ -1,5 +1,6 @@
 import { AIConfig, ExtractedData, ContextualAnalysis } from "@/types/ai";
 import { TableIntelligenceAgent } from "./table-intelligence-agent";
+import { AILogger } from "@/lib/utils/ai-logger";
 
 export class ClaudeProvider {
   private apiKey: string;
@@ -12,22 +13,14 @@ export class ClaudeProvider {
 
     // İYİLEŞTİRME: API anahtarı kontrolü - HEMEN throw et, devam ettirme!
     if (!this.apiKey || this.apiKey === "PLACEHOLDER_GEÇERSIZ_ANAHTAR" || this.apiKey.trim().length === 0) {
-      const errorMessage = `
-❌ ANTHROPIC API ANAHTARI EKSİK VEYA GEÇERSİZ!
-
-Sistem çalışamaz. Lütfen:
-1. Proje root dizininde .env.local dosyası oluşturun
-2. Aşağıdaki satırı ekleyin:
-   ANTHROPIC_API_KEY=sk-ant-api03-...
-
-🔗 API anahtarı almak için: https://console.anthropic.com/
-
-Mevcut durum:
-- API Key var mı: ${!!this.apiKey}
-- API Key uzunluğu: ${this.apiKey?.length || 0}
-- Placeholder mı: ${this.apiKey === "PLACEHOLDER_GEÇERSIZ_ANAHTAR"}
-      `;
-      console.error(errorMessage);
+      AILogger.error("ANTHROPIC API KEY missing or invalid", {
+        provider: 'claude',
+        metadata: {
+          hasKey: !!this.apiKey,
+          keyLength: this.apiKey?.length || 0,
+          isPlaceholder: this.apiKey === "PLACEHOLDER_GEÇERSIZ_ANAHTAR"
+        }
+      });
       throw new Error("ANTHROPIC_API_KEY is missing or invalid. Cannot initialize ClaudeProvider.");
     }
 
@@ -41,13 +34,15 @@ Mevcut durum:
       temperature: parseFloat(process.env.AI_MODEL_TEMPERATURE || "0.3"), // Lower for more consistent, factual outputs
     };
 
-    console.log("=== CLAUDE PROVIDER INIT ===");
-    console.log("API Key exists:", !!this.apiKey);
-    console.log("API Key length:", this.apiKey.length);
-    console.log("API Key first 7 chars:", this.apiKey.substring(0, 7)); // sk-ant-... kontrolü için
-    console.log("Model:", this.config.model);
-    console.log("Max Tokens:", this.config.maxTokens);
-    console.log("Temperature:", this.config.temperature);
+    AILogger.success("Claude Provider initialized", {
+      provider: 'claude',
+      metadata: {
+        model: this.config.model,
+        maxTokens: this.config.maxTokens,
+        temperature: this.config.temperature,
+        keyPrefix: this.apiKey.substring(0, 7)
+      }
+    });
 
     if (!this.config.model) {
       throw new Error("AI model configuration is missing");
@@ -63,8 +58,10 @@ Mevcut durum:
     ];
 
     if (!validModels.includes(this.config.model)) {
-      console.warn(`⚠️ Model adı geçerli listede değil: ${this.config.model}`);
-      console.warn("Geçerli modeller:", validModels.join(", "));
+      AILogger.warning(`Model not in validated list: ${this.config.model}`, {
+        provider: 'claude',
+        metadata: { validModels }
+      });
     }
 
     // Initialize table intelligence agent (kategori-aware)
@@ -216,8 +213,12 @@ Mevcut durum:
     const prompt = this.buildExtractionPrompt(text);
 
     try {
-      console.log("Claude API'ye istek gönderiliyor...");
       const requestStart = Date.now();
+      AILogger.info("Sending request to Claude API", {
+        provider: 'claude',
+        operation: 'document-extraction',
+        metadata: { textLength: text.length }
+      });
 
       const requestBody = {
         model: this.config.model,
@@ -231,8 +232,6 @@ Mevcut durum:
         ],
       };
 
-      console.log("Request Body:", JSON.stringify(requestBody, null, 2));
-
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -244,13 +243,20 @@ Mevcut durum:
       });
 
       const requestTime = Date.now() - requestStart;
-      console.log(`Claude API response time: ${requestTime}ms`);
-      console.log("Response status:", response.status);
+      AILogger.debug(`Claude API response time: ${requestTime}ms`, {
+        provider: 'claude',
+        metadata: { status: response.status }
+      });
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("=== CLAUDE API ERROR ===");
-        console.error("Status:", response.status, response.statusText);
+        AILogger.error("Claude API request failed", {
+          provider: 'claude',
+          metadata: {
+            status: response.status,
+            statusText: response.statusText
+          }
+        });
         console.error(
           "Headers:",
           Object.fromEntries(response.headers.entries())
@@ -264,7 +270,6 @@ Mevcut durum:
 
         try {
           const errorData = JSON.parse(errorText);
-          console.error("Parsed Error Data:", errorData);
 
           if (errorData.error?.message) {
             errorMessage = errorData.error.message;
@@ -273,10 +278,9 @@ Mevcut durum:
             errorType = errorData.error.type;
           }
         } catch (parseError) {
-          console.error("Could not parse error response as JSON:", parseError);
           // Raw error text'i kontrol et
           if (errorText.includes("model")) {
-            errorMessage = `Invalid model: ${this.config.model}. Raw response: ${errorText}`;
+            errorMessage = `Invalid model: ${this.config.model}`;
             errorType = "INVALID_MODEL";
           } else if (errorText.includes("authentication")) {
             errorMessage = "Invalid API key";
@@ -286,22 +290,33 @@ Mevcut durum:
           }
         }
 
-        // Hata tipine göre özel mesajlar
-        if (response.status === 400 && errorType === "INVALID_MODEL") {
-          errorMessage += `\n\nGeçerli modeller (2025):\n- claude-sonnet-4-20250514 (önerilen)\n- claude-sonnet-4-5-20250929 (en yeni)\n- claude-opus-4-1-20250805\n- claude-haiku-4-5-20251001`;
+        // Hata tipine göre AILogger ile özel mesajlar
+        if (response.status === 429) {
+          AILogger.rateLimitWarning('claude');
+        } else if (response.status === 401) {
+          AILogger.apiKeyStatus('claude', false, errorMessage);
+        } else if (response.status === 400 && errorType === "INVALID_MODEL") {
+          AILogger.apiError('claude', 400, errorMessage, 
+            'Use: claude-sonnet-4-20250514 or claude-sonnet-4-5-20250929');
+        } else {
+          AILogger.apiError('claude', response.status, errorMessage);
         }
 
         throw new Error(errorMessage);
       }
 
       const result = await response.json();
-      console.log("Claude API response received");
+      AILogger.success("Claude API response received", { provider: 'claude' });
 
       // 📊 TOKEN TRACKING - Store usage metadata
       if (result.usage) {
         const { input_tokens, output_tokens } = result.usage;
         const cache_creation_tokens = result.usage.cache_creation_input_tokens || 0;
         const cache_read_tokens = result.usage.cache_read_input_tokens || 0;
+
+        // Log token usage
+        AILogger.tokenUsage('claude', input_tokens, output_tokens, undefined, 
+          cache_creation_tokens + cache_read_tokens);
 
         // Import store dinamik olarak (server-side için)
         if (typeof window !== 'undefined') {
@@ -331,49 +346,55 @@ Mevcut durum:
         !Array.isArray(result.content) ||
         result.content.length === 0
       ) {
-        console.error("Invalid Claude API response structure:", result);
+        AILogger.error("Invalid Claude API response structure", {
+          provider: 'claude',
+          metadata: { hasContent: !!result.content }
+        });
         throw new Error("Invalid response structure from Claude API");
       }
 
       const content = result.content[0]?.text;
 
       if (!content) {
-        console.error("No content in Claude response:", result);
+        AILogger.error("No content in Claude response", { provider: 'claude' });
         throw new Error("No content returned from Claude API");
       }
 
-      console.log("Claude response content length:", content.length);
+      AILogger.debug(`Response content received: ${content.length} chars`, {
+        provider: 'claude'
+      });
 
       // Remove markdown code blocks if present (```json ... ```)
       let cleanedContent = content.trim();
       if (cleanedContent.startsWith("```json")) {
         cleanedContent = cleanedContent.replace(/^```json\s*/, "").replace(/```\s*$/, "");
-        console.log("Removed ```json code block wrapper");
+        AILogger.debug("Removed ```json code block wrapper", { provider: 'claude' });
       } else if (cleanedContent.startsWith("```")) {
         cleanedContent = cleanedContent.replace(/^```\s*/, "").replace(/```\s*$/, "");
-        console.log("Removed ``` code block wrapper");
+        AILogger.debug("Removed ``` code block wrapper", { provider: 'claude' });
       }
 
       // JSON parse with error handling
       try {
         const extractedData = JSON.parse(cleanedContent) as ExtractedData;
-        console.log("JSON parsing successful");
-        console.log("Extracted data keys:", Object.keys(extractedData));
+        AILogger.success("Data extraction completed", {
+          provider: 'claude',
+          metadata: { 
+            fields: Object.keys(extractedData).length,
+            confidence: extractedData.guven_skoru 
+          }
+        });
 
         const validatedData = this.validateExtractedData(extractedData);
-        console.log("=== CLAUDE EXTRACTION TAMAMLANDI ===");
         return validatedData;
       } catch (parseError) {
-        console.error("=== JSON PARSE ERROR ===");
-        console.error("Parse Error:", parseError);
-        console.error(
-          "Raw Content (first 500 chars):",
-          content.substring(0, 500)
-        );
-        console.error(
-          "Raw Content (last 500 chars):",
-          content.substring(Math.max(0, content.length - 500))
-        );
+        AILogger.error("JSON parse failed", {
+          provider: 'claude',
+          metadata: {
+            error: parseError instanceof Error ? parseError.message : 'Unknown',
+            contentPreview: content.substring(0, 200)
+          }
+        });
         throw new Error(
           `Failed to parse Claude response as JSON: ${
             parseError instanceof Error
@@ -383,20 +404,27 @@ Mevcut durum:
         );
       }
     } catch (error) {
-      console.error("=== CLAUDE EXTRACTION ERROR ===", error);
+      AILogger.error("Claude extraction failed", {
+        provider: 'claude',
+        metadata: { error: error instanceof Error ? error.message : 'Unknown' }
+      });
 
       if (error instanceof Error) {
         if (error.message.includes("fetch")) {
+          AILogger.apiError('claude', 'NETWORK', 'Network error', 
+            'Check your internet connection');
           throw new Error(
             "Claude API network error. Please check your internet connection."
           );
         }
         if (error.message.includes("401")) {
+          AILogger.apiKeyStatus('claude', false, 'Authentication failed');
           throw new Error(
             "Claude API authentication failed. Please check your API key."
           );
         }
         if (error.message.includes("429")) {
+          AILogger.rateLimitWarning('claude', 60);
           throw new Error(
             "Claude API rate limit exceeded. Please wait a moment and try again."
           );
@@ -406,6 +434,8 @@ Mevcut durum:
           error.message.includes("502") ||
           error.message.includes("503")
         ) {
+          AILogger.apiError('claude', error.message.match(/\d{3}/)?.[0] || '500', 
+            'Server error', 'Try again in a few minutes');
           throw new Error(
             "Claude API server error. Please try again in a few minutes."
           );
