@@ -73,8 +73,8 @@ export const TenderList: React.FC<TenderListProps> = ({
     const timer = setTimeout(() => {
       if (searchInput !== filters.search) {
         setSearchFilter(searchInput);
-        // Fetch after filter is set
-        setTimeout(() => fetchTenders(), 100);
+        // 🎯 Optimize: Direkt fetchTenders - gereksiz nested setTimeout kaldırıldı
+        fetchTenders();
       }
     }, 500);
 
@@ -89,8 +89,8 @@ export const TenderList: React.FC<TenderListProps> = ({
   const handleClearFilters = () => {
     setSearchInput('');
     clearFilters();
-    // Fetch immediately after clearing
-    setTimeout(() => fetchTenders(), 100);
+    // 🎯 Optimize: Direkt fetchTenders
+    fetchTenders();
   };
 
   const handleSortChange = (newSortBy: typeof sortBy) => {
@@ -100,24 +100,26 @@ export const TenderList: React.FC<TenderListProps> = ({
     } else {
       setSorting(newSortBy, 'desc');
     }
-    // Fetch immediately after sorting
-    setTimeout(() => fetchTenders(), 100);
+    // 🎯 Optimize: Direkt fetchTenders
+    fetchTenders();
   };
 
   const handleCateringFilter = () => {
     setCateringFilter(filters.isCatering === true ? null : true);
-    // Fetch immediately after filter change
-    setTimeout(() => fetchTenders(), 100);
+    // 🎯 Optimize: Direkt fetchTenders
+    fetchTenders();
   };
 
   const handleNextPage = () => {
     nextPage();
-    setTimeout(() => fetchTenders(), 100);
+    // 🎯 Optimize: Direkt fetchTenders
+    fetchTenders();
   };
 
   const handlePrevPage = () => {
     prevPage();
-    setTimeout(() => fetchTenders(), 100);
+    // 🎯 Optimize: Direkt fetchTenders
+    fetchTenders();
   };
 
   return (
@@ -167,10 +169,13 @@ export const TenderList: React.FC<TenderListProps> = ({
           <div className="relative">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
+              id="tender-search"
+              name="tender-search"
               type="text"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="İhale başlığı, kurum veya şehir ara..."
+              autoComplete="off"
               className="w-full pl-12 pr-4 py-3 bg-gray-800/50 border border-gray-700 rounded-xl text-surface-primary placeholder-gray-500 focus:outline-none focus:border-emerald-500 transition-colors"
             />
             {searchInput && (

@@ -28,6 +28,8 @@ import {
   detectDocumentTypeFromFileName,
   getConfidenceScore,
 } from "@/lib/utils/quick-document-detector";
+import { downloadDocument } from "@/lib/utils/document-downloader";
+import { getFromIndexedDB, deleteFromIndexedDB } from '@/lib/utils/indexed-db-storage';
 
 import { Toast } from "@/components/ui/Toast";
 import { ErrorBoundary } from "@/components/providers/ErrorBoundary";
@@ -105,7 +107,7 @@ interface DetailedAnalysis {
 }
 
 
-const SSE_HEARTBEAT_MS = 20000;
+const SSE_HEARTBEAT_MS = 120000; // 2 dakika (OCR gibi uzun işlemler için)
 
 const getStageText = (stage: string) => stage;
 const handleDownloadPage = (pageNumber: number) => console.log("download", pageNumber);
@@ -162,6 +164,10 @@ function PageInner() {
   const [retryCount, setRetryCount] = useState(0); // 🆕 Retry count for error recovery
   const [useOCR, setUseOCR] = useState(true); // Default to true for OCR
   const [sessionLoadProgress, setSessionLoadProgress] = useState(0); // 🆕 Session data loading progress
+  
+  // ✅ FIX: File Queue State (sıralı işleme için)
+  const [fileQueue, setFileQueue] = useState<File[]>([]); // Bekleyen dosyalar
+  const [currentlyProcessing, setCurrentlyProcessing] = useState<File | null>(null); // Şu anda işlenen
 
   // Refs
   const processingQueueRef = useRef<Set<string>>(new Set());
@@ -169,6 +175,7 @@ function PageInner() {
   const uploadedFilesRef = useRef<File[]>([]);
   const sseHeartbeatRef = useRef<NodeJS.Timeout | null>(null);
   const sseAbortRef = useRef<AbortController | null>(null);
+  const indexedDBProcessedRef = useRef<boolean>(false); // 🆕 IndexedDB işlendi mi?
 
   // Steps configuration - useMemo for performance
   const steps = React.useMemo(() => [
@@ -186,7 +193,12 @@ function PageInner() {
   }, []);
 
   // 🆕 İlerleme mesajlarını iyileştir
-  const getProgressMessage = useCallback((stage: string, details?: string, elapsed?: string) => {
+  const getProgressMessage = useCallback((stage?: string, details?: string, elapsed?: string) => {
+    // Defensive: stage undefined olabilir
+    if (!stage) {
+      return details ? `⏳ ${details}` : '⏳ İşleniyor...';
+    }
+
     const baseMessages: Record<string, string> = {
       'extracting': '📄 Döküman metni çıkarılıyor',
       'analyzing': '🧠 AI analizi yapılıyor',
@@ -214,110 +226,147 @@ function PageInner() {
     }
   }, [from, currentAnalysis, setCurrentAnalysis]); // Dependencies ekledik
 
-  // 🆕 İhale robotundan gelen sessionStorage verilerini işle
+  // 🆕 İhale robotundan gelen IndexedDB verilerini işle
   useEffect(() => {
     console.log('🔍 useEffect çalıştı - from parametresi:', from);
     console.log('🔍 currentStep:', currentStep);
+    console.log('🔍 indexedDBProcessedRef:', indexedDBProcessedRef.current);
     
-    if (from && from.startsWith('ihale_docs_') && currentStep === 'upload') {
-      console.log('🎯 İhale robotundan gelen veri tespit edildi, sessionStorage\'dan yükleniyor...');
+    // ⚠️ Bir kez çalışmalı, tekrar tetiklenmemeli
+    if (from && from.startsWith('ihale_docs_') && currentStep === 'upload' && !indexedDBProcessedRef.current) {
+      console.log('🎯 İhale robotundan gelen veri tespit edildi, IndexedDB\'den yükleniyor...');
 
-      try {
-        const sessionData = sessionStorage.getItem(from);
-        console.log('📦 sessionStorage\'dan okunan data:', sessionData ? 'VAR' : 'YOK');
+      // 🔒 İşlem başlatıldı, tekrar çalışmasın
+      indexedDBProcessedRef.current = true;
+
+      // 🧹 Önce mevcut state'i temizle (yeni analiz için)
+      console.log('🧹 Eski state temizleniyor...');
+      clearFileStatuses();
+      uploadedFilesRef.current = [];
+      fileObjectsMapRef.current.clear();
+      setSessionLoadProgress(1); // 🆕 Loading indicator'ı göster (0 yerine 1)
+
+      // async işlem - IndexedDB'den veri al
+      (async () => {
+        try {
+          const payload = await getFromIndexedDB<{
+            title: string;
+            text: string;
+            documents: any[];
+            size: number;
+            timestamp: number;
+          }>(from);
+          
+          console.log('📦 IndexedDB\'den okunan data:', payload ? 'VAR' : 'YOK');
         
-        if (sessionData) {
-          const payload = JSON.parse(sessionData);
-          console.log('📦 Session data bulundu:', {
-            hasDocuments: !!payload.documents,
-            hasText: !!payload.text,
-            documentCount: payload.documents?.length || 0
-          });
-
-          // Dökümanları işle
-          if (payload.documents && payload.documents.length > 0) {
-            console.log('📄 Dökümanlar yükleniyor...');
-            setSessionLoadProgress(10); // Başlangıç progress
-
-            // Her döküman için file status oluştur
-            payload.documents.forEach((doc: any, index: number) => {
-              if (doc.blob) {
-                // Base64 blob varsa File objesi oluştur
-                const byteCharacters = atob(doc.blob.split(',')[1]);
-                const byteNumbers = new Array(byteCharacters.length);
-                for (let i = 0; i < byteCharacters.length; i++) {
-                  byteNumbers[i] = byteCharacters.charCodeAt(i);
-                }
-                const byteArray = new Uint8Array(byteNumbers);
-                const file = new File([byteArray], doc.title || `document_${index}.pdf`, {
-                  type: doc.mimeType || 'application/pdf'
-                });
-
-                // File status ekle
-                addFileStatus({
-                  fileMetadata: {
-                    name: file.name,
-                    size: file.size,
-                    type: file.type,
-                    lastModified: Date.now(),
-                  },
-                  status: 'completed',
-                  extractedText: '', // Şimdilik boş, sonra doldurulacak
-                  wordCount: 0,
-                  detectedType: doc.type || 'ihale_dokuman',
-                  detectedTypeConfidence: 1.0,
-                  progress: '✅ Hazır'
-                });
-
-                // File'ı uploadedFilesRef'e ekle
-                uploadedFilesRef.current.push(file);
-
-                // Progress güncelle
-                const progress = Math.round(((index + 1) / payload.documents.length) * 80) + 10;
-                setSessionLoadProgress(progress);
-                console.log(`📄 [${index + 1}/${payload.documents.length}] ${file.name} yüklendi (${progress}%)`);
-              }
+          if (payload) {
+            console.log('📦 IndexedDB data bulundu:', {
+              hasDocuments: !!payload.documents,
+              hasText: !!payload.text,
+              documentCount: payload.documents?.length || 0,
+              size: `${(payload.size / (1024 * 1024)).toFixed(2)} MB`
             });
 
-            setSessionLoadProgress(90); // Döküman yükleme tamamlandı
+            // Dökümanları işle
+            if (payload.documents && payload.documents.length > 0) {
+              const totalDocs = payload.documents.length;
+              const totalSize = payload.documents.reduce((sum, doc) => sum + (doc.size || 0), 0);
+              
+              console.log(`📄 ${totalDocs} döküman yükleniyor... (Toplam: ${(totalSize / (1024 * 1024)).toFixed(2)} MB)`);
+              setSessionLoadProgress(5); // Başlangıç progress
+
+              // Her döküman için file oluştur ve İŞLE
+              for (let index = 0; index < totalDocs; index++) {
+                const doc = payload.documents[index];
+                const docNumber = index + 1;
+                
+                console.log(`📦 [${docNumber}/${totalDocs}] ${doc.title} işleniyor... (${(doc.size / 1024).toFixed(1)} KB)`);
+                
+                if (doc.blob) {
+                  // Blob nesnesi direkt kullanılabilir (IndexedDB Blob'u korur)
+                  const file = new File([doc.blob], doc.title || `document_${index}.pdf`, {
+                    type: doc.mimeType || 'application/pdf'
+                  });
+
+                  // 🆕 File status'u PENDING olarak ekle
+                  addFileStatus({
+                    fileMetadata: {
+                      name: file.name,
+                      size: file.size,
+                      type: file.type,
+                      lastModified: Date.now(),
+                    },
+                    status: 'pending',
+                    progress: `⏳ Sırada bekliyor... (${docNumber}/${totalDocs})`,
+                    detectedType: doc.type || 'ihale_dokuman',
+                    detectedTypeConfidence: 1.0,
+                  });
+
+                  // File'ı Map'e ekle (processSingleFile için gerekli)
+                  fileObjectsMapRef.current.set(file.name, file);
+                  
+                  // File'ı uploadedFilesRef'e ekle
+                  uploadedFilesRef.current.push(file);
+
+                  // Progress güncelle
+                  const progress = Math.round(((docNumber) / totalDocs) * 15) + 5; // 5-20% arası
+                  setSessionLoadProgress(progress);
+                  
+                  const sizeInMB = (file.size / (1024 * 1024)).toFixed(2);
+                  console.log(`📋 [${docNumber}/${totalDocs}] ${file.name} kuyruğa eklendi (${sizeInMB} MB) - Progress: ${progress}%`);
+                } else {
+                  console.warn(`⚠️ [${docNumber}/${totalDocs}] ${doc.title} - Blob bulunamadı, atlanıyor...`);
+                }
+              }
+
+              setSessionLoadProgress(90); // Dosyalar hazırlandı
+              console.log(`✅ ${totalDocs} döküman kuyruğa eklendi (PENDING durumunda)`);
+              console.log(`� Kullanıcı "İşle" butonuna basarak dosyaları işleyebilir`);
+              
+              // ⚠️ OTOMATİK PROCESSING KALDIRILDI - Kullanıcı manuel başlatacak
+              // Dosyalar artık "pending" durumunda ve kullanıcı her dosya için "İşle" butonuna basacak
+              
+              // Progress'i tamamla
+              setSessionLoadProgress(100);
+              setTimeout(() => {
+                setSessionLoadProgress(0);
+                console.log('🧹 Session loading progress temizlendi - Dosyalar hazır!');
+              }, 1000);
+            }
+
+            // Metin varsa localStorage'a kaydet (eski sistem uyumluluğu için)
+            if (payload.text) {
+              localStorage.setItem('ihale_document_text', payload.text);
+              console.log('📝 Metin localStorage\'a kaydedildi');
+            }
+
+            // Tender başlığını sakla
+            if (payload.title) {
+              console.log('🏷️ Tender başlığı:', payload.title);
+              // TODO: Tender title state'i eklenebilir
+            }
+
+            // IndexedDB data'yı temizle (bir kez kullanıldı)
+            await deleteFromIndexedDB(from);
+
+            // ✅ URL temizleme YAPMA - router karışıyor
+            // window.history.replaceState çağırmıyoruz artık
+            
+            console.log('✅ İhale robotu verileri başarıyla yüklendi, otomatik processing yapıldı');
+
+          } else {
+            console.warn('⚠️ IndexedDB data bulunamadı:', from);
+            setSessionLoadProgress(0);
           }
 
-          // Metin varsa localStorage'a kaydet (eski sistem uyumluluğu için)
-          if (payload.text) {
-            localStorage.setItem('ihale_document_text', payload.text);
-            console.log('📝 Metin localStorage\'a kaydedildi');
-            setSessionLoadProgress(95);
-          }
-
-          // Tender başlığını sakla
-          if (payload.tenderTitle) {
-            console.log('🏷️ Tender başlığı:', payload.tenderTitle);
-            // TODO: Tender title state'i eklenebilir
-          }
-
-          // Session data'yı temizle (bir kez kullanıldı)
-          sessionStorage.removeItem(from);
-
-          // View adımına geç
-          setCurrentStep('view');
-          setSessionLoadProgress(100); // Tamamlandı
-          console.log('✅ İhale robotu verileri başarıyla yüklendi, view adımına geçiliyor');
-
-        } else {
-          console.warn('⚠️ Session data bulunamadı:', from);
-          // Fallback: normal upload adımına dön
-          setCurrentStep('upload');
+        } catch (error) {
+          console.error('❌ IndexedDB data işlenirken hata:', error);
+          // Hata durumunda normal upload'a dön
           setSessionLoadProgress(0);
         }
-
-      } catch (error) {
-        console.error('❌ Session data işlenirken hata:', error);
-        // Hata durumunda normal upload'a dön
-        setCurrentStep('upload');
-        setSessionLoadProgress(0);
-      }
+      })();
     }
-  }, [from, currentStep, addFileStatus, setCurrentStep]);
+  }, [from, currentStep]); // ✅ Sadece from ve currentStep - store fonksiyonları stable
 
   // 🆕 Klavye kısayolları
   useEffect(() => {
@@ -432,22 +481,21 @@ function PageInner() {
           updateFileStatus(filename, { status: 'processing', progress: '📥 İndiriliyor...' });
 
           try {
-            // Dosyayı proxy API ile indir (CORS bypass)
-            const downloadUrl = `/api/ihale-scraper/download-document?url=${encodeURIComponent(url)}`;
-            const response = await fetch(downloadUrl);
-
-            if (!response.ok) {
-              const errorText = await response.text();
-              throw new Error(`HTTP ${response.status}: ${errorText}`);
+            // 🔐 Merkezi download utility kullan (auth otomatiği)
+            const downloadedFiles = await downloadDocument(url);
+            
+            if (downloadedFiles.length === 0) {
+              throw new Error('Dosya indirilemedi');
             }
 
-            const blob = await response.blob();
-            const file = new File([blob], filename, { type: fileStatus.fileMetadata.type || blob.type });
+            // İlk dosyayı al (ZIP ise zaten extract edilmiş olacak)
+            const firstFile = downloadedFiles[0];
+            const file = new File([firstFile.blob], firstFile.title, { type: firstFile.mimeType });
 
             // File objesini Map'e ekle
             fileObjectsMapRef.current.set(filename, file);
 
-            console.log(`✅ ${filename} indirildi (${(blob.size / 1024).toFixed(2)} KB)`);
+            console.log(`✅ ${filename} indirildi (${(firstFile.size / 1024).toFixed(2)} KB)`);
 
             // Şimdi bu dosyayı normal şekilde işle
             await processSingleFile(file);
@@ -516,8 +564,10 @@ function PageInner() {
     return fullContent;
   }, []);
 
-  // Functions
-  const processSingleFile = async (file: File) => {
+  // ✅ FIX: processSingleFile'ı useCallback ile wrap et (dependency olarak kullanılacak)
+  const processSingleFile = useCallback(async (file: File) => {
+    console.log(`🔍 [PROCESS DEBUG] processSingleFile başlatıldı: ${file.name}`);
+    
     // Zaten işleniyorsa atla
     if (processingQueueRef.current.has(file.name)) {
       console.warn(`⚠️ ${file.name} zaten işleniyor, atlanıyor...`);
@@ -530,59 +580,58 @@ function PageInner() {
     console.log(`İşleniyor: ${file.name}`);
     const startTime = Date.now();
 
-    // 1️⃣ Yükleme başladı
+      // 1️⃣ Yükleme başladı
+    const fileSizeInMB = (file.size / (1024 * 1024)).toFixed(2);
     updateFileStatus(file.name, {
       status: 'processing',
-      progress: '📤 Dosya yükleniyor...'
+      progress: `📤 Dosya yükleniyor... (${fileSizeInMB} MB)`
     });
-
-    try {
-      // 🆕 TXT/JSON/CSV dosyaları için özel işlem (her biri farklı format)
+    console.log(`📤 ${file.name} yüklemeye başlandı (${fileSizeInMB} MB)`);    try {
+      // 🆕 TXT/JSON/CSV dosyaları için özel işlem
       const fileName = file.name.toLowerCase();
       const isTxtFile = fileName.endsWith('.txt');
       const isJsonFile = fileName.endsWith('.json');
       const isCsvFile = fileName.endsWith('.csv') || fileName.endsWith('.xls') || fileName.endsWith('.xlsx');
 
-      if (isTxtFile || isJsonFile || isCsvFile) {
+      // ✅ FIX: TXT ve JSON dosyalarını da API'ye gönder (AI analizi için)
+      // CSV hariç - CSV zaten ayrı CSV parser'dan geçiyor
+      if (isCsvFile) {
+        // CSV için eski akış devam ediyor (chunk'lı okuma)
         // 🆕 Büyük dosyalar için chunk'lı yükleme kullan
         const rawContent = await loadFileChunked(file);
-        let fileType = '';
-
-        // 📄 TXT - Düz metin
-        if (isTxtFile) {
-          fileType = 'TXT';
-        }
-
-        // 📋 JSON - Yapılandırılmış veri (olduğu gibi sakla)
-        else if (isJsonFile) {
-          fileType = 'JSON';
-        }
+        let fileType = 'CSV/Excel';
+        let extractedText = rawContent; // Default olarak ham içerik
 
         // 📊 CSV/Excel - Tablo verisi (olduğu gibi sakla)
-        else if (isCsvFile) {
-          fileType = 'CSV/Excel';
+        // ProCheff CSV export formatını kontrol et
+        if (rawContent.includes('İHALE DETAY RAPORU') || rawContent.includes('Alan,Değer')) {
+          console.log('📊 ProCheff CSV export formatı algılandı');
+          fileType = 'CSV (ProCheff Export)';
         }
 
-        const wordCount = rawContent.split(/\s+/).filter(w => w.length > 0).length;
+        const wordCount = extractedText.split(/\s+/).filter(w => w.length > 0).length;
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
-        // Ham içeriği olduğu gibi sakla - format dönüşümü yok!
+        // Parsed içeriği sakla
         updateFileStatus(file.name, {
           status: 'completed',
           progress: `✅ Tamamlandı - ${fileType} (${wordCount} kelime, ${elapsed}s)`,
           progressPercentage: 100,
           wordCount: wordCount,
-          extractedText: rawContent  // Ham içerik, format korunuyor
+          extractedText: extractedText  // Parsed veya ham içerik
         });
 
         console.log(`✅ ${file.name} tamamlandı - Format: ${fileType} (${wordCount} kelime)`);
-        console.log(`📄 ${file.name} Önizleme (ilk 500 karakter):`, rawContent.slice(0, 500));
+        console.log(`📄 ${file.name} Önizleme (ilk 500 karakter):`, extractedText.slice(0, 500));
 
         processingQueueRef.current.delete(file.name);
         return;
       }
 
-      // PDF/DOC dosyaları için normal OCR akışı
+      // TXT ve JSON dosyaları artık API'ye gönderiliyor (AI analizi için)
+      console.log(`📤 ${file.name} API'ye gönderiliyor (format: ${isTxtFile ? 'TXT' : isJsonFile ? 'JSON' : 'UNKNOWN'})`);
+
+      // PDF/DOC/TXT/JSON dosyaları için normal API akışı
       const formData = new FormData();
       formData.append("file0", file);
       formData.append("fileCount", "1");
@@ -590,13 +639,26 @@ function PageInner() {
 
       // 2️⃣ Server'a gönderiliyor
       updateFileStatus(file.name, {
-        progress: '🚀 Server\'a gönderiliyor...'
+        progress: `🚀 Server'a gönderiliyor... (${fileSizeInMB} MB)`,
+        progressPercentage: 5
       });
+      console.log(`🚀 ${file.name} API'ye POST ediliyor...`);
+      console.log(`📊 FormData hazırlandı: file=${file.name}, size=${file.size}, useOCR=${useOCR}`);
 
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
+      let response: Response;
+      try {
+        console.log(`🌐 fetch() başlatılıyor: /api/upload`);
+        response = await fetch("/api/upload", {
+          method: "POST",
+          body: formData,
+        });
+        console.log(`✅ fetch() tamamlandı: ${response.status} ${response.statusText}`);
+      } catch (fetchError) {
+        console.error(`❌ fetch() HATASI:`, fetchError);
+        throw new Error(`Network hatası: ${fetchError instanceof Error ? fetchError.message : 'Bilinmeyen hata'}`);
+      }
+
+      console.log(`📡 ${file.name} - Server response: ${response.status} ${response.statusText}`);
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
@@ -650,14 +712,31 @@ function PageInner() {
           if (data.type === 'progress') {
             const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
             const pct = Math.max(0, Math.min(100, Number(data.progress) || 0));
+            const friendlyMessage = getProgressMessage(data.stage, data.details, elapsed);
+            
+            // 🆕 File status'u güncelle (streaming progress)
+            updateFileStatus(file.name, {
+              status: 'processing',
+              progress: `${friendlyMessage} - %${pct}`,
+              progressPercentage: pct
+            });
+            
             throttleProgressUpdate(() => {
               setAnalysisProgress(pct);
-              setAnalysisStage(getProgressMessage(data.stage, data.details, elapsed));
+              setAnalysisStage(friendlyMessage);
             });
-            // İsteğe bağlı: ana eşiklerde spam yapmadan bilgi verme
-            if (pct === 0 || pct === 50 || pct === 80) {
-              setToast({ message: `⏳ ${data.stage}${data.details ? ` • ${data.details}` : ''}`, type: "info" });
+            
+            // 🆕 Detaylı progress toast - Her %10'da güncelle
+            if (pct % 10 === 0 || pct === 0 || pct === 25 || pct === 50 || pct === 75 || pct === 100) {
+              const emoji = pct < 30 ? '📄' : pct < 60 ? '🔍' : pct < 90 ? '🧠' : '✅';
+              setToast({ 
+                message: `${emoji} ${friendlyMessage} - %${pct}`, 
+                type: pct >= 100 ? "success" : "info" 
+              });
             }
+            
+            // Console log her progress update'de
+            console.log(`📊 Progress: ${pct}% - ${data.stage} ${data.details || ''} (${elapsed}s)`);
           } else if (data.type === 'complete') {
             result = data.result;
             setAnalysisProgress(100);
@@ -682,6 +761,16 @@ function PageInner() {
             setToast({ 
               message: `✅ ${file.name} başarıyla işlendi! (${totalTime}s)`, 
               type: "success" 
+            });
+            
+            // 🆕 File status'u "completed" yap
+            const wordCount = result?.extracted_text?.split(/\s+/).filter((w: string) => w.length > 0).length || 0;
+            updateFileStatus(file.name, {
+              status: 'completed',
+              progress: `✅ Tamamlandı (${totalTime}s)`,
+              progressPercentage: 100,
+              wordCount: wordCount,
+              extractedText: result?.extracted_text || ''
             });
           } else if (data.type === 'error') {
             throw new Error(data.error || 'Bilinmeyen streaming hatası');
@@ -804,8 +893,23 @@ function PageInner() {
           : "Hata kaydedildi");
 
       setToast({ message: userMessage, type: "error" });
+      
+      // 🆕 Dosya durumunu ERROR olarak güncelle
+      updateFileStatus(file.name, {
+        status: 'error',
+        progress: `❌ Hata: ${errorMessage}`,
+        progressPercentage: 0
+      });
+      
       setCurrentStep("view");
+      
+      // ❌ Hata durumunda progress'i sıfırla
+      setAnalysisProgress(0);
+      setAnalysisStage("");
     } finally {
+      // 🧹 Dosyayı kuyruktan çıkar (hata olsa bile)
+      processingQueueRef.current.delete(file.name);
+      
       if (sseHeartbeatRef.current) {
         clearTimeout(sseHeartbeatRef.current);
         sseHeartbeatRef.current = null;
@@ -814,10 +918,78 @@ function PageInner() {
         sseAbortRef.current = null;
       }
       setIsProcessing(false);
-      setAnalysisProgress(0);
-      setAnalysisStage("");
+      // ⚠️ Progress'i sıfırlama - başarılı olduğunda %100'de kalmalı
     }
-  };
+  }, [setCurrentStep, setCurrentAnalysis, setAnalysisProgress, setAnalysisStage, setIsProcessing, setToast, updateFileStatus]);
+  // ☝️ processSingleFile dependencies - tüm state setters ve store actions
+
+  // ✅ FIX: Queue İşleme Fonksiyonu (sıralı dosya işleme)
+  const processFileQueue = useCallback(async () => {
+    console.log('🔍 [QUEUE DEBUG] processFileQueue çağrıldı');
+    console.log('🔍 [QUEUE DEBUG] currentlyProcessing:', currentlyProcessing?.name);
+    console.log('🔍 [QUEUE DEBUG] fileQueue.length:', fileQueue.length);
+    
+    // Zaten bir dosya işleniyorsa bekle
+    if (currentlyProcessing) {
+      console.log('⏳ Bir dosya zaten işleniyor, sıra bekleniyor...');
+      return;
+    }
+
+    // Kuyrukta dosya yoksa bitir
+    if (fileQueue.length === 0) {
+      console.log('✅ Kuyruk boş, tüm dosyalar işlendi');
+      return;
+    }
+
+    // Kuyruktan ilk dosyayı al
+    const nextFile = fileQueue[0];
+    console.log(`🚀 Kuyruktan alınıyor: ${nextFile.name}`);
+    
+    setCurrentlyProcessing(nextFile);
+    setFileQueue(prev => {
+      console.log('🔍 [QUEUE DEBUG] Kuyruktan çıkarılıyor:', nextFile.name);
+      console.log('🔍 [QUEUE DEBUG] Kalan dosya sayısı:', prev.length - 1);
+      return prev.slice(1);
+    });
+
+    console.log(`🚀 İşleniyor: ${nextFile.name} (Kuyrukta ${fileQueue.length - 1} dosya kaldı)`);
+
+    try {
+      // ✅ Mevcut processSingleFile() fonksiyonunu kullan
+      console.log(`📝 processSingleFile başlatılıyor: ${nextFile.name}`);
+      await processSingleFile(nextFile);
+      
+      console.log(`✅ ${nextFile.name} başarıyla tamamlandı!`);
+    } catch (error) {
+      console.error(`❌ ${nextFile.name} işlenirken hata:`, error);
+      setToast({ 
+        message: `❌ ${nextFile.name} işlenemedi: ${error instanceof Error ? error.message : 'Bilinmeyen hata'}`, 
+        type: "error" 
+      });
+    } finally {
+      console.log(`🧹 ${nextFile.name} için cleanup yapılıyor`);
+      setCurrentlyProcessing(null);
+      
+      // ⚠️ ÖNEMLİ: Sonraki dosyayı işle ama state update'i bekle
+      // setTimeout kullanmak yerine setCurrentlyProcessing(null) sonrası
+      // useEffect otomatik tetiklenecek
+    }
+  }, [fileQueue, currentlyProcessing, processSingleFile, setToast]);
+
+  // ✅ FIX: Queue değiştiğinde otomatik işleme başlat
+  useEffect(() => {
+    console.log('🔍 [QUEUE EFFECT] Triggered - fileQueue.length:', fileQueue.length, 'currentlyProcessing:', currentlyProcessing?.name);
+    
+    if (fileQueue.length > 0 && !currentlyProcessing) {
+      console.log('🎯 [QUEUE EFFECT] Şartlar sağlandı, processFileQueue çağrılıyor');
+      // 500ms delay - API rate limit koruması
+      const timer = setTimeout(() => {
+        processFileQueue();
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [fileQueue, currentlyProcessing, processFileQueue]);
 
   const resetProcess = useCallback(() => {
     // Abort any ongoing streaming and clear heartbeat
@@ -838,6 +1010,10 @@ function PageInner() {
     setIsProcessing(false);
     setAutoDeepAnalysisTriggered(false); // Otomatik derin analiz sıfırla
     resetAutoAnalysisPreview(); // 🆕 Auto-analysis preview'ı sıfırla
+
+    // ✅ FIX: Queue temizliği
+    setFileQueue([]);
+    setCurrentlyProcessing(null);
 
     // 🧹 File Map temizliği (memory leak önleme)
     fileObjectsMapRef.current.clear();
@@ -958,17 +1134,69 @@ function PageInner() {
       });
 
       console.log(`✅ ${newFiles.length} dosya pending olarak eklendi (duplikasyon kontrolü ile)`);
-      // NOT: Dosyalar PENDING durumunda - kullanıcı "Dosyaları İşle" butonuna basınca işlenecek
+      
+      // ✅ FIX: Dosyaları kuyruğa ekle (otomatik işleme için)
+      setFileQueue(prev => [...prev, ...newFiles]);
+      
+      setToast({ 
+        message: `📋 ${newFiles.length} dosya kuyruğa eklendi. Sırayla işlenecek...`, 
+        type: "info" 
+      });
+      
+      console.log(`📋 Kuyruk güncellendi: ${newFiles.length} yeni dosya (Toplam: ${fileQueue.length + newFiles.length})`);
     }
 
     // Input'u temizle
     event.target.value = '';
   };
 
-  const handleProcessAllFiles = useCallback(() => {
-    console.log('🔄 Tüm dosyalar işlendi, view adımına geçiliyor...');
+  const handleProcessAllFiles = useCallback(async () => {
+    console.log('🚀 Toplu dosya işleme başlatılıyor...');
+    
+    // Pending durumundaki tüm dosyaları bul
+    const pendingFiles = fileStatuses.filter(fs => fs.status === 'pending');
+    
+    if (pendingFiles.length === 0) {
+      console.log('✅ İşlenecek dosya yok, view adımına geçiliyor...');
+      setCurrentStep('view');
+      return;
+    }
+
+    console.log(`📦 ${pendingFiles.length} dosya işlenecek...`);
+
+    // ✅ FIX: Dosyaları kuyruğa ekle (sıralı işleme için - PARALEL ÇAKIŞMA YOK!)
+    const filesToQueue: File[] = [];
+    
+    // Her dosya için File objesini Map'ten al
+    for (const fileStatus of pendingFiles) {
+      const fileName = fileStatus.fileMetadata.name;
+      const fileObj = fileObjectsMapRef.current.get(fileName);
+      
+      if (!fileObj) {
+        console.error(`❌ File objesi bulunamadı: ${fileName}`);
+        updateFileStatus(fileName, {
+          status: 'error',
+          progress: '❌ Dosya yüklenemedi (File objesi yok)'
+        });
+        continue;
+      }
+
+      filesToQueue.push(fileObj);
+    }
+
+    // Kuyruğa ekle - processFileQueue otomatik başlatacak (useEffect)
+    setFileQueue(prev => [...prev, ...filesToQueue]);
+    
+    setToast({ 
+      message: `📋 ${filesToQueue.length} dosya kuyruğa eklendi. Sırayla işlenecek...`, 
+      type: "info" 
+    });
+    
+    console.log(`📋 ${filesToQueue.length} dosya kuyruğa eklendi (otomatik sıralı işleme başlayacak)`);
+    
+    // View adımına geç - dosyalar işlenirken kullanıcı görebilsin
     setCurrentStep('view');
-  }, [setCurrentStep]);
+  }, [fileStatuses, setCurrentStep]);
 
   return (
 <div className="min-h-screen bg-slate-950 p-4">
@@ -1328,6 +1556,21 @@ function PageInner() {
                     const quickGuess = detectDocumentTypeFromFileName(file.name);
                     const quickConfidence = getConfidenceScore(quickGuess, file.name);
 
+                    // 🆕 2a) TXT/JSON/CSV dosyaları için hemen preview oku
+                    let textPreview = '';
+                    const isTextBased = file.name.toLowerCase().endsWith('.txt') || 
+                                       file.name.toLowerCase().endsWith('.json') || 
+                                       file.name.toLowerCase().endsWith('.csv');
+                    
+                    if (isTextBased && file.size < 100 * 1024) { // 100KB'dan küçükse
+                      try {
+                        const content = await file.text();
+                        textPreview = content.slice(0, 500); // İlk 500 karakter
+                      } catch (error) {
+                        console.warn(`Preview okunamadı: ${file.name}`, error);
+                      }
+                    }
+
                     // 2) Store'a ekle (başlangıç tahmini ile)
                     addFileStatus({
                       fileMetadata: {
@@ -1341,7 +1584,8 @@ function PageInner() {
                         ? `📋 ${quickGuess} (dosya isminden tahmin)`
                         : 'İşlenmeyi bekliyor...',
                       detectedType: quickGuess,
-                      detectedTypeConfidence: quickConfidence
+                      detectedTypeConfidence: quickConfidence,
+                      extractedText: textPreview || undefined, // 🆕 Önizleme metni
                     });
 
                     console.log(`✅ ${file.name} eklendi - Hızlı tahmin: ${quickGuess} (${Math.round(quickConfidence * 100)}%)`);
@@ -1410,58 +1654,42 @@ function PageInner() {
 
                     if (fileUrl) {
                       try {
-                        console.log(`📥 Dosya indiriliyor (Puppeteer + Auth): ${fileName} (${fileUrl})`);
+                        console.log(`📥 Dosya indiriliyor: ${fileName} (${fileUrl})`);
 
-                        // Puppeteer ile authenticated download (server-side)
-                        const response = await fetch('/api/ihale-scraper/download-with-auth', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ url: fileUrl }),
-                        });
+                        // 🔐 Merkezi download utility (auth + ZIP extraction otomatik)
+                        const downloadedFiles = await downloadDocument(fileUrl);
 
-                        if (!response.ok) {
-                          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        if (downloadedFiles.length === 0) {
+                          throw new Error('Dosya indirilemedi');
                         }
 
-                        const result = await response.json();
+                        // ZIP ise birden fazla dosya gelir
+                        if (downloadedFiles.length > 1 || downloadedFiles[0].isFromZip) {
+                          console.log(`📦 ZIP extract edildi: ${downloadedFiles.length} dosya`);
 
-                        if (!result.success) {
-                          throw new Error(result.error || 'Download failed');
-                        }
-
-                        // ZIP dosyası mı?
-                        if (result.isZip && result.files) {
-                          console.log(`📦 ZIP extract edildi: ${result.files.length} dosya`);
-
-                          // 1️⃣ Önce ZIP dosyasının kendi statusunu sil
+                          // 1️⃣ ZIP dosyasının kendi statusunu sil
                           removeFileStatus(fileName);
 
-                          // 2️⃣ Her dosyayı File objesine çevir, yeni status ekle ve işle
-                          for (const file of result.files) {
-                            const binary = atob(file.content);
-                            const bytes = new Uint8Array(binary.length);
-                            for (let i = 0; i < binary.length; i++) {
-                              bytes[i] = binary.charCodeAt(i);
-                            }
-
-                            const extractedFile = new File([bytes], file.name, {
-                              type: file.type,
+                          // 2️⃣ Her dosyayı işle
+                          for (const df of downloadedFiles) {
+                            const extractedFile = new File([df.blob], df.title, {
+                              type: df.mimeType,
                               lastModified: Date.now()
                             });
 
                             // File objesini map'e kaydet
-                            fileObjectsMapRef.current.set(file.name, extractedFile);
+                            fileObjectsMapRef.current.set(df.title, extractedFile);
 
                             // Bu dosya için yeni status oluştur
-                            const detectedType = file.name.toLowerCase().includes('idari') ? 'idari_sartname'
-                              : file.name.toLowerCase().includes('teknik') ? 'teknik_sartname'
+                            const detectedType = df.title.toLowerCase().includes('idari') ? 'idari_sartname'
+                              : df.title.toLowerCase().includes('teknik') ? 'teknik_sartname'
                               : 'diger';
 
                             addFileStatus({
                               fileMetadata: {
-                                name: file.name,
-                                size: bytes.length,
-                                type: file.type,
+                                name: df.title,
+                                size: df.size,
+                                type: df.mimeType,
                                 lastModified: Date.now(),
                               },
                               status: 'processing',
@@ -1469,32 +1697,25 @@ function PageInner() {
                             });
 
                             // Bu dosyayı işle
-                            console.log(`🔄 ZIP'ten çıkan dosya işleniyor: ${file.name}`);
+                            console.log(`🔄 ZIP'ten çıkan dosya işleniyor: ${df.title}`);
                             await processSingleFile(extractedFile);
                           }
 
-                          console.log(`✅ ZIP işleme tamamlandı: ${fileName} (${result.files.length} dosya)`);
+                          console.log(`✅ ZIP işleme tamamlandı: ${fileName} (${downloadedFiles.length} dosya)`);
                           return; // ZIP işlemi bitti, fonksiyondan çık
                         }
 
-                        // Normal dosya (ZIP değil)
-                        if (result.file) {
-                          const binary = atob(result.file.content);
-                          const bytes = new Uint8Array(binary.length);
-                          for (let i = 0; i < binary.length; i++) {
-                            bytes[i] = binary.charCodeAt(i);
-                          }
+                        // Normal dosya (tek dosya)
+                        const df = downloadedFiles[0];
+                        const fileObject = new File([df.blob], df.title, {
+                          type: df.mimeType,
+                          lastModified: Date.now()
+                        });
 
-                          fileObject = new File([bytes], result.file.name, {
-                            type: result.file.type,
-                            lastModified: Date.now()
-                          });
+                        // File objesini map'e kaydet
+                        fileObjectsMapRef.current.set(fileName, fileObject);
 
-                          // File objesini map'e kaydet
-                          fileObjectsMapRef.current.set(fileName, fileObject);
-
-                          console.log(`✅ Dosya indirildi: ${fileName} (${(bytes.length / 1024).toFixed(2)} KB)`);
-                        }
+                        console.log(`✅ Dosya indirildi: ${fileName} (${(df.size / 1024).toFixed(2)} KB)`);
 
                       } catch (error: any) {
                         console.error(`❌ Dosya indirme hatası (${fileName}):`, error);
@@ -1616,6 +1837,59 @@ function PageInner() {
                   removeCSVFile(fileName);
                 }}
               />
+
+              {/* ✅ FIX: File Queue Display (Sıralı işleme görünürlüğü) */}
+              {(fileQueue.length > 0 || currentlyProcessing) && (
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-xl p-4 mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="animate-spin text-blue-600 dark:text-blue-400">
+                      <Loader2 className="w-6 h-6" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-semibold text-blue-900 dark:text-blue-100">
+                        📋 Dosya İşleme Kuyruğu
+                      </p>
+                      <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                        {currentlyProcessing ? (
+                          <>
+                            🔄 İşleniyor: <strong>{currentlyProcessing.name}</strong> ({(currentlyProcessing.size / 1024 / 1024).toFixed(1)} MB)
+                          </>
+                        ) : (
+                          'Hazırlanıyor...'
+                        )}
+                      </p>
+                      <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                        Kuyrukta bekleyen: {fileQueue.length} dosya
+                      </p>
+                    </div>
+                  </div>
+                  
+                  {/* Queue list - Sonraki 3 dosya */}
+                  {fileQueue.length > 0 && (
+                    <div className="mt-4 space-y-1">
+                      <p className="text-xs font-medium text-blue-800 dark:text-blue-300 mb-2">
+                        Sıradaki Dosyalar:
+                      </p>
+                      {fileQueue.slice(0, 3).map((file, idx) => (
+                        <div key={file.name} className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-2 pl-2">
+                          <span className="font-mono bg-blue-100 dark:bg-blue-800/30 px-1.5 py-0.5 rounded">
+                            {idx + 1}.
+                          </span>
+                          <span className="flex-1 truncate">{file.name}</span>
+                          <span className="text-blue-400 dark:text-blue-500 whitespace-nowrap">
+                            {(file.size / 1024 / 1024).toFixed(1)} MB
+                          </span>
+                        </div>
+                      ))}
+                      {fileQueue.length > 3 && (
+                        <div className="text-xs text-blue-500 dark:text-blue-400 pl-2 pt-1">
+                          ... ve {fileQueue.length - 3} dosya daha
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* İşlem Sırası Rehberi */}
               {(fileStatuses.length > 0 || csvFiles.length > 0) && (
@@ -1754,10 +2028,42 @@ function PageInner() {
                   <div className="h-4 bg-gray-700 rounded w-5/6 animate-pulse"></div>
                 </div>
 
-                <div className="mt-6 text-center">
-                  <div className="inline-flex items-center space-x-2 text-gray-400">
-                    <div className="w-4 h-4 border-2 border-gray-600 border-t-gray-400 rounded-full animate-spin"></div>
-                    <span>Dökümanlar yükleniyor...</span>
+                <div className="mt-6">
+                  {/* Progress bar */}
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-gray-400">Dökümanlar hazırlanıyor...</span>
+                      <span className="text-sm font-semibold text-blue-400">{sessionLoadProgress}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-gray-700/50 rounded-full overflow-hidden">
+                      <motion.div
+                        className="h-full bg-gradient-to-r from-blue-500 to-purple-500"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${sessionLoadProgress}%` }}
+                        transition={{ duration: 0.3, ease: "easeOut" }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Status mesajları */}
+                  <div className="text-center space-y-2">
+                    <div className="inline-flex items-center space-x-2 text-gray-400">
+                      <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+                      <span className="text-sm">
+                        {sessionLoadProgress < 20 && '📦 Dökümanlar IndexedDB\'den okunuyor...'}
+                        {sessionLoadProgress >= 20 && sessionLoadProgress < 50 && `📄 Dosyalar işleniyor... (${Math.floor(sessionLoadProgress / 10)}/10)`}
+                        {sessionLoadProgress >= 50 && sessionLoadProgress < 90 && '🔍 Metadata çıkarılıyor...'}
+                        {sessionLoadProgress >= 90 && sessionLoadProgress < 100 && '✅ Son kontroller yapılıyor...'}
+                        {sessionLoadProgress >= 100 && '🎉 Tamamlandı!'}
+                      </span>
+                    </div>
+                    
+                    {/* Dosya sayısı bilgisi */}
+                    {fileStatuses.length > 0 && (
+                      <div className="text-xs text-gray-500">
+                        {fileStatuses.filter(fs => fs.status === 'completed').length} / {fileStatuses.length} dosya hazır
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1944,6 +2250,25 @@ function PageInner() {
           </motion.div>
         )}
         </>
+      )}
+
+      {/* Results Step - AI Analysis Results */}
+      {currentStep === "results" && currentAnalysis && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          className="space-y-6"
+        >
+          <EnhancedAnalysisResults
+            analysis={currentAnalysis}
+            onReturnToView={() => setCurrentStep("view")}
+            onNewAnalysis={() => {
+              resetProcess();
+              setCurrentStep("upload");
+            }}
+          />
+        </motion.div>
       )}
     </AnimatePresence>
   </div>

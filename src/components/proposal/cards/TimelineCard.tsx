@@ -224,8 +224,10 @@ export function TimelineCard({ data, onChange, contractDays = 365 }: TimelineCar
 
       {/* Notes */}
       <div>
-        <label className="block text-sm text-gray-400 mb-2">Ek Notlar</label>
+        <label htmlFor="timeline-notes" className="block text-sm text-gray-400 mb-2">Ek Notlar</label>
         <textarea
+          id="timeline-notes"
+          name="timeline-notes"
           value={formData.notes}
           onChange={(e) => handleChange("notes", e.target.value)}
           className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:border-orange-500 focus:outline-none resize-none"

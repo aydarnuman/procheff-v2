@@ -100,14 +100,14 @@ export function ProposalCards({ analysis, ihaleIndex }: ProposalCardsProps) {
     }
   };
 
-  // 🔥 OTOMATIK KAYDETME: proposalData değiştiğinde 2 saniye bekle, sonra kaydet
+  // 🔥 OTOMATIK KAYDETME: proposalData değiştiğinde 3 saniye bekle, sonra kaydet
   useEffect(() => {
     // İlk render'da kaydetme
     if (!proposalData.cost) return;
 
     const timeoutId = setTimeout(() => {
       handleSaveProposal();
-    }, 2000); // 2 saniye debounce
+    }, 3000); // 🎯 2sn → 3sn (debounce artırıldı - scheduler violation önleme)
 
     return () => clearTimeout(timeoutId);
   }, [proposalData]); // proposalData değiştiğinde tetiklenir

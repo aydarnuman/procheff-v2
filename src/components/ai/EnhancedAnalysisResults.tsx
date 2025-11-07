@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
 import {
   Eye,
@@ -83,13 +83,13 @@ export function EnhancedAnalysisResults({
   }, []);
 
   /**
-   * Ham metni akıllıca formatla
+   * 🎯 OPTIMIZED: Ham metni akıllıca formatla (memoized)
    * - Paragrafları ayır
    * - Başlıkları tanı (ALL CAPS veya "MADDE X:" formatı)
    * - Numaralı/tireli listeleri tanı
    * - Markdown benzeri rendering
    */
-  const formatSmartText = (text: string) => {
+  const formatSmartText = useCallback((text: string) => {
     if (!text) return null;
 
     const lines = text.split('\n');
@@ -214,7 +214,7 @@ export function EnhancedAnalysisResults({
     flushList();
 
     return <div className="space-y-1">{elements}</div>;
-  };
+  }, []); // 🎯 Empty dependency array - fonksiyon sabit kalır
 
   if (showProposal) {
     return (
@@ -289,7 +289,12 @@ export function EnhancedAnalysisResults({
             `${analysis.extracted_data.ogun_sayisi} öğün`,
             `${analysis.extracted_data.gun_sayisi} gün`,
           ].filter(Boolean),
-          confidence: analysis.extracted_data.guven_skoru,
+          confidence: (() => {
+            console.log('🔍 [CARD DEBUG - Basic Info] guven_skoru:', analysis.extracted_data.guven_skoru);
+            return typeof analysis.extracted_data.guven_skoru === 'number' && !isNaN(analysis.extracted_data.guven_skoru) 
+              ? analysis.extracted_data.guven_skoru 
+              : 0.7;
+          })(),
           evidencePassages: Object.values(
             analysis.extracted_data.kanitlar || {}
           ).map(String),
@@ -315,7 +320,12 @@ export function EnhancedAnalysisResults({
         menu: {
           title: "Özel Şartlar",
           content: analysis.extracted_data.ozel_sartlar,
-          confidence: analysis.extracted_data.guven_skoru,
+          confidence: (() => {
+            console.log('🔍 [CARD DEBUG - Menu] guven_skoru:', analysis.extracted_data.guven_skoru);
+            return typeof analysis.extracted_data.guven_skoru === 'number' && !isNaN(analysis.extracted_data.guven_skoru) 
+              ? analysis.extracted_data.guven_skoru 
+              : 0.7;
+          })(),
           evidencePassages: analysis.extracted_data.riskler,
         },
         summary: analysis.contextual_analysis?.genel_oneri,
@@ -397,7 +407,14 @@ export function EnhancedAnalysisResults({
                 analysis.processing_metadata.confidence_score
               )}
             >
-              {Math.round(analysis.processing_metadata.confidence_score * 100)}%
+              {(() => {
+                const confidenceValue = Math.round(analysis.processing_metadata.confidence_score * 100);
+                console.log('🔍 [ENHANCED UI DEBUG] analysis.processing_metadata.confidence_score:', analysis.processing_metadata.confidence_score);
+                console.log('🔍 [ENHANCED UI DEBUG] analysis.extracted_data.guven_skoru:', analysis.extracted_data.guven_skoru);
+                console.log('🔍 [ENHANCED UI DEBUG] Calculated percentage:', confidenceValue);
+                console.log('🔍 [ENHANCED UI DEBUG] isNaN check:', isNaN(confidenceValue));
+                return isNaN(confidenceValue) ? '70' : confidenceValue;
+              })()}%
               güven
             </span>
           </div>

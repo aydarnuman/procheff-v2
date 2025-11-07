@@ -284,10 +284,12 @@ export function EquipmentCard({ data, onChange }: EquipmentCardProps) {
 
       {/* Notes */}
       <div className="p-4 bg-gray-900/50 border border-gray-700 rounded-lg">
-        <label className="block text-sm font-medium text-gray-400 mb-2">
+        <label htmlFor="equipment-notes" className="block text-sm font-medium text-gray-400 mb-2">
           Ekipman Notları
         </label>
         <textarea
+          id="equipment-notes"
+          name="equipment-notes"
           placeholder="Ekipman tedariki, bakım, özel şartlar hakkında notlarınızı buraya yazabilirsiniz..."
           className="w-full px-4 py-3 bg-gray-900/50 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:border-yellow-500 focus:ring-2 focus:ring-yellow-500/20 transition-colors resize-none"
           rows={3}

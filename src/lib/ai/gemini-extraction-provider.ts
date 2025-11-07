@@ -333,6 +333,22 @@ Her alan için EN AZ 1 _source objesi olmalı. Proof alanı boş olamaz!
 
       const parsed = JSON.parse(cleaned);
 
+      // ✅ FIX: guven_skoru NaN kontrolü
+      if (parsed.guven_skoru !== undefined) {
+        if (typeof parsed.guven_skoru !== 'number' || isNaN(parsed.guven_skoru)) {
+          console.warn('⚠️ Gemini guven_skoru invalid, fallback 0.5 kullanılıyor', { 
+            guven_skoru: parsed.guven_skoru 
+          });
+          parsed.guven_skoru = 0.5;
+        } else {
+          // 0-1 aralığına clamp et
+          parsed.guven_skoru = Math.max(0, Math.min(1, parsed.guven_skoru));
+        }
+      } else {
+        console.warn('⚠️ Gemini guven_skoru missing, fallback 0.5 kullanılıyor');
+        parsed.guven_skoru = 0.5;
+      }
+
       // Validate required fields
       if (!parsed.kurum && !parsed.ihale_turu && !parsed.tahmini_butce) {
         throw new Error("Missing critical fields in extraction");

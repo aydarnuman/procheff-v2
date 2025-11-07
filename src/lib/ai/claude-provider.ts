@@ -1333,10 +1333,15 @@ JSON:`;
         typeof dataObj.kanitlar === "object" && dataObj.kanitlar !== null
           ? (dataObj.kanitlar as Record<string, unknown>)
           : {},
-      guven_skoru:
-        typeof dataObj.guven_skoru === "number"
-          ? Math.max(0, Math.min(1, dataObj.guven_skoru))
-          : 0.5,
+      guven_skoru: (() => {
+        // ✅ FIX: NaN koruması ekle
+        const rawScore = dataObj.guven_skoru;
+        if (typeof rawScore === "number" && !isNaN(rawScore)) {
+          return Math.max(0, Math.min(1, rawScore));
+        }
+        console.warn('⚠️ Claude guven_skoru invalid, fallback 0.5 kullanılıyor', { rawScore });
+        return 0.5;
+      })(),
     };
 
     return validated;

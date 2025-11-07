@@ -532,11 +532,14 @@ export class SmartDocumentProcessor {
         process.cwd(),
         "scripts/pdf_ocr_tesseract.sh"
       );
-      console.log(`OCR scripti çalıştırılıyor: ${scriptPath}`);
-      onProgress?.("📄 OCR başlatılıyor...", 15);
+      
+      // 🎯 SAYFA LİMİTİ: 999 = TÜM SAYFALAR (environment variable ile değiştirilebilir)
+      const MAX_OCR_PAGES = parseInt(process.env.MAX_OCR_PAGES || '999', 10);
+      console.log(`OCR scripti çalıştırılıyor: ${scriptPath} (Max ${MAX_OCR_PAGES === 999 ? 'TÜM SAYFALAR' : `${MAX_OCR_PAGES} sayfa`})`);
+      onProgress?.(`📄 OCR başlatılıyor${MAX_OCR_PAGES === 999 ? '...' : ` (İlk ${MAX_OCR_PAGES} sayfa)...`}`, 15);
 
       // Spawn kullanarak real-time output alalım (unbuffered)
-      const ocrProcess = spawn('bash', [scriptPath, pdfToProcess, tempTxtPath], {
+      const ocrProcess = spawn('bash', [scriptPath, pdfToProcess, tempTxtPath, MAX_OCR_PAGES.toString()], {
         stdio: ['ignore', 'pipe', 'pipe'], // stdin ignore, stdout/stderr pipe
         env: { ...process.env, PYTHONUNBUFFERED: '1' } // Unbuffered output
       });

@@ -379,10 +379,12 @@ export function MenuCard({ data, onChange }: MenuCardProps) {
 
       {/* Notlar */}
       <div className="p-4 bg-gray-900/50 border border-gray-700 rounded-lg">
-        <label className="block text-sm font-medium text-gray-400 mb-2">
+        <label htmlFor="menu-notes" className="block text-sm font-medium text-gray-400 mb-2">
           Menü Notları
         </label>
         <textarea
+          id="menu-notes"
+          name="menu-notes"
           placeholder="Menü ile ilgili özel notlarınızı, değişiklik isteklerinizi veya önerileri buraya yazabilirsiniz..."
           className="w-full px-4 py-3 bg-gray-900/50 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-colors resize-none"
           rows={3}

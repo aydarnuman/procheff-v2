@@ -37,7 +37,7 @@ export function DeepAnalysis({ analysis, cachedResult, onAnalysisComplete }: Dee
     setProgressMessage("Claude Opus'a bağlanılıyor...");
 
     try {
-      // AKILLI FAKE PROGRESS - Derin analiz ~40-60 saniye sürüyor
+      // 🎯 OPTIMIZED: AKILLI FAKE PROGRESS - Derin analiz ~40-60 saniye sürüyor
       let currentProgress = 0;
       const progressInterval = setInterval(() => {
         setProgress(prev => {
@@ -45,7 +45,7 @@ export function DeepAnalysis({ analysis, cachedResult, onAnalysisComplete }: Dee
           if (prev < 95) {
             // İlk 25 saniye hızlı (%60'a kadar)
             if (prev < 60) {
-              currentProgress += 2; // Her 500ms'de +2
+              currentProgress += 2; // Her 1000ms'de +2 (500ms → 1000ms)
             } else if (prev < 85) {
               // 25-45. saniye orta hız (%85'e kadar)
               currentProgress += 1;
@@ -69,7 +69,7 @@ export function DeepAnalysis({ analysis, cachedResult, onAnalysisComplete }: Dee
           if (p < 90) return "Karar önerisi hazırlanıyor...";
           return "Tamamlanıyor...";
         });
-      }, 500);
+      }, 1000); // 🎯 500ms → 1000ms (interval artırıldı)
 
       const response = await fetch("/api/ai/deep-analysis", {
         method: "POST",

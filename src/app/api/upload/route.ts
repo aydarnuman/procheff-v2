@@ -16,20 +16,35 @@ export async function POST(request: NextRequest) {
 
   // Helper function: Progress mesajı gönder
   const sendProgress = (controller: ReadableStreamDefaultController, message: string, progress?: number) => {
-    const data = JSON.stringify({ type: 'progress', message, progress, timestamp: Date.now() });
-    controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+    try {
+      const data = JSON.stringify({ type: 'progress', message, progress, timestamp: Date.now() });
+      controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+    } catch (error) {
+      // Controller kapalıysa sessizce ignore et (OCR gibi uzun işlemlerde olabilir)
+      if ((error as any)?.code !== 'ERR_INVALID_STATE') {
+        console.error('sendProgress error:', error);
+      }
+    }
   };
 
   // Helper function: Hata mesajı gönder
   const sendError = (controller: ReadableStreamDefaultController, error: string, code: string) => {
-    const data = JSON.stringify({ type: 'error', error, code, timestamp: Date.now() });
-    controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+    try {
+      const data = JSON.stringify({ type: 'error', error, code, timestamp: Date.now() });
+      controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+    } catch (err) {
+      console.error('sendError failed (controller closed):', err);
+    }
   };
 
   // Helper function: Başarı mesajı gönder
   const sendSuccess = (controller: ReadableStreamDefaultController, result: any) => {
-    const data = JSON.stringify({ type: 'success', ...result, timestamp: Date.now() });
-    controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+    try {
+      const data = JSON.stringify({ type: 'success', ...result, timestamp: Date.now() });
+      controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+    } catch (error) {
+      console.error('sendSuccess failed (controller closed):', error);
+    }
   };
 
   // ReadableStream oluştur

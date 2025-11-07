@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { fileTypeFromBuffer } from 'file-type';
+import JSZip from 'jszip';
 
 export const maxDuration = 60;
 
@@ -137,6 +138,89 @@ export async function GET(request: NextRequest) {
     // Base64 encode
     const base64 = Buffer.from(buffer).toString('base64');
 
+    // ============================================================
+    // 4. 📦 ZIP Extraction (eğer ZIP dosyasıysa)
+    // ============================================================
+    const isZip = mimeType.includes('zip') || filename.toLowerCase().endsWith('.zip');
+
+    if (isZip) {
+      console.log('📦 ZIP dosyası tespit edildi, içeriği çıkarılıyor...');
+      
+      try {
+        const zip = await JSZip.loadAsync(buffer);
+        const extractedFiles: any[] = [];
+
+        // ZIP içindeki her dosyayı işle
+        for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+          // Klasörleri atla
+          if (zipEntry.dir) continue;
+
+          const lowerPath = relativePath.toLowerCase();
+          
+          // 🚫 HTML/HTM dosyalarını filtrele
+          if (lowerPath.endsWith('.html') || lowerPath.endsWith('.htm')) {
+            console.log(`   ⏭️ HTML dosyası atlandı: ${relativePath}`);
+            continue;
+          }
+
+          // Dosya içeriğini al
+          const fileBuffer = await zipEntry.async('uint8array');
+          
+          // Dosya tipini tespit et
+          const fileType = await fileTypeFromBuffer(fileBuffer);
+          const fileMimeType = fileType?.mime || 'application/octet-stream';
+          
+          // Base64'e çevir
+          const fileBase64 = Buffer.from(fileBuffer).toString('base64');
+
+          extractedFiles.push({
+            name: relativePath,
+            type: fileMimeType,
+            size: fileBuffer.length,
+            content: fileBase64
+          });
+
+          console.log(`   ✅ ${relativePath} (${fileMimeType}, ${(fileBuffer.length / 1024).toFixed(1)} KB)`);
+        }
+
+        console.log(`📦 ZIP extraction tamamlandı: ${extractedFiles.length} dosya`);
+
+        // ZIP extraction response
+        return NextResponse.json({
+          success: true,
+          filename,
+          mimeType,
+          size: buffer.byteLength,
+          isZip: true,
+          files: extractedFiles,
+          filesCount: extractedFiles.length
+        });
+
+      } catch (zipError: any) {
+        console.error('❌ ZIP extraction hatası:', zipError);
+        // ZIP açılamazsa normal dosya olarak dön
+        return NextResponse.json({
+          success: true,
+          filename,
+          mimeType,
+          size: buffer.byteLength,
+          data: base64,
+          isZip: false,
+          zipError: zipError.message
+        });
+      }
+    }
+
+    // 🚫 HTML/HTM dosyalarını reddet (tek dosya indirme)
+    const lowerFilename = filename.toLowerCase();
+    if (lowerFilename.endsWith('.html') || lowerFilename.endsWith('.htm') || mimeType.includes('text/html')) {
+      console.log(`⏭️ HTML dosyası reddedildi: ${filename}`);
+      return NextResponse.json({
+        success: false,
+        error: 'HTML dosyaları desteklenmiyor',
+      }, { status: 400 });
+    }
+
     // JSON response: dosya adı, GERÇEK mimeType, boyut, base64
     return NextResponse.json({
       success: true,
@@ -144,6 +228,7 @@ export async function GET(request: NextRequest) {
       mimeType, // 🔥 Artık gerçek MIME type (file-type detection)
       size: buffer.byteLength,
       data: base64,
+      isZip: false
     });
 
   } catch (error: any) {

@@ -7,6 +7,7 @@ import { ErrorSuppressor } from "@/components/providers/error-suppressor";
 import { Sidebar } from "@/components/nav/Sidebar";
 import { Topbar } from "@/components/nav/Topbar";
 import { Toaster } from "sonner";
+import "@/lib/utils/scheduler-violation-filter"; // 🔇 Filter minor violations
 
 const inter = Inter({
   variable: "--font-inter",
@@ -40,7 +41,7 @@ export default function RootLayout({
               expand={true}
               richColors 
               closeButton
-              duration={5000}
+              duration={4000}
             />
             <div className="flex h-screen overflow-hidden">
               {/* Sidebar */}

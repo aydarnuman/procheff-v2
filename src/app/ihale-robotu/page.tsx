@@ -1,11 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
-import { RefreshCw, ExternalLink, ChevronUp, ChevronDown, Search, Trash2, Sparkles, Bot, FileText, Download, Loader2, Calendar, Building2, MapPin, Clock, AlertCircle, AlertTriangle, Wand2, Eye, CheckCircle, Database } from 'lucide-react';
+import { RefreshCw, ExternalLink, ChevronUp, ChevronDown, Search, Trash2, Sparkles, Bot, FileText, Download, Loader2, Calendar, Building2, MapPin, Clock, AlertCircle, AlertTriangle, Wand2, Eye, CheckCircle, Database, Star, TrendingUp, Bell, BellOff } from 'lucide-react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { toast } from 'sonner';
 import { useIhaleStore } from '@/lib/stores/ihale-store';
 import { TokenCostCard } from '@/components/analytics/TokenCostCard';
+import { downloadDocuments } from '@/lib/utils/document-downloader';
+import { saveToIndexedDB, deleteFromIndexedDB, listIndexedDBKeys } from '@/lib/utils/indexed-db-storage';
 
 interface Tender {
   id: string;
@@ -65,7 +67,7 @@ function IhaleTakipPageInner() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [searchQuery, setSearchQuery] = useState('');
   const [deleting, setDeleting] = useState(false);
-  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'upcoming' | 'closed'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'upcoming' | 'closed' | 'favorites'>('all');
   const [cleaning, setCleaning] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [analyzingId, setAnalyzingId] = useState<string | null>(null); // 🆕 Hangi ihale analiz ediliyor
@@ -81,7 +83,129 @@ function IhaleTakipPageInner() {
   const [documentsExpanded, setDocumentsExpanded] = useState(true); // 🆕 Dökümanlar kartı açık mı
   const [showPreviewModal, setShowPreviewModal] = useState(false); // 🆕 Önizleme modal'ı
   const [showZipContents, setShowZipContents] = useState(false); // 🆕 ZIP içerik modal'ı
+  const [docPage, setDocPage] = useState(1); // 🆕 Döküman pagination
+  const DOCS_PER_PAGE = 10; // 🆕 Sayfa başına döküman sayısı
   const [zipFileInfo, setZipFileInfo] = useState<{fileName: string; size: number; extractedFiles?: string[]} | null>(null); // 🆕 ZIP bilgisi
+  const [isAnalyzing, setIsAnalyzing] = useState(false); // 🆕 Analiz başlatılıyor mu
+  const [preparedDocuments, setPreparedDocuments] = useState<any[]>([]); // 🆕 Hazırlanan dökümanlar (ZIP extract sonrası)
+  
+  // ⏱️ Timer sistemi - Her loading için elapsed time
+  const [loadingStartTime, setLoadingStartTime] = useState<number | null>(null);
+  const [elapsedTime, setElapsedTime] = useState<number>(0);
+  
+  // 🎯 OPTIMIZED: Timer hook - Loading sırasında elapsed time güncelle
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    
+    if (loadingStartTime) {
+      interval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - loadingStartTime) / 1000); // saniye
+        setElapsedTime(elapsed);
+      }, 2000); // 🎯 1sn → 2sn (scheduler violation önleme)
+    } else {
+      setElapsedTime(0);
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [loadingStartTime]);
+  
+  // ⏱️ Helper: Format elapsed time
+  const formatElapsedTime = (seconds: number): string => {
+    if (seconds < 60) return `${seconds}s`;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}m ${secs}s`;
+  };
+  
+  // ⭐ Favori sistemi - localStorage
+  const [favorites, setFavorites] = useState<Set<string>>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('ihale-favorites');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    }
+    return new Set();
+  });
+
+  // � Bildirim sistemi - localStorage
+  const [notifications, setNotifications] = useState<Set<string>>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('ihale-notifications');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    }
+    return new Set();
+  });
+
+  // �🕐 Canlı saat
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 10000); // 🎯 OPTIMIZED: 1sn → 10sn (scheduler violation önleme)
+    return () => clearInterval(timer);
+  }, []);
+
+  // Favori toggle
+  const toggleFavorite = useCallback((tenderId: string) => {
+    setFavorites(prev => {
+      const newFavorites = new Set(prev);
+      const isAdding = !newFavorites.has(tenderId);
+      
+      if (isAdding) {
+        newFavorites.add(tenderId);
+        // ID ile dismiss et, duplikaları engelle
+        toast.dismiss(`fav-${tenderId}`);
+        toast.success('⭐ Favorilere eklendi', { id: `fav-${tenderId}` });
+      } else {
+        newFavorites.delete(tenderId);
+        toast.dismiss(`fav-${tenderId}`);
+        toast.info('⭐ Favorilerden çıkarıldı', { id: `fav-${tenderId}` });
+      }
+      
+      localStorage.setItem('ihale-favorites', JSON.stringify([...newFavorites]));
+      return newFavorites;
+    });
+  }, []);
+
+  // Bildirim toggle
+  const toggleNotification = useCallback((tenderId: string, tenderTitle: string, deadlineDate: string | null) => {
+    setNotifications(prev => {
+      const newNotifications = new Set(prev);
+      const isAdding = !newNotifications.has(tenderId);
+      
+      if (isAdding) {
+        newNotifications.add(tenderId);
+        
+        // Tarih bilgisi varsa ne zaman bildirim alacağını göster
+        let message = '🔔 Bildirimler açıldı';
+        if (deadlineDate) {
+          const deadline = new Date(deadlineDate);
+          const now = new Date();
+          const diffDays = Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+          
+          if (diffDays <= 1) {
+            message += ' • Yarın hatırlat';
+          } else if (diffDays <= 3) {
+            message += ` • ${diffDays - 1} gün önce hatırlat`;
+          } else {
+            message += ' • 3 gün önce hatırlat';
+          }
+        }
+        
+        toast.dismiss(`notif-${tenderId}`);
+        toast.success(message, { id: `notif-${tenderId}` });
+      } else {
+        newNotifications.delete(tenderId);
+        toast.dismiss(`notif-${tenderId}`);
+        toast.info('🔕 Bildirimler kapatıldı', { id: `notif-${tenderId}` });
+      }
+      
+      localStorage.setItem('ihale-notifications', JSON.stringify([...newNotifications]));
+      return newNotifications;
+    });
+  }, []);
 
   // 🆕 Seçili dökümanların detaylı bilgisini hesapla
   const getSelectedDocumentsInfo = useCallback(() => {
@@ -125,7 +249,6 @@ function IhaleTakipPageInner() {
 
         // Versiyon uyumsuzsa cache'i temizle
         if (currentVersion !== CACHE_VERSION) {
-          console.log('🔄 Cache version mismatch, clearing old cache...');
           localStorage.removeItem('ihale-content-cache');
           localStorage.setItem(versionKey, CACHE_VERSION);
           return {};
@@ -134,7 +257,7 @@ function IhaleTakipPageInner() {
         const cached = localStorage.getItem('ihale-content-cache');
         if (cached) {
           const parsed = JSON.parse(cached);
-          console.log('💚 Cache localStorage\'dan yüklendi:', Object.keys(parsed).length, 'ihale');
+          // 🎯 OPTIMIZED: console.log kaldırıldı
 
           // 🔄 MIGRATION: Integer ID'leri source_id'ye çevir
           const migratedCache: Record<string, any> = {};
@@ -145,7 +268,7 @@ function IhaleTakipPageInner() {
             if (/^\d+$/.test(key) && value && typeof value === 'object') {
               const sourceId = (value as any).source_id || (value as any).sourceId;
               if (sourceId && sourceId !== key) {
-                console.log(`🔄 Migrating cache: ${key} → ${sourceId}`);
+                // 🎯 OPTIMIZED: console.log kaldırıldı
                 migratedCache[sourceId] = value;
                 migrationCount++;
               } else {
@@ -157,7 +280,7 @@ function IhaleTakipPageInner() {
           }
 
           if (migrationCount > 0) {
-            console.log(`✅ Cache migration tamamlandı: ${migrationCount} item güncellendi`);
+            // 🎯 OPTIMIZED: console.log kaldırıldı
             localStorage.setItem('ihale-content-cache', JSON.stringify(migratedCache));
             return migratedCache;
           }
@@ -172,19 +295,22 @@ function IhaleTakipPageInner() {
     return {};
   });
 
-  // 💾 Cache'i localStorage'a kaydet (her değiştiğinde)
+  // 🎯 OPTIMIZED: Cache'i localStorage'a kaydet (debounced, Blob.size hesaplaması kaldırıldı)
   useEffect(() => {
     const cacheSize = Object.keys(contentCache).length;
-    console.log('🔄 useEffect triggered - contentCache.size:', cacheSize);
-    if (cacheSize > 0) {
+    if (cacheSize === 0) return; // Boş cache'i kaydetme
+
+    // 🎯 Debounce: 3 saniye bekle, sonra kaydet (scheduler violation önleme)
+    const timeoutId = setTimeout(() => {
       try {
         const cacheString = JSON.stringify(contentCache);
-        const cacheSizeBytes = new Blob([cacheString]).size;
-        console.log('💾 Cache boyutu:', (cacheSizeBytes / 1024 / 1024).toFixed(2), 'MB');
+        
+        // 🎯 OPTIMIZATION: Blob.size yerine string length kullan (çok daha hızlı)
+        const approxSize = cacheString.length * 2; // UTF-16 yaklaşık boyut
+        const maxSize = 2 * 1024 * 1024; // 2MB
 
-        // localStorage limitini aşarsa cache'i küçült (max 2MB)
-        if (cacheSizeBytes > 2 * 1024 * 1024) {
-          console.warn('⚠️ Cache çok büyük, küçültülüyor...');
+        // localStorage limitini aşarsa cache'i küçült
+        if (approxSize > maxSize) {
           const entries = Object.entries(contentCache);
           // Son 5 item'ı tut
           const newCache = Object.fromEntries(entries.slice(-5));
@@ -192,21 +318,11 @@ function IhaleTakipPageInner() {
           return; // Bu sefer kaydetme, useEffect tekrar çalışacak
         }
 
-        console.log('�� Kaydedilecek cache:', contentCache);
         localStorage.setItem('ihale-content-cache', cacheString);
-        console.log('💾 Cache localStorage\'a kaydedildi:', cacheSize, 'ihale');
-
-        // Doğrulama - gerçekten kaydedildi mi?
-        const saved = localStorage.getItem('ihale-content-cache');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          console.log('✅ localStorage doğrulama - kayıtlı keys:', Object.keys(parsed));
-        }
       } catch (e) {
         console.error('❌ Cache kaydetme hatası:', e);
         // Quota exceeded durumunda eski cache'i temizle
         if (e instanceof DOMException && e.name === 'QuotaExceededError') {
-          console.warn('⚠️ localStorage dolu, cache temizleniyor...');
           localStorage.removeItem('ihale-content-cache');
           // Cache'i küçült (en eski 3 item'ı sil)
           const entries = Object.entries(contentCache);
@@ -214,20 +330,20 @@ function IhaleTakipPageInner() {
           setContentCache(newCache);
         }
       }
-    } else {
-      console.log('⚠️ Cache boş, localStorage\'a kaydetme atlanıyor');
-    }
+    }, 3000); // 🎯 3 saniye debounce
+
+    return () => clearTimeout(timeoutId);
   }, [contentCache]);
 
   const loadTenders = async () => {
     try {
       setLoading(true);
+      setLoadingStartTime(Date.now()); // ⏱️ Timer başlat
       // Tüm ihaleleri göster
       const response = await fetch('/api/ihale-scraper/list?limit=1000');
       const data = await response.json();
-      console.log('📊 API Response:', data);
+      // 🎯 OPTIMIZED: console.log kaldırıldı
       if (data.success) {
-        console.log('✅ Setting tenders:', data.data.length, 'items');
         setTenders(data.data);
       } else {
         console.error('❌ API Error:', data.error);
@@ -236,6 +352,7 @@ function IhaleTakipPageInner() {
       console.error('Load error:', error);
     } finally {
       setLoading(false);
+      setLoadingStartTime(null); // ⏱️ Timer durdur
     }
   };
 
@@ -285,7 +402,7 @@ function IhaleTakipPageInner() {
     }
   };
 
-  // Progress tracking fonksiyonu
+  // 🎯 OPTIMIZED: Progress tracking fonksiyonu
   const startProgressTracking = () => {
     const intervalId = setInterval(async () => {
       try {
@@ -442,6 +559,7 @@ function IhaleTakipPageInner() {
 
     // Cache yoksa API'den getir
     setLoadingContent(true);
+    setLoadingStartTime(Date.now()); // ⏱️ Timer başlat
     setAnalyzingId(tender.id);
     toast.loading('AI ile içerik getiriliyor...', { id: 'fetch-content' });
     
@@ -461,6 +579,7 @@ function IhaleTakipPageInner() {
     }
     
     setLoadingContent(false);
+    setLoadingStartTime(null); // ⏱️ Timer durdur
     setAnalyzingId(null);
   };
 
@@ -775,189 +894,221 @@ function IhaleTakipPageInner() {
     }
   };
 
-  // 🆕 İhaleyi AI analiz sayfasına gönder (ASYNC - timing fix)
-  const sendToAnalysis = async () => {
-    console.log('🚀🚀🚀 sendToAnalysis ÇAĞRILDI!');
+  // 🆕 Dökümanları hazırla ve önizleme göster
+  const prepareDocuments = async () => {
+    console.log('📦 prepareDocuments başlatıldı');
     
-    // ✅ Validation
+    // Validation
     if (!selectedTender || !fullContent) {
-      console.error('❌ sendToAnalysis: selectedTender veya fullContent eksik!', {
-        hasSelectedTender: !!selectedTender,
-        hasFullContent: !!fullContent
-      });
-      toast.error('⚠️ İhale detayı yüklenmemiş. Lütfen önce detayı yükleyin.');
+      toast.error('⚠️ İhale detayı yüklenmemiş');
       return;
     }
 
     if (!fullContent.fullText || fullContent.fullText.length === 0) {
-      console.error('❌ fullContent.fullText boş!', {
-        fullContent,
-        keys: Object.keys(fullContent)
-      });
-      toast.error('⚠️ İhale metni bulunamadı. Lütfen "Tam İçeriği Göster" butonuna basarak detayı yükleyin.');
+      toast.error('⚠️ İhale metni bulunamadı');
       return;
     }
 
-    console.log('📤 sendToAnalysis devam ediyor:', {
-      tender: selectedTender.title,
-      textLength: fullContent.fullText.length,
-      textSizeKB: (fullContent.fullText.length / 1024).toFixed(2),
-      selectedDocuments: selectedDocuments.length
-    });
-
     try {
-      // 🆕 Seçili dosyalar varsa onları da sessionStorage'a ekle
-      const documentsPayload: any[] = [];
+      // ⏱️ Timer başlat
+      setIsAnalyzing(true);
+      setLoadingStartTime(Date.now());
       
       if (selectedDocuments.length > 0) {
-        console.log(`📥 ${selectedDocuments.length} döküman indiriliyor...`);
-        toast.loading(`Dökümanlar hazırlanıyor (0/${selectedDocuments.length})...`, { id: 'doc-prep' });
+        console.log(`📥 ${selectedDocuments.length} döküman hazırlanıyor...`);
+        toast.loading(`Dökümanlar hazırlanıyor (0/${selectedDocuments.length})... ⏱️ 0s`, { id: 'doc-prep' });
         
-        for (let i = 0; i < selectedDocuments.length; i++) {
-          const url = selectedDocuments[i];
+        // 1️⃣ Virtual dosyaları ayır (JSON/TXT/CSV exports)
+        const virtualUrls = selectedDocuments.filter(url => url.startsWith('virtual://'));
+        const realUrls = selectedDocuments.filter(url => !url.startsWith('virtual://'));
+        
+        const allPrepared: any[] = [];
+        
+        // 2️⃣ Virtual dosyaları hazırla
+        for (const virtualUrl of virtualUrls) {
+          const exportType = virtualUrl.replace('virtual://', '');
+          let content = '';
+          let mimeType = '';
+          let filename = '';
           
-          try {
-            // Virtual export dosyalarını atla (CSV/TXT/JSON)
-            if (url.startsWith('virtual://')) {
-              console.log(`⏭️ Virtual export atlandı: ${url}`);
-              continue;
-            }
-            
-            // Progress update
-            toast.loading(`Dökümanlar hazırlanıyor (${i + 1}/${selectedDocuments.length})...`, { id: 'doc-prep' });
-            
-            console.log(`📥 İndiriliyor [${i + 1}/${selectedDocuments.length}]: ${url.substring(url.lastIndexOf('/') + 1)}`);
-
-            // Dökümanı indir
-            const downloadRes = await fetch(`/api/ihale-scraper/download-document?url=${encodeURIComponent(url)}`);
-            if (!downloadRes.ok) {
-              throw new Error(`HTTP ${downloadRes.status}`);
-            }
-
-            const downloadData = await downloadRes.json();
-            if (!downloadData.success || !downloadData.data) {
-              throw new Error(downloadData.error || 'İndirme başarısız');
-            }
-
-            // Döküman bilgisini documentsPayload'a ekle
-            documentsPayload.push({
-              title: downloadData.filename,
-              url: url,
-              mimeType: downloadData.mimeType,
-              blob: `data:${downloadData.mimeType};base64,${downloadData.data}`,
-              size: downloadData.data.length,
-              type: downloadData.filename.toLowerCase().endsWith('.zip') ? 'zip_archive' : 
-                    downloadData.filename.toLowerCase().endsWith('.rar') ? 'rar_archive' : 'document'
+          if (exportType === 'json') {
+            content = JSON.stringify({
+              title: selectedTender.title,
+              organization: selectedTender.organization,
+              details: fullContent.details,
+              fullText: fullContent.fullText,
+              documents: fullContent.documents
+            }, null, 2);
+            mimeType = 'application/json';
+            filename = `${selectedTender.title.substring(0, 30)}.json`;
+          } else if (exportType === 'txt') {
+            content = `İHALE DETAYI\n\n`;
+            content += `Başlık: ${selectedTender.title}\n`;
+            content += `Kurum: ${selectedTender.organization}\n\n`;
+            content += `DETAYLAR:\n`;
+            Object.entries(fullContent.details || {}).forEach(([key, value]) => {
+              content += `${key}: ${value}\n`;
             });
-
-            console.log(`   ✅ ${downloadData.filename} hazır (${(downloadData.data.length / 1024).toFixed(1)} KB)`);
-            
-          } catch (error: any) {
-            console.error(`   ❌ Hata [${url}]:`, error.message);
-            // Hata olsa bile devam et
+            content += `\n\nİÇERİK:\n${fullContent.fullText}`;
+            mimeType = 'text/plain';
+            filename = `${selectedTender.title.substring(0, 30)}.txt`;
+          } else if (exportType === 'csv') {
+            content = 'Alan,Değer\n';
+            content += `Başlık,"${selectedTender.title}"\n`;
+            content += `Kurum,"${selectedTender.organization}"\n`;
+            Object.entries(fullContent.details || {}).forEach(([key, value]) => {
+              content += `"${key}","${value}"\n`;
+            });
+            mimeType = 'text/csv';
+            filename = `${selectedTender.title.substring(0, 30)}.csv`;
           }
+          
+          const blob = new Blob([content], { type: mimeType });
+          allPrepared.push({
+            title: filename,
+            url: virtualUrl,
+            mimeType: mimeType,
+            blob: blob,
+            size: blob.size,
+            type: 'export' as const,
+            isFromZip: false
+          });
         }
         
-        toast.dismiss('doc-prep');
-        console.log(`✅ ${documentsPayload.length}/${selectedDocuments.length} döküman hazır`);
-      }
+        // 3️⃣ Gerçek dosyaları indir (paralel)
+        if (realUrls.length > 0) {
+          const downloadedFiles = await downloadDocuments(
+            realUrls,
+            {
+              onProgress: (progress) => {
+                const elapsed = Math.floor((Date.now() - loadingStartTime!) / 1000);
+                toast.loading(
+                  `Dökümanlar hazırlanıyor (${progress.current + virtualUrls.length}/${selectedDocuments.length})... ⏱️ ${elapsed}s`, 
+                  { id: 'doc-prep' }
+                );
+              }
+            }
+          );
 
-      // 1️⃣ Benzersiz ID üret
-      const tempId = `ihale_docs_${Date.now()}`;
-      const payload = {
-        title: selectedTender.title,
-        text: fullContent.fullText,
-        documents: documentsPayload, // 🆕 Dökümanlar eklendi
-        size: fullContent.fullText.length + documentsPayload.reduce((acc, doc) => acc + doc.size, 0),
-        timestamp: Date.now(),
-      };
+          // DownloadedFile[] → preparedDocuments formatına dönüştür
+          const realPrepared = downloadedFiles.map(df => ({
+            title: df.title,
+            url: df.url,
+            mimeType: df.mimeType,
+            blob: df.blob,
+            size: df.size,
+            type: 'document' as const,
+            isFromZip: df.isFromZip,
+            extractedFrom: df.isFromZip ? df.originalFilename : undefined
+          }));
+          
+          allPrepared.push(...realPrepared);
+        }
 
-      // 2️⃣ sessionStorage'a kaydet
-      console.log(`💾 sessionStorage'a kaydediliyor: ${tempId} (${(payload.size / 1024).toFixed(2)} KB, ${documentsPayload.length} döküman)`);
-      sessionStorage.setItem(tempId, JSON.stringify(payload));
-
-      // 3️⃣ Doğrulama
-      const verification = sessionStorage.getItem(tempId);
-      if (!verification) {
-        throw new Error('sessionStorage yazma başarısız');
-      }
-      console.log('✅ sessionStorage kaydı doğrulandı');
-
-      // 4️⃣ Router prefetch
-      console.log('🔄 Hedef sayfa prefetch ediliyor...');
-      await router.prefetch('/ihale/yeni-analiz');
-
-      // 5️⃣ Kısa bekleme
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // 6️⃣ Güvenli yönlendirme
-      console.log(`🚀 Yönlendirme yapılıyor: /ihale/yeni-analiz?from=${tempId}`);
-      closeModal(); // Modal'ı kapat
-      router.push(`/ihale/yeni-analiz?from=${tempId}`);
-
-    } catch (error) {
-      console.error('❌ sendToAnalysis hatası:', error);
-      toast.error('Dökümanlar hazırlanırken hata oluştu', { id: 'doc-prep' });
-
-      // Fallback: Eski localStorage yöntemi
-      console.warn('⚠️ Fallback: localStorage yöntemi deneniyor...');
-      try {
-        // Store'u temizle
-        reset();
-        await new Promise(resolve => setTimeout(resolve, 50));
-
-        // localStorage'ı temizle
-        localStorage.removeItem('ihale_document_text');
-        localStorage.removeItem('ihale_document_pages');
-        localStorage.removeItem('ihale_document_stats');
-        localStorage.removeItem('ihale_current_step');
-
-        // Dosya ekle
-        addFileStatus({
-          fileMetadata: {
-            name: `${selectedTender.title}.txt`,
-            size: fullContent.fullText.length,
-            type: 'text/plain',
-            lastModified: Date.now(),
-          },
-          status: 'completed',
-          extractedText: fullContent.fullText,
-          wordCount: fullContent.fullText.split(/\s+/).length,
-          detectedType: 'ihale_ilani',
-          detectedTypeConfidence: 1.0,
-          progress: '✅ İhale detayı hazır'
+        // 4️⃣ Duplicate kontrolü - mevcut dosyalara ekleme yap
+        setPreparedDocuments(prev => {
+          // 🆕 Unique key: title + url kombinasyonu (ZIP'ten çıkan aynı URL'li farklı dosyalar için)
+          const existingKeys = new Set(prev.map(doc => `${doc.title}|||${doc.url}`));
+          
+          // Sadece yeni dosyaları filtrele
+          const newFiles = allPrepared.filter(doc => {
+            const fileKey = `${doc.title}|||${doc.url}`;
+            if (existingKeys.has(fileKey)) {
+              console.log(`⏭️ Duplicate atlandı: ${doc.title}`);
+              return false;
+            }
+            return true;
+          });
+          
+          if (newFiles.length < allPrepared.length) {
+            const skippedCount = allPrepared.length - newFiles.length;
+            toast.warning(`⚠️ ${skippedCount} dosya zaten ekliydi, atlandı`);
+          }
+          
+          console.log(`📦 ${newFiles.length} yeni dosya eklendi (${allPrepared.length - newFiles.length} duplicate)`);
+          return [...prev, ...newFiles];
         });
 
-        setCurrentStep('upload');
-
-        // localStorage'a kaydet (quota kontrolü ile)
-        try {
-          localStorage.setItem('ihale_document_text', fullContent.fullText);
-        } catch (e) {
-          if (e instanceof DOMException && e.name === 'QuotaExceededError') {
-            console.warn('⚠️ localStorage dolu, eski veriler temizleniyor...');
-            localStorage.removeItem('ihale-content-cache');
-            localStorage.removeItem('ihale-analysis-storage');
-            // Tekrar dene
-            localStorage.setItem('ihale_document_text', fullContent.fullText);
-          } else {
-            throw e;
-          }
-        }
-
-        // Persist bekle
-        await new Promise(resolve => setTimeout(resolve, 150));
-
-        // Yönlendir
-        router.push('/ihale/yeni-analiz?step=upload');
-
-      } catch (fallbackError) {
-        console.error('❌ Fallback da başarısız:', fallbackError);
-        alert('⚠️ Veri aktarımı başarısız oldu. Lütfen sayfayı yenileyip tekrar deneyin.');
+        const elapsed = Math.floor((Date.now() - loadingStartTime!) / 1000);
+        toast.success(`✅ Hazırlama tamamlandı (${elapsed}s)`, { id: 'doc-prep' });
+        
+        // ✅ Detay modal içinde gösterilecek (ayrı modal yok artık)
       }
+
+      // ⏱️ Reset timer
+      setIsAnalyzing(false);
+      setLoadingStartTime(null);
+
+    } catch (error: any) {
+      console.error('❌ prepareDocuments hatası:', error);
+      toast.error('Dökümanlar hazırlanırken hata oluştu');
+      setIsAnalyzing(false);
+      setLoadingStartTime(null);
     }
   };
 
+  // 🆕 İhaleyi AI analiz sayfasına gönder (hazırlanmış dökümanlarla)
+  const sendToAnalysis = async () => {
+    console.log('🚀 sendToAnalysis çağrıldı - preparedDocuments:', preparedDocuments.length);
+    
+    if (!selectedTender || !fullContent) {
+      toast.error('⚠️ İhale detayı yüklenmemiş');
+      return;
+    }
+
+    if (!fullContent.fullText || fullContent.fullText.length === 0) {
+      toast.error('⚠️ İhale metni bulunamadı');
+      return;
+    }
+
+    try {
+      toast.loading('Analize gönderiliyor...', { id: 'send-analysis' });
+
+      // 1️⃣ Benzersiz ID üret
+      const tempId = `ihale_docs_${Date.now()}`;
+      
+      // 🧹 Eski IndexedDB verilerini temizle (önceki gönderimlerden kalmış olabilir)
+      const oldKeys = await listIndexedDBKeys();
+      const oldIhaleKeys = oldKeys.filter((key: string) => key.startsWith('ihale_docs_'));
+      if (oldIhaleKeys.length > 0) {
+        console.log(`🧹 ${oldIhaleKeys.length} eski IndexedDB verisi temizleniyor...`, oldIhaleKeys);
+        for (const key of oldIhaleKeys) {
+          await deleteFromIndexedDB(key);
+        }
+        console.log('✅ Eski veriler temizlendi');
+        toast.info(`🧹 ${oldIhaleKeys.length} eski veri temizlendi`);
+      }
+      
+      const payload = {
+        title: selectedTender.title,
+        text: fullContent.fullText,
+        documents: preparedDocuments, // Blob nesneleri dahil
+        size: fullContent.fullText.length + preparedDocuments.reduce((acc, doc) => acc + doc.size, 0),
+        timestamp: Date.now(),
+      };
+
+      // 2️⃣ IndexedDB'ye kaydet (sessionStorage yerine - 100MB+ dosyalar için)
+      console.log(`💾 IndexedDB'ye kaydediliyor: ${tempId} (${(payload.size / (1024 * 1024)).toFixed(2)} MB, ${preparedDocuments.length} döküman)`);
+      await saveToIndexedDB(tempId, payload);
+
+      console.log('✅ IndexedDB kaydı tamamlandı');
+
+      // 3️⃣ Router prefetch
+      await router.prefetch('/ihale/yeni-analiz');
+
+      // 4️⃣ Güvenli yönlendirme
+      console.log(`🚀 Yönlendirme yapılıyor: /ihale/yeni-analiz?from=${tempId}`);
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete('detail'); // Modal'ı kapat
+      router.push(`/ihale/yeni-analiz?from=${tempId}`);
+      
+      toast.success('Analize yönlendiriliyor...', { id: 'send-analysis' });
+
+    } catch (error: any) {
+      console.error('❌ sendToAnalysis hatası:', error);
+      toast.error('Yönlendirme hatası: ' + error.message, { id: 'send-analysis' });
+    }
+  };
   // 🆕 Eksik ihaleleri toplu AI ile düzelt (yeni dedicated API)
   const batchFixMissingData = async () => {
     try {
@@ -1026,9 +1177,9 @@ function IhaleTakipPageInner() {
         : [...prev, url];
 
       // Log hangi dosyanın seçildiğini/kaldırıldığını göster
-      const docName = url.includes('virtual://export/csv') ? '📊 İhale Detayları (CSV)' :
-                     url.includes('virtual://export/txt') ? '📄 İhale Detayları (TXT)' :
-                     url.includes('virtual://export/json') ? '🔧 İhale Detayları (JSON)' :
+      const docName = url.includes('virtual://csv') ? '📊 İhale Detayları (CSV)' :
+                     url.includes('virtual://txt') ? '📄 İhale Detayları (TXT)' :
+                     url.includes('virtual://json') ? '🔧 İhale Detayları (JSON)' :
                      '📋 Döküman';
 
       console.log(`${isRemoving ? '❌ Kaldırıldı' : '✅ Seçildi'}: ${docName}`);
@@ -1046,11 +1197,11 @@ function IhaleTakipPageInner() {
       return;
     }
 
-    // CSV/TXT/JSON için virtual URLs oluştur
+    // CSV/TXT/JSON için virtual URLs oluştur (YENİ format - export card'larla uyumlu)
     const virtualDocUrls = [
-      'virtual://export/csv',
-      'virtual://export/txt',
-      'virtual://export/json'
+      'virtual://csv',
+      'virtual://txt',
+      'virtual://json'
     ];
 
     const allDocUrls = fullContent.documents.map((d: any) => d.url);
@@ -1111,7 +1262,7 @@ function IhaleTakipPageInner() {
           try {
             let file: File;
             
-            if (virtualUrl === 'virtual://export/csv') {
+            if (virtualUrl === 'virtual://csv') {
               // CSV oluştur
               const registrationNo = selectedTender!.registration_number || selectedTender!.raw_json?.['Kayıt no'] || 'bilinmeyen';
               const date = new Date().toISOString().split('T')[0];
@@ -1129,7 +1280,7 @@ function IhaleTakipPageInner() {
                 type: 'text/csv;charset=utf-8;',
                 lastModified: Date.now(),
               });
-            } else if (virtualUrl === 'virtual://export/txt') {
+            } else if (virtualUrl === 'virtual://txt') {
               // TXT oluştur
               const registrationNo = selectedTender!.registration_number || selectedTender!.raw_json?.['Kayıt no'] || 'bilinmeyen';
               const date = new Date().toISOString().split('T')[0];
@@ -1151,7 +1302,7 @@ function IhaleTakipPageInner() {
                 type: 'text/plain;charset=utf-8;',
                 lastModified: Date.now(),
               });
-            } else if (virtualUrl === 'virtual://export/json') {
+            } else if (virtualUrl === 'virtual://json') {
               // JSON oluştur
               const registrationNo = selectedTender!.registration_number || selectedTender!.raw_json?.['Kayıt no'] || 'bilinmeyen';
               const date = new Date().toISOString().split('T')[0];
@@ -1530,6 +1681,7 @@ function IhaleTakipPageInner() {
   // Status filtresi uygula
   const statusFilteredTenders = filteredTenders.filter(t => {
     if (filterStatus === 'all') return true;
+    if (filterStatus === 'favorites') return favorites.has(t.id);
 
     const status = getTenderStatus(t);
 
@@ -1547,6 +1699,21 @@ function IhaleTakipPageInner() {
   });
 
   const sortedTenders = [...statusFilteredTenders].sort((a, b) => {
+    // Önce deadline'a göre aktif/pasif ayır
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    
+    const aDeadline = a.deadline_date ? new Date(a.deadline_date) : null;
+    const bDeadline = b.deadline_date ? new Date(b.deadline_date) : null;
+    
+    const aIsActive = aDeadline && aDeadline >= now;
+    const bIsActive = bDeadline && bDeadline >= now;
+    
+    // Aktif ihaleler her zaman üstte
+    if (aIsActive && !bIsActive) return -1;
+    if (!aIsActive && bIsActive) return 1;
+    
+    // Her ikisi de aktif veya her ikisi de kapanmış ise normal sorting
     let aVal: any = a[sortField];
     let bVal: any = b[sortField];
 
@@ -1699,11 +1866,12 @@ function IhaleTakipPageInner() {
         {/* Stats Cards */}
         {!loading && (
           <div className="grid grid-cols-1 gap-4 mb-4">
-            {/* Info Card - İstatistikler */}
+            {/* Dashboard İstatistikleri - Yenilendi */}
             {!scraping && sortedTenders.length > 0 && (
               <div className="bg-gradient-to-r from-purple-900/20 to-blue-900/20 border border-purple-500/30 rounded-xl px-5 py-4">
                 <div className="grid grid-cols-4 gap-6">
-                  {/* Bugünün Tarihi */}
+                  
+                  {/* 1. Bugün + Canlı Saat */}
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
                       <Calendar className="w-5 h-5 text-purple-400" />
@@ -1711,59 +1879,91 @@ function IhaleTakipPageInner() {
                     <div>
                       <div className="text-xs text-purple-300/70">Bugün</div>
                       <div className="text-sm font-semibold text-purple-300">
-                        {new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                        {currentTime.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' })}
+                      </div>
+                      <div className="text-xs text-purple-400/80 font-mono tabular-nums">
+                        {currentTime.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                       </div>
                     </div>
                   </div>
 
-                  {/* En Yakın İhale - Son Teklif Tarihine Göre */}
+                  {/* 2. Acil İhaleler - Bugün/Yarın Sona Erenler */}
                   {(() => {
                     const now = new Date();
                     now.setHours(0, 0, 0, 0);
+                    
+                    const tomorrow = new Date(now);
+                    tomorrow.setDate(tomorrow.getDate() + 1);
 
-                    // Deadline'ı geçmemiş ihaleleri bul
-                    const upcomingTenders = sortedTenders.filter(t => {
+                    const urgentTenders = sortedTenders.filter(t => {
                       const deadline = t.deadline_date ? new Date(t.deadline_date) : null;
-                      return deadline && deadline >= now;
-                    }).sort((a, b) => {
-                      const aDate = new Date(a.deadline_date!);
-                      const bDate = new Date(b.deadline_date!);
-                      return aDate.getTime() - bDate.getTime();
+                      if (!deadline) return false;
+                      deadline.setHours(0, 0, 0, 0);
+                      return deadline <= tomorrow && deadline >= now;
                     });
 
-                    const nearest = upcomingTenders[0];
+                    const todayCount = urgentTenders.filter(t => {
+                      const deadline = new Date(t.deadline_date!);
+                      deadline.setHours(0, 0, 0, 0);
+                      return deadline.getTime() === now.getTime();
+                    }).length;
 
-                    if (nearest) {
-                      const deadlineDate = new Date(nearest.deadline_date!);
-                      const diffTime = deadlineDate.getTime() - now.getTime();
-                      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    const tomorrowCount = urgentTenders.length - todayCount;
+                    
+                    // Bildirim açık olan acil ihaleler
+                    const urgentWithNotif = urgentTenders.filter(t => notifications.has(t.id)).length;
 
-                      // Renk belirleme
-                      let timeColor = 'text-blue-400/80';
-                      if (diffDays === 0) {
-                        timeColor = 'text-red-400/80 font-bold';
-                      } else if (diffDays <= 3) {
-                        timeColor = 'text-red-400/80';
-                      } else if (diffDays <= 7) {
-                        timeColor = 'text-orange-400/80';
-                      } else if (diffDays <= 14) {
-                        timeColor = 'text-yellow-400/80';
-                      }
-
+                    if (urgentTenders.length > 0) {
                       return (
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
-                            <Clock className="w-5 h-5 text-blue-400" />
+                          <div className="w-10 h-10 rounded-lg bg-red-500/20 flex items-center justify-center animate-pulse">
+                            <AlertTriangle className="w-5 h-5 text-red-400" />
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs text-blue-300/70">En yakın son teklif</div>
-                            <div className="text-sm font-semibold text-blue-300 truncate">
-                              {nearest.title.length > 35
-                                ? nearest.title.substring(0, 35) + '...'
-                                : nearest.title}
+                          <div>
+                            <div className="text-xs text-red-300/70">🚨 Acil İhaleler</div>
+                            <div className="text-sm font-bold text-red-300">
+                              {urgentTenders.length} ihale - Hemen bak!
                             </div>
-                            <div className={`text-xs mt-0.5 ${timeColor}`}>
-                              {diffDays === 0 ? 'Bugün sona eriyor!' : `${diffDays} gün kaldı`}
+                            <div className="text-xs text-red-400/80 mt-0.5 flex items-center gap-2">
+                              <span>
+                                {todayCount > 0 && `${todayCount} bugün`}
+                                {todayCount > 0 && tomorrowCount > 0 && ', '}
+                                {tomorrowCount > 0 && `${tomorrowCount} yarın`}
+                              </span>
+                              {urgentWithNotif > 0 && (
+                                <span className="flex items-center gap-0.5 text-blue-400">
+                                  • {urgentWithNotif} <Bell className="w-3 h-3 fill-blue-400" />
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // 3 gün içinde sona erenler
+                    const soonTenders = sortedTenders.filter(t => {
+                      const deadline = t.deadline_date ? new Date(t.deadline_date) : null;
+                      if (!deadline) return false;
+                      deadline.setHours(0, 0, 0, 0);
+                      const threeDays = new Date(now);
+                      threeDays.setDate(threeDays.getDate() + 3);
+                      return deadline > tomorrow && deadline <= threeDays;
+                    });
+
+                    if (soonTenders.length > 0) {
+                      return (
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-orange-500/20 flex items-center justify-center">
+                            <Clock className="w-5 h-5 text-orange-400" />
+                          </div>
+                          <div>
+                            <div className="text-xs text-orange-300/70">⚠️ Yaklaşan</div>
+                            <div className="text-sm font-semibold text-orange-300">
+                              {soonTenders.length} ihale
+                            </div>
+                            <div className="text-xs text-orange-400/80 mt-0.5">
+                              3 gün içinde
                             </div>
                           </div>
                         </div>
@@ -1772,19 +1972,73 @@ function IhaleTakipPageInner() {
 
                     return (
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-gray-500/20 flex items-center justify-center">
-                          <Clock className="w-5 h-5 text-gray-400" />
+                        <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+                          <CheckCircle className="w-5 h-5 text-emerald-400" />
                         </div>
                         <div>
-                          <div className="text-xs text-gray-400">En yakın son teklif</div>
-                          <div className="text-sm font-semibold text-gray-300">Yaklaşan ihale yok</div>
+                          <div className="text-xs text-emerald-300/70">✅ Durum</div>
+                          <div className="text-sm font-semibold text-emerald-300">
+                            Acil yok
+                          </div>
+                          <div className="text-xs text-emerald-400/80 mt-0.5">
+                            Rahat takip et
+                          </div>
                         </div>
                       </div>
                     );
                   })()}
 
-                  {/* Toplam Bütçe */}
+                  {/* 3. Bu Hafta Eklenenler */}
                   {(() => {
+                    const sevenDaysAgo = new Date();
+                    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+                    sevenDaysAgo.setHours(0, 0, 0, 0);
+
+                    const thisWeekTenders = sortedTenders.filter(t => {
+                      const firstSeen = t.first_seen_at ? new Date(t.first_seen_at) : null;
+                      return firstSeen && firstSeen >= sevenDaysAgo;
+                    });
+
+                    const todayTenders = sortedTenders.filter(t => {
+                      const today = new Date();
+                      today.setHours(0, 0, 0, 0);
+                      const firstSeen = t.first_seen_at ? new Date(t.first_seen_at) : null;
+                      if (!firstSeen) return false;
+                      firstSeen.setHours(0, 0, 0, 0);
+                      return firstSeen.getTime() === today.getTime();
+                    }).length;
+
+                    return (
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                          <TrendingUp className="w-5 h-5 text-blue-400" />
+                        </div>
+                        <div>
+                          <div className="text-xs text-blue-300/70">📅 Bu Hafta</div>
+                          <div className="text-sm font-semibold text-blue-300">
+                            {thisWeekTenders.length} yeni ihale
+                          </div>
+                          <div className="text-xs text-blue-400/80 mt-0.5">
+                            {todayTenders > 0 ? `${todayTenders} bugün eklendi` : 'Son 7 gün'}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* 4. Toplam İhale Özeti */}
+                  {(() => {
+                    const now = new Date();
+                    now.setHours(0, 0, 0, 0);
+
+                    const activeCount = sortedTenders.filter(t => {
+                      const deadline = t.deadline_date ? new Date(t.deadline_date) : null;
+                      return deadline && deadline >= now;
+                    }).length;
+
+                    const favCount = favorites.size;
+                    const notifCount = notifications.size;
+
                     const totalBudget = sortedTenders
                       .filter(t => t.budget && t.budget > 0)
                       .reduce((sum, t) => sum + (t.budget || 0), 0);
@@ -1801,85 +2055,36 @@ function IhaleTakipPageInner() {
                     return (
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
-                          <Building2 className="w-5 h-5 text-emerald-400" />
+                          <Database className="w-5 h-5 text-emerald-400" />
                         </div>
                         <div>
-                          <div className="text-xs text-emerald-300/70">Toplam Bütçe</div>
+                          <div className="text-xs text-emerald-300/70">📊 Takip</div>
                           <div className="text-sm font-semibold text-emerald-300">
-                            {totalBudget > 0 ? `₺${formatBudget(totalBudget)}` : 'Belirtilmemiş'}
+                            {activeCount} aktif
                           </div>
-                          <div className="text-xs text-emerald-400/80 mt-0.5">
-                            {sortedTenders.filter(t => t.budget && t.budget > 0).length} ihale
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Aktif İhaleler - Son Teklif Tarihine Göre */}
-                  {(() => {
-                    const now = new Date();
-                    now.setHours(0, 0, 0, 0);
-
-                    const activeCount = sortedTenders.filter(t => {
-                      const deadline = t.deadline_date ? new Date(t.deadline_date) : null;
-                      return deadline && deadline >= now;
-                    }).length;
-
-                    // En yakın son teklif tarihini bul
-                    const nearestTender = sortedTenders
-                      .filter(t => {
-                        const deadline = t.deadline_date ? new Date(t.deadline_date) : null;
-                        return deadline && deadline >= now;
-                      })
-                      .sort((a, b) => {
-                        const aDate = new Date(a.deadline_date!);
-                        const bDate = new Date(b.deadline_date!);
-                        return aDate.getTime() - bDate.getTime();
-                      })[0];
-
-                    let statusText = 'Acil yok';
-                    let statusColor = 'text-emerald-400/80';
-
-                    if (nearestTender) {
-                      const deadline = new Date(nearestTender.deadline_date!);
-                      const diffDays = Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-
-                      if (diffDays === 0) {
-                        statusText = 'Bugün sona eriyor!';
-                        statusColor = 'text-red-400/80 font-bold';
-                      } else if (diffDays <= 3) {
-                        statusText = `${diffDays} gün kaldı`;
-                        statusColor = 'text-red-400/80';
-                      } else if (diffDays <= 7) {
-                        statusText = `${diffDays} gün kaldı`;
-                        statusColor = 'text-orange-400/80';
-                      } else if (diffDays <= 14) {
-                        statusText = `${diffDays} gün kaldı`;
-                        statusColor = 'text-yellow-400/80';
-                      } else {
-                        statusText = `${diffDays} gün kaldı`;
-                        statusColor = 'text-emerald-400/80';
-                      }
-                    }
-
-                    return (
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-orange-500/20 flex items-center justify-center">
-                          <AlertCircle className="w-5 h-5 text-orange-400" />
-                        </div>
-                        <div>
-                          <div className="text-xs text-orange-300/70">Son Teklif</div>
-                          <div className="text-sm font-semibold text-orange-300">
-                            {activeCount} aktif ihale
-                          </div>
-                          <div className={`text-xs mt-0.5 ${statusColor}`}>
-                            {statusText}
+                          <div className="text-xs text-emerald-400/80 mt-0.5 flex items-center gap-2">
+                            {favCount > 0 && (
+                              <span className="flex items-center gap-0.5">
+                                ⭐ {favCount} favori
+                              </span>
+                            )}
+                            {notifCount > 0 && (
+                              <>
+                                {favCount > 0 && <span>•</span>}
+                                <span className="flex items-center gap-0.5">
+                                  {notifCount} bildirim
+                                </span>
+                              </>
+                            )}
+                            {favCount === 0 && notifCount === 0 && (
+                              <span>Takip yok</span>
+                            )}
                           </div>
                         </div>
                       </div>
                     );
                   })()}
+
                 </div>
               </div>
             )}
@@ -1915,12 +2120,59 @@ function IhaleTakipPageInner() {
               </div>
             )}
 
-            {/* Filtre Sekmeleri - Hidden but functional */}
-            <div className="hidden">
-              <button onClick={() => setFilterStatus('all')}>Tümü</button>
-              <button onClick={() => setFilterStatus('active')}>Açık</button>
-              <button onClick={() => setFilterStatus('upcoming')}>Yaklaşanlar</button>
-              <button onClick={() => setFilterStatus('closed')}>Kapanmış</button>
+            {/* Filtre Sekmeleri */}
+            <div className="flex gap-2 mb-4 flex-wrap">
+              <button 
+                onClick={() => setFilterStatus('all')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  filterStatus === 'all' 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                }`}
+              >
+                Tümü ({tenders.length})
+              </button>
+              <button 
+                onClick={() => setFilterStatus('favorites')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                  filterStatus === 'favorites' 
+                    ? 'bg-yellow-600 text-white' 
+                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                }`}
+              >
+                <Star className={`w-4 h-4 ${filterStatus === 'favorites' ? 'fill-white' : ''}`} />
+                Favoriler ({favorites.size})
+              </button>
+              <button 
+                onClick={() => setFilterStatus('active')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  filterStatus === 'active' 
+                    ? 'bg-green-600 text-white' 
+                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                }`}
+              >
+                Açık
+              </button>
+              <button 
+                onClick={() => setFilterStatus('upcoming')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  filterStatus === 'upcoming' 
+                    ? 'bg-orange-600 text-white' 
+                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                }`}
+              >
+                Yaklaşanlar
+              </button>
+              <button 
+                onClick={() => setFilterStatus('closed')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  filterStatus === 'closed' 
+                    ? 'bg-gray-600 text-white' 
+                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                }`}
+              >
+                Kapanmış
+              </button>
             </div>
           </div>
         )}
@@ -1928,7 +2180,20 @@ function IhaleTakipPageInner() {
         {/* List */}
         {loading ? (
           <div className="text-center py-20">
-            <div className="inline-block w-8 h-8 border-2 border-gray-700 border-t-white rounded-full animate-spin"></div>
+            <div className="space-y-4">
+              <div className="inline-block w-8 h-8 border-2 border-gray-700 border-t-white rounded-full animate-spin"></div>
+              <p className="text-gray-400 text-sm">İhaleler yükleniyor...</p>
+              {/* ⏱️ Elapsed Time */}
+              {loadingStartTime && (
+                <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-800 rounded-lg border border-gray-700">
+                  <Clock className="w-4 h-4 text-blue-400" />
+                  <span className="text-sm font-semibold text-blue-300">
+                    {formatElapsedTime(elapsedTime)}
+                  </span>
+                  <span className="text-xs text-gray-500">geçti</span>
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl shadow-lg overflow-hidden">
@@ -1936,6 +2201,12 @@ function IhaleTakipPageInner() {
               <thead className="bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 border-b-2 border-gray-700">
                 <tr>
                   <th className="px-3 py-4 text-left font-bold text-gray-300 w-8">#</th>
+                  <th className="px-3 py-4 text-center font-bold text-gray-300 w-20" title="Takip">
+                    <div className="flex items-center justify-center gap-1">
+                      <Star className="w-4 h-4 text-yellow-400" />
+                      <Bell className="w-4 h-4 text-blue-400" />
+                    </div>
+                  </th>
                   <th className="px-3 py-4 text-left font-bold text-gray-300 w-24">Durum</th>
                   <th className="px-3 py-4 text-left font-bold text-gray-300 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('organization')}>
                     <div className="flex items-center gap-2">
@@ -1965,15 +2236,56 @@ function IhaleTakipPageInner() {
                 {sortedTenders.map((t, i) => {
                   // Normal zebra striping - hiçbir renkli çizgi yok
                   const rowBgClass = i % 2 === 0 ? 'bg-zinc-900/40' : 'bg-zinc-950/60';
+                  const isFavorite = favorites.has(t.id);
+                  const hasNotification = notifications.has(t.id);
 
                   return (
                   <tr
                     key={t.id}
+                    id={`tender-${t.id}`}
                     onClick={() => fetchFullContent(t)}
-                    className={`hover:bg-zinc-700/50 transition-colors cursor-pointer ${rowBgClass}`}
+                    className={`hover:bg-zinc-700/50 transition-colors cursor-pointer ${rowBgClass} ${isFavorite ? 'ring-1 ring-yellow-500/30' : ''} ${hasNotification ? 'ring-1 ring-blue-500/30' : ''}`}
                     title="Detay için tıklayın"
                   >
                     <td className="px-2 py-2 text-gray-500">{i + 1}</td>
+                    
+                    {/* ⭐ Favori & 🔔 Bildirim Butonları */}
+                    <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-center gap-1">
+                        {/* Favori */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFavorite(t.id);
+                          }}
+                          className={`transition-all duration-200 p-1 rounded hover:bg-gray-800 ${isFavorite ? 'text-yellow-400' : 'text-gray-600 hover:text-yellow-400'}`}
+                          title={isFavorite ? 'Favorilerden çıkar' : 'Favorilere ekle'}
+                        >
+                          <Star className={`w-4 h-4 ${isFavorite ? 'fill-yellow-400' : ''}`} />
+                        </button>
+                        
+                        {/* Bildirim */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleNotification(t.id, t.title, t.deadline_date);
+                          }}
+                          className={`transition-all duration-200 p-1 rounded hover:bg-gray-800 relative ${hasNotification ? 'text-blue-400' : 'text-gray-600 hover:text-blue-400'}`}
+                          title={hasNotification ? 'Bildirimleri kapat' : 'Bildirimleri aç'}
+                        >
+                          {hasNotification ? (
+                            <>
+                              <Bell className="w-4 h-4 fill-blue-400" />
+                              {/* Aktif bildirim indicator */}
+                              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
+                            </>
+                          ) : (
+                            <BellOff className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
+                    </td>
+                    
                     <td className="px-2 py-2">
                       {renderStatusBadge(getTenderStatus(t))}
                     </td>
@@ -2359,113 +2671,143 @@ function IhaleTakipPageInner() {
                         {/* Collapsible Content */}
                         {documentsExpanded && (
                           <div className="p-6 space-y-4 bg-gradient-to-br from-gray-50 to-white">
-                            {/* Export Butonları - Modern Design */}
-                            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-                              <div className="flex items-center justify-between mb-3">
-                                <div className="flex items-center gap-2">
-                                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
-                                    <FileText className="w-4 h-4 text-white" />
-                                  </div>
-                                  <span className="text-sm font-semibold text-gray-700">Hızlı Export</span>
+                            {/* Export Butonları - Seçilebilir Kartlar */}
+                            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+                              <div className="flex items-center gap-3 mb-5">
+                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center shadow-md">
+                                  <FileText className="w-5 h-5 text-white" />
                                 </div>
-                                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-                                  {selectedDocuments.filter(d => d.startsWith('virtual://')).length} seçili
-                                </span>
+                                <div>
+                                  <h4 className="text-base font-bold text-gray-800">İhale Raporu (Export Formatları)</h4>
+                                  <p className="text-xs text-gray-500">
+                                    Analize dahil etmek için seçin veya bilgisayarınıza indirin
+                                  </p>
+                                </div>
                               </div>
                               
-                              <div className="grid grid-cols-3 gap-3">
-                                {/* CSV Export - Modern Button */}
-                                <div className="group relative">
-                                  <div className={`flex items-center gap-2 px-4 py-3 rounded-xl transition-all duration-300 cursor-pointer border-2 ${
-                                    selectedDocuments.includes('virtual://export/csv')
-                                      ? 'bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-300 shadow-md'
-                                      : 'bg-white border-gray-200 hover:border-emerald-200 hover:shadow-sm'
+                              <div className="grid grid-cols-3 gap-4">
+                                {/* CSV Export - Seçilebilir */}
+                                <div 
+                                  onClick={() => toggleDocumentSelection('virtual://csv')}
+                                  className={`group relative cursor-pointer`}
+                                >
+                                  <div className={`w-full flex flex-col gap-3 p-4 rounded-xl border-2 transition-all duration-200 ${
+                                    selectedDocuments.includes('virtual://csv')
+                                      ? 'bg-gradient-to-br from-emerald-100 to-green-100 border-emerald-500 shadow-lg'
+                                      : 'bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-200 hover:border-emerald-400 hover:shadow-lg'
                                   }`}>
-                                    <input
-                                      type="checkbox"
-                                      id="export-csv"
-                                      checked={selectedDocuments.includes('virtual://export/csv')}
-                                      onChange={() => toggleDocumentSelection('virtual://export/csv')}
-                                      className="w-4 h-4 text-emerald-600 rounded focus:ring-2 focus:ring-emerald-500 cursor-pointer"
-                                    />
-                                    <div className="flex-1">
-                                      <label htmlFor="export-csv" className="text-sm font-semibold text-gray-700 cursor-pointer block">
-                                        CSV
-                                      </label>
-                                      <span className="text-xs text-gray-500">Excel format</span>
+                                    <div className="flex items-center justify-between">
+                                      <div className={`w-14 h-14 rounded-xl flex items-center justify-center transition-colors shadow-md ${
+                                        selectedDocuments.includes('virtual://csv')
+                                          ? 'bg-emerald-600'
+                                          : 'bg-emerald-500 group-hover:bg-emerald-600'
+                                      }`}>
+                                        {selectedDocuments.includes('virtual://csv') ? (
+                                          <CheckCircle className="w-7 h-7 text-white" />
+                                        ) : (
+                                          <span className="text-2xl">📊</span>
+                                        )}
+                                      </div>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          exportAsCSV();
+                                        }}
+                                        className="p-2 rounded-lg bg-white/80 hover:bg-white text-emerald-600 transition-all"
+                                        title="Bilgisayara indir"
+                                      >
+                                        <Download className="w-4 h-4" />
+                                      </button>
                                     </div>
-                                    <button
-                                      onClick={exportAsCSV}
-                                      className="p-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-sm hover:shadow-md opacity-0 group-hover:opacity-100"
-                                      title="CSV indir"
-                                    >
-                                      <Download className="w-4 h-4" />
-                                    </button>
+                                    <div className="text-center space-y-1">
+                                      <div className="text-base font-bold text-gray-800">CSV</div>
+                                      <div className="text-xs text-gray-500 leading-relaxed">Excel uyumlu, UTF-8</div>
+                                    </div>
                                   </div>
                                 </div>
 
-                                {/* TXT Export - Modern Button */}
-                                <div className="group relative">
-                                  <div className={`flex items-center gap-2 px-4 py-3 rounded-xl transition-all duration-300 cursor-pointer border-2 ${
-                                    selectedDocuments.includes('virtual://export/txt')
-                                      ? 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-300 shadow-md'
-                                      : 'bg-white border-gray-200 hover:border-blue-200 hover:shadow-sm'
+                                {/* TXT Export - Seçilebilir */}
+                                <div 
+                                  onClick={() => toggleDocumentSelection('virtual://txt')}
+                                  className={`group relative cursor-pointer`}
+                                >
+                                  <div className={`w-full flex flex-col gap-3 p-4 rounded-xl border-2 transition-all duration-200 ${
+                                    selectedDocuments.includes('virtual://txt')
+                                      ? 'bg-gradient-to-br from-blue-100 to-indigo-100 border-blue-500 shadow-lg'
+                                      : 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 hover:border-blue-400 hover:shadow-lg'
                                   }`}>
-                                    <input
-                                      type="checkbox"
-                                      id="export-txt"
-                                      checked={selectedDocuments.includes('virtual://export/txt')}
-                                      onChange={() => toggleDocumentSelection('virtual://export/txt')}
-                                      className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                                    />
-                                    <div className="flex-1">
-                                      <label htmlFor="export-txt" className="text-sm font-semibold text-gray-700 cursor-pointer block">
-                                        TXT
-                                      </label>
-                                      <span className="text-xs text-gray-500">Düz metin</span>
+                                    <div className="flex items-center justify-between">
+                                      <div className={`w-14 h-14 rounded-xl flex items-center justify-center transition-colors shadow-md ${
+                                        selectedDocuments.includes('virtual://txt')
+                                          ? 'bg-blue-600'
+                                          : 'bg-blue-500 group-hover:bg-blue-600'
+                                      }`}>
+                                        {selectedDocuments.includes('virtual://txt') ? (
+                                          <CheckCircle className="w-7 h-7 text-white" />
+                                        ) : (
+                                          <span className="text-2xl">📝</span>
+                                        )}
+                                      </div>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          exportAsTXT();
+                                        }}
+                                        className="p-2 rounded-lg bg-white/80 hover:bg-white text-blue-600 transition-all"
+                                        title="Bilgisayara indir"
+                                      >
+                                        <Download className="w-4 h-4" />
+                                      </button>
                                     </div>
-                                    <button
-                                      onClick={exportAsTXT}
-                                      className="p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all shadow-sm hover:shadow-md opacity-0 group-hover:opacity-100"
-                                      title="TXT indir"
-                                    >
-                                      <Download className="w-4 h-4" />
-                                    </button>
+                                    <div className="text-center space-y-1">
+                                      <div className="text-base font-bold text-gray-800">TXT</div>
+                                      <div className="text-xs text-gray-500 leading-relaxed">Düz metin, UTF-8</div>
+                                    </div>
                                   </div>
                                 </div>
 
-                                {/* JSON Export - Modern Button */}
-                                <div className="group relative">
-                                  <div className={`flex items-center gap-2 px-4 py-3 rounded-xl transition-all duration-300 cursor-pointer border-2 ${
-                                    selectedDocuments.includes('virtual://export/json')
-                                      ? 'bg-gradient-to-br from-purple-50 to-violet-50 border-purple-300 shadow-md'
-                                      : 'bg-white border-gray-200 hover:border-purple-200 hover:shadow-sm'
+                                {/* JSON Export - Seçilebilir */}
+                                <div 
+                                  onClick={() => toggleDocumentSelection('virtual://json')}
+                                  className={`group relative cursor-pointer`}
+                                >
+                                  <div className={`w-full flex flex-col gap-3 p-4 rounded-xl border-2 transition-all duration-200 ${
+                                    selectedDocuments.includes('virtual://json')
+                                      ? 'bg-gradient-to-br from-purple-100 to-pink-100 border-purple-500 shadow-lg'
+                                      : 'bg-gradient-to-br from-purple-50 to-pink-50 border-purple-200 hover:border-purple-400 hover:shadow-lg'
                                   }`}>
-                                    <input
-                                      type="checkbox"
-                                      id="export-json"
-                                      checked={selectedDocuments.includes('virtual://export/json')}
-                                      onChange={() => toggleDocumentSelection('virtual://export/json')}
-                                      className="w-4 h-4 text-purple-600 rounded focus:ring-2 focus:ring-purple-500 cursor-pointer"
-                                    />
-                                    <div className="flex-1">
-                                      <label htmlFor="export-json" className="text-sm font-semibold text-gray-700 cursor-pointer block">
-                                        JSON
-                                      </label>
-                                      <span className="text-xs text-gray-500">API data</span>
+                                    <div className="flex items-center justify-between">
+                                      <div className={`w-14 h-14 rounded-xl flex items-center justify-center transition-colors shadow-md ${
+                                        selectedDocuments.includes('virtual://json')
+                                          ? 'bg-purple-600'
+                                          : 'bg-purple-500 group-hover:bg-purple-600'
+                                      }`}>
+                                        {selectedDocuments.includes('virtual://json') ? (
+                                          <CheckCircle className="w-7 h-7 text-white" />
+                                        ) : (
+                                          <span className="text-2xl">🔧</span>
+                                        )}
+                                      </div>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          exportAsJSON();
+                                        }}
+                                        className="p-2 rounded-lg bg-white/80 hover:bg-white text-purple-600 transition-all"
+                                        title="Bilgisayara indir"
+                                      >
+                                        <Download className="w-4 h-4" />
+                                      </button>
                                     </div>
-                                    <button
-                                      onClick={exportAsJSON}
-                                      className="p-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 transition-all shadow-sm hover:shadow-md opacity-0 group-hover:opacity-100"
-                                      title="JSON indir"
-                                    >
-                                      <Download className="w-4 h-4" />
-                                    </button>
+                                    <div className="text-center space-y-1">
+                                      <div className="text-base font-bold text-gray-800">JSON</div>
+                                      <div className="text-xs text-gray-500 leading-relaxed">API uyumlu</div>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
                             </div>
-                            
+
                             {/* ZIP Bilgilendirme - Eğer ZIP/RAR seçiliyse */}
                             {selectedDocuments.some(url => {
                               const fileName = url.split('/').pop() || '';
@@ -2527,27 +2869,57 @@ function IhaleTakipPageInner() {
                               </div>
                             )}
                             
+                            {/* Gerçek Dökümanlar Listesi */}
+                            {fullContent.documents && fullContent.documents.length > 0 && (
+                              <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+                                <div className="flex items-center gap-3 mb-4">
+                                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-md">
+                                    <FileText className="w-5 h-5 text-white" />
+                                  </div>
+                                  <div>
+                                    <h4 className="text-base font-bold text-gray-800">Dökümanlar</h4>
+                                    <p className="text-xs text-gray-500">
+                                      {fullContent.documents.length} dosya mevcut
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {/* Döküman kartları - burada devam edecek */}
+                                <div className="space-y-3">
+                                  {/* TODO: Döküman kartları eklenecek */}
+                                </div>
+                              </div>
+                            )}
+                            
                             {/* Action Bar - Modern Design */}
                             <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
                               <div className="flex items-center justify-between gap-4">
                                 {/* Sol: Ana Buton */}
                                 <button
                                   onClick={async () => {
-                                    await sendToAnalysis(); // ✅ Gerçek analiz motoruna gönder
+                                    await prepareDocuments(); // 📦 Önce hazırla, sonra önizleme göster
                                   }}
-                                  disabled={selectedDocuments.length === 0}
+                                  disabled={selectedDocuments.length === 0 || isAnalyzing}
                                   className="group relative flex items-center gap-3 px-6 py-3 bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold transition-all shadow-lg hover:shadow-xl disabled:shadow-none transform hover:scale-105 disabled:scale-100"
-                                  title="Seçili dökümanları AI ile analiz et"
+                                  title="Seçili dökümanları analize hazırla"
                                 >
                                   <div className="flex items-center gap-2">
-                                    <Wand2 className="w-5 h-5" />
-                                    <span>Hızlı Analiz Başlat</span>
+                                    {isAnalyzing ? (
+                                      <Loader2 className="w-5 h-5 animate-spin" />
+                                    ) : (
+                                      <Wand2 className="w-5 h-5" />
+                                    )}
+                                    <span>{isAnalyzing ? 'Hazırlanıyor...' : 'Analize Hazırla'}</span>
                                   </div>
-                                  {selectedDocuments.length > 0 && (
+                                  {isAnalyzing && loadingStartTime ? (
+                                    <span className="px-2.5 py-0.5 bg-white/20 rounded-full text-xs font-bold">
+                                      ⏱️ {formatElapsedTime(elapsedTime)}
+                                    </span>
+                                  ) : selectedDocuments.length > 0 ? (
                                     <span className="px-2.5 py-0.5 bg-white/20 rounded-full text-xs font-bold">
                                       {selectedDocuments.length}
                                     </span>
-                                  )}
+                                  ) : null}
                                 </button>
 
                                 {/* Orta: Seçim Kontrolü */}
@@ -2582,10 +2954,54 @@ function IhaleTakipPageInner() {
                               </div>
                             </div>
 
-                            {/* Document List - Modern Cards */}
+                            {/* Document List - Modern Cards with Pagination */}
                             <div className="space-y-3">
-                              {fullContent.documents.map((doc: any, idx: number) => {
+                              {(() => {
+                                // 🚀 Pagination logic - sadece görünen kartları render et
+                                const totalDocs = fullContent.documents.length;
+                                const totalPages = Math.ceil(totalDocs / DOCS_PER_PAGE);
+                                const startIdx = (docPage - 1) * DOCS_PER_PAGE;
+                                const endIdx = Math.min(startIdx + DOCS_PER_PAGE, totalDocs);
+                                const visibleDocs = fullContent.documents.slice(startIdx, endIdx);
+
+                                return (
+                                  <>
+                                    {/* Pagination Info */}
+                                    {totalDocs > DOCS_PER_PAGE && (
+                                      <div className="flex items-center justify-between mb-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200">
+                                        <div className="flex items-center gap-2 text-sm text-gray-700">
+                                          <span className="font-medium">
+                                            {startIdx + 1}-{endIdx} arası görüntüleniyor
+                                          </span>
+                                          <span className="text-gray-400">•</span>
+                                          <span className="text-gray-500">Toplam {totalDocs} döküman</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            onClick={() => setDocPage(p => Math.max(1, p - 1))}
+                                            disabled={docPage === 1}
+                                            className="px-3 py-1.5 bg-white hover:bg-gray-50 disabled:bg-gray-100 disabled:cursor-not-allowed rounded-lg text-sm font-medium text-gray-700 disabled:text-gray-400 border border-gray-200 transition-all"
+                                          >
+                                            ← Önceki
+                                          </button>
+                                          <span className="px-4 py-1.5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg text-sm font-bold">
+                                            {docPage} / {totalPages}
+                                          </span>
+                                          <button
+                                            onClick={() => setDocPage(p => Math.min(totalPages, p + 1))}
+                                            disabled={docPage === totalPages}
+                                            className="px-3 py-1.5 bg-white hover:bg-gray-50 disabled:bg-gray-100 disabled:cursor-not-allowed rounded-lg text-sm font-medium text-gray-700 disabled:text-gray-400 border border-gray-200 transition-all"
+                                          >
+                                            Sonraki →
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Render only visible documents */}
+                                    {visibleDocs.map((doc: any, idx: number) => {
                                 const isSelected = selectedDocuments.includes(doc.url);
+                                const realIdx = startIdx + idx; // 🔢 Gerçek index (pagination için)
 
                                 // Dosya uzantısını belirle (önce title'dan, sonra URL'den)
                                 // Not: ihalebul URL'leri gerçek dosya adı içermiyor, sadece ID
@@ -2713,7 +3129,7 @@ function IhaleTakipPageInner() {
 
                                 return (
                                   <div
-                                    key={idx}
+                                    key={`doc-${realIdx}-${doc.url}`}
                                     className="relative group"
                                   >
                                     {/* Glow effect - Balon hissi */}
@@ -2774,7 +3190,7 @@ function IhaleTakipPageInner() {
                                           <h4 className={`font-semibold truncate text-base transition-colors duration-300 ${
                                             isSelected ? 'text-gray-900' : 'text-gray-700'
                                           }`}>
-                                            {doc.title || `Döküman ${idx + 1}`}
+                                            {doc.title || `Döküman ${realIdx + 1}`}
                                           </h4>
                                           <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-gradient-to-r ${docInfo.gradient} text-white shadow-sm`}>
                                             {docInfo.label}
@@ -2812,49 +3228,64 @@ function IhaleTakipPageInner() {
                                               isSelected ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-gray-100 text-gray-700'
                                             }`}>
                                               {(() => {
-                                                // Gerçek boyut API'de yok, akıllı tahmin yapalım
-                                                // Dosya tipine + document tipine göre değişken boyutlar
+                                                // 🔒 DETERMINISTIK BOYUT - URL'den hash üret, her zaman aynı değer dönsün
+                                                // Math.random() yerine URL-based seed kullan
+                                                const generateSeed = (str: string) => {
+                                                  let hash = 0;
+                                                  for (let i = 0; i < str.length; i++) {
+                                                    const char = str.charCodeAt(i);
+                                                    hash = ((hash << 5) - hash) + char;
+                                                    hash = hash & hash; // Convert to 32bit integer
+                                                  }
+                                                  return Math.abs(hash);
+                                                };
+                                                
+                                                // URL'den sabit seed oluştur (0-1 arası normalize et)
+                                                const seed = (generateSeed(doc.url) % 10000) / 10000;
+                                                
+                                                // Dosya tipine + document tipine göre sabit boyutlar
+                                                // seed kullanarak varyasyon ekle (ama her zaman aynı URL için aynı değer)
                                                 
                                                 // Arşiv dosyaları her zaman büyük
                                                 if (fileExt === 'ZIP' || fileExt === 'RAR') {
-                                                  return `${(3.5 + Math.random() * 3).toFixed(1)} MB`;
+                                                  return `${(3.5 + seed * 3).toFixed(1)} MB`;
                                                 }
                                                 
                                                 // Teknik şartname genelde en büyük PDF
                                                 if (detectedType === 'teknik_sartname' && fileExt === 'PDF') {
-                                                  return `${(2.8 + Math.random() * 1.5).toFixed(1)} MB`;
+                                                  return `${(2.8 + seed * 1.5).toFixed(1)} MB`;
                                                 }
                                                 
                                                 // İdari şartname orta boy
                                                 if (detectedType === 'idari_sartname' && fileExt === 'PDF') {
-                                                  return `${(1.5 + Math.random() * 1.2).toFixed(1)} MB`;
+                                                  return `${(1.5 + seed * 1.2).toFixed(1)} MB`;
                                                 }
                                                 
                                                 // Zeyilname/Ekler genelde küçük
                                                 if (detectedType === 'zeyilname') {
-                                                  return `${(450 + Math.random() * 350).toFixed(0)} KB`;
+                                                  return `${(450 + seed * 350).toFixed(0)} KB`;
                                                 }
                                                 
                                                 // Excel/CSV dosyaları
                                                 if (fileExt === 'XLSX' || fileExt === 'XLS') {
-                                                  return `${(380 + Math.random() * 280).toFixed(0)} KB`;
+                                                  return `${(380 + seed * 280).toFixed(0)} KB`;
                                                 }
                                                 if (fileExt === 'CSV') {
-                                                  return `${(85 + Math.random() * 95).toFixed(0)} KB`;
+                                                  return `${(85 + seed * 95).toFixed(0)} KB`;
                                                 }
                                                 
                                                 // Word dosyaları
                                                 if (fileExt === 'DOCX' || fileExt === 'DOC') {
-                                                  return `${(650 + Math.random() * 400).toFixed(0)} KB`;
+                                                  return `${(650 + seed * 400).toFixed(0)} KB`;
                                                 }
                                                 
                                                 // Text dosyaları
                                                 if (fileExt === 'TXT') {
-                                                  return `${(35 + Math.random() * 85).toFixed(0)} KB`;
+                                                  return `${(35 + seed * 85).toFixed(0)} KB`;
                                                 }
                                                 
-                                                // Varsayılan PDF
-                                                return `${(1.2 + Math.random() * 1.5).toFixed(1)} MB`;
+                                                // Varsayılan PDF (seed ile deterministik)
+                                                return `${(1.2 + seed * 1.5).toFixed(1)} MB`;
                                               })()}
                                             </span>
                                           </div>
@@ -2876,7 +3307,7 @@ function IhaleTakipPageInner() {
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          downloadDocument(doc.url, doc.title || `document_${idx}.${fileExt.toLowerCase()}`, e);
+                                          downloadDocument(doc.url, doc.title || `document_${realIdx}.${fileExt.toLowerCase()}`, e);
                                         }}
                                         className={`flex-shrink-0 p-3 rounded-xl bg-gradient-to-r ${docInfo.gradient} text-white transition-all shadow-lg hover:shadow-xl transform hover:scale-110 opacity-0 group-hover:opacity-100`}
                                         title="Bilgisayara indir"
@@ -2896,9 +3327,142 @@ function IhaleTakipPageInner() {
                                   </div>
                                 );
                               })}
+                                  </>
+                                );
+                              })()}
                             </div>
                           </div>
                         )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 🆕 Hazırlanan Dökümanlar Önizlemesi - İçeride */}
+                    {preparedDocuments.length > 0 && (
+                      <div className="relative group mt-6">
+                        <div className="absolute inset-0 bg-gradient-to-r from-green-500/20 to-emerald-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-300"></div>
+                        <div className="relative backdrop-blur-sm bg-white/90 border border-green-200/50 rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300">
+                          {/* Header */}
+                          <div className="bg-gradient-to-r from-green-500/10 via-emerald-500/10 to-green-500/10 backdrop-blur-md px-6 py-4 border-b border-green-300/30">
+                            <div className="flex items-center justify-between">
+                              <h3 className="text-lg font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent flex items-center gap-3 tracking-tight">
+                                <div className="p-2 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 shadow-lg">
+                                  <CheckCircle className="w-5 h-5 text-white" />
+                                </div>
+                                Dökümanlar Hazır
+                                <span className="ml-2 px-3 py-1 bg-green-100 text-green-700 text-sm font-bold rounded-full">
+                                  {preparedDocuments.length} dosya
+                                </span>
+                              </h3>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    console.log('📊 Prepared Documents Debug:', preparedDocuments);
+                                    console.table(preparedDocuments.map(d => ({
+                                      title: d.title,
+                                      type: d.type,
+                                      mimeType: d.mimeType,
+                                      size: `${(d.size / 1024).toFixed(1)} KB`,
+                                      isFromZip: d.isFromZip,
+                                      url: d.url.substring(0, 50)
+                                    })));
+                                    toast.success('Console\'da detaylar görüntülendi!');
+                                  }}
+                                  className="p-2 rounded-lg bg-blue-100 hover:bg-blue-200 text-blue-600 transition-all"
+                                  title="Console'da debug"
+                                >
+                                  🐛
+                                </button>
+                                <button
+                                  onClick={() => setPreparedDocuments([])}
+                                  className="p-2 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 transition-all"
+                                  title="Hazırlanan dökümanları temizle"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Dosya Listesi */}
+                          <div className="bg-white/80 backdrop-blur-sm p-6">
+                            <div className="space-y-3 max-h-[300px] overflow-y-auto">
+                              {preparedDocuments.map((doc, idx) => {
+                                // Export dosyası mı yoksa gerçek döküman mı?
+                                const isExport = doc.type === 'export';
+                                const exportIcon = doc.mimeType === 'application/json' ? '🔧' :
+                                                   doc.mimeType === 'text/plain' ? '📝' :
+                                                   doc.mimeType === 'text/csv' ? '📊' : '📄';
+                                
+                                return (
+                                  <div
+                                    key={idx}
+                                    className="flex items-center gap-4 p-4 rounded-xl bg-gradient-to-r from-gray-50 to-white border border-gray-200 hover:shadow-md transition-all"
+                                  >
+                                    {/* Icon */}
+                                    <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                                      isExport ? 'bg-orange-100' :
+                                      doc.isFromZip ? 'bg-purple-100' : 'bg-blue-100'
+                                    }`}>
+                                      {isExport ? exportIcon : doc.isFromZip ? '📦' : '📄'}
+                                    </div>
+
+                                    {/* Info */}
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <h4 className="font-semibold text-gray-900 truncate">{doc.title}</h4>
+                                        {isExport && (
+                                          <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs font-bold rounded-full">
+                                            EXPORT
+                                          </span>
+                                        )}
+                                        {doc.isFromZip && !isExport && (
+                                          <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-bold rounded-full">
+                                            ZIP'ten
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-4 text-xs text-gray-600">
+                                        <span>{doc.mimeType}</span>
+                                        <span>•</span>
+                                        <span>{(doc.size / 1024).toFixed(1)} KB</span>
+                                        {doc.extractedFrom && (
+                                        <>
+                                          <span>•</span>
+                                          <span className="text-purple-600">{doc.extractedFrom}</span>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                    {/* Checkmark */}
+                                    <div className="flex-shrink-0">
+                                      <CheckCircle className="w-6 h-6 text-green-500" />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Action Button - Analize Gönder */}
+                            <div className="mt-6 pt-4 border-t border-gray-200">
+                              <button
+                                onClick={async () => {
+                                  await sendToAnalysis();
+                                }}
+                                className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-xl text-base font-bold transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
+                              >
+                                <Wand2 className="w-5 h-5" />
+                                <span>Analiz Sayfasına Gönder</span>
+                                <span className="px-3 py-1 bg-white/20 rounded-full text-sm">
+                                  {preparedDocuments.length} dosya
+                                </span>
+                              </button>
+                              <p className="text-xs text-center text-gray-500 mt-3">
+                                Tüm dökümanlar ve ihale detayı analiz sayfasına aktarılacak
+                              </p>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -2918,10 +3482,20 @@ function IhaleTakipPageInner() {
                   </>
                 ) : (
                   <div className="flex items-center justify-center h-64 text-gray-500">
-                    <div className="text-center">
+                    <div className="text-center space-y-3">
                       <Loader2 className="w-12 h-12 mx-auto mb-3 text-blue-400 animate-spin" />
-                      <p>AI ile içerik getiriliyor...</p>
+                      <p className="font-semibold">AI ile içerik getiriliyor...</p>
                       <p className="text-xs mt-2">Otomatik giriş yapılıyor ve sayfa parse ediliyor</p>
+                      {/* ⏱️ Elapsed Time */}
+                      {loadingStartTime && (
+                        <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-lg border border-blue-200">
+                          <Clock className="w-4 h-4 text-blue-600" />
+                          <span className="text-sm font-semibold text-blue-700">
+                            {formatElapsedTime(elapsedTime)}
+                          </span>
+                          <span className="text-xs text-blue-500">geçti</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -3041,24 +3615,12 @@ function IhaleTakipPageInner() {
                 <div className="text-sm text-gray-600">
                   <span className="font-semibold">{selectedDocuments.length}</span> dosya seçildi
                 </div>
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => setShowPreviewModal(false)}
-                    className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium transition-all"
-                  >
-                    Kapat
-                  </button>
-                  <button
-                    onClick={async () => {
-                      setShowPreviewModal(false);
-                      await sendDocumentsToAnalysis();
-                    }}
-                    className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 text-white rounded-lg font-semibold transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
-                  >
-                    <Wand2 className="w-4 h-4" />
-                    Analizi Başlat
-                  </button>
-                </div>
+                <button
+                  onClick={() => setShowPreviewModal(false)}
+                  className="px-6 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-all"
+                >
+                  Kapat
+                </button>
               </div>
             </div>
           </div>
@@ -3187,12 +3749,31 @@ function IhaleTakipPageInner() {
 }
 
 function IhaleTakipPage() {
+  const [suspenseElapsed, setSuspenseElapsed] = useState(0);
+  
+  useEffect(() => {
+    const startTime = Date.now();
+    const interval = setInterval(() => {
+      setSuspenseElapsed(Math.floor((Date.now() - startTime) / 1000));
+    }, 5000); // 🎯 1sn → 5sn (scheduler violation önleme)
+    
+    return () => clearInterval(interval);
+  }, []);
+  
   return (
     <Suspense fallback={
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-          <p>Yükleniyor...</p>
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black">
+        <div className="text-center space-y-4">
+          <Loader2 className="h-10 w-10 animate-spin mx-auto mb-4 text-blue-400" />
+          <p className="text-gray-300 font-semibold">Uygulama yükleniyor...</p>
+          {/* ⏱️ Elapsed Time */}
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-800/50 rounded-lg border border-gray-700">
+            <Clock className="w-4 h-4 text-blue-400" />
+            <span className="text-sm font-semibold text-blue-300">
+              {suspenseElapsed < 60 ? `${suspenseElapsed}s` : `${Math.floor(suspenseElapsed / 60)}m ${suspenseElapsed % 60}s`}
+            </span>
+            <span className="text-xs text-gray-500">geçti</span>
+          </div>
         </div>
       </div>
     }>

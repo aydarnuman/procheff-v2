@@ -286,10 +286,13 @@ export default function MenuPoolPage() {
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
+            id="recipe-filter"
+            name="recipe-filter"
             type="text"
             value={filterQuery}
             onChange={(e) => setFilterQuery(e.target.value)}
             placeholder="Yemek ara..."
+            autoComplete="off"
             className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
           />
         </div>
@@ -574,6 +577,8 @@ export default function MenuPoolPage() {
                     İpucu: Kısa isimler de yazabilirsiniz (örn: "brokoli", "pirasa"). AI otomatik olarak tam yemek adına çevirir.
                   </p>
                   <textarea
+                    id="bulk-recipe-input"
+                    name="bulk-recipe-input"
                     value={bulkText}
                     onChange={(e) => setBulkText(e.target.value)}
                     placeholder="Örnek:&#10;Mercimek Çorbası&#10;brokoli&#10;pirasa&#10;Pilav"

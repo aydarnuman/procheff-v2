@@ -3,7 +3,7 @@
 import React from 'react';
 import { FileProcessingStatus, CSVFileStatus } from '@/lib/stores/ihale-store';
 import { BelgeTuru, BELGE_TURU_LABELS } from '@/types/ai';
-import { FileText, Trash2, CheckCircle, AlertCircle, Loader2, Upload, FileImage, FileCode } from 'lucide-react';
+import { FileText, Trash2, CheckCircle, AlertCircle, Loader2, Upload, FileImage, FileCode, Eye, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface SimpleDocumentListProps {
@@ -28,6 +28,7 @@ export function SimpleDocumentList({
   onCSVProcess
 }: SimpleDocumentListProps) {
   const [isDragging, setIsDragging] = React.useState(false);
+  const [previewModal, setPreviewModal] = React.useState<{ fileName: string; content: string } | null>(null);
 
   const handleFileInput = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
@@ -368,7 +369,12 @@ export function SimpleDocumentList({
                     
                     {/* Dosya Bilgileri */}
                     <div className="flex items-center gap-2 text-xs text-slate-500">
-                      <span>{(file.fileMetadata.size / 1024 / 1024).toFixed(2)} MB</span>
+                      <span>
+                        {file.fileMetadata.size < 1024 * 1024 
+                          ? `${(file.fileMetadata.size / 1024).toFixed(1)} KB`
+                          : `${(file.fileMetadata.size / 1024 / 1024).toFixed(2)} MB`
+                        }
+                      </span>
                       
                       {file.status === 'completed' && file.wordCount && (
                         <>
@@ -379,6 +385,37 @@ export function SimpleDocumentList({
                         </>
                       )}
                     </div>
+
+                    {/* 🆕 İçerik Önizlemesi (TXT/JSON/CSV için) */}
+                    {file.extractedText && 
+                     (file.fileMetadata.name.toLowerCase().endsWith('.txt') || 
+                      file.fileMetadata.name.toLowerCase().endsWith('.json') ||
+                      file.fileMetadata.name.toLowerCase().endsWith('.csv')) && (
+                      <div className="mt-2 p-2 bg-slate-800/50 rounded-lg border border-slate-700/50">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs text-slate-400">📄 Önizleme</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-500">
+                              {file.extractedText.length} karakter
+                            </span>
+                            <button
+                              onClick={() => setPreviewModal({ 
+                                fileName: file.fileMetadata.name, 
+                                content: file.extractedText || '' 
+                              })}
+                              className="p-1 hover:bg-slate-700 rounded transition-colors"
+                              title="Tüm içeriği görüntüle"
+                            >
+                              <Eye className="w-3 h-3 text-blue-400" />
+                            </button>
+                          </div>
+                        </div>
+                        <pre className="text-xs text-slate-300 whitespace-pre-wrap line-clamp-3 font-mono">
+                          {file.extractedText.slice(0, 200)}
+                          {file.extractedText.length > 200 && '...'}
+                        </pre>
+                      </div>
+                    )}
 
                     {/* Progress Bar */}
                     {file.status === 'processing' && (
@@ -556,6 +593,59 @@ export function SimpleDocumentList({
               </div>
             </div>
             <div className="text-sm text-slate-500 font-medium">Tamamlandı</div>
+          </div>
+        </div>
+      )}
+
+      {/* 🆕 Önizleme Modal */}
+      {previewModal && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+          onClick={() => setPreviewModal(null)}
+        >
+          <div 
+            className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl max-w-4xl w-full max-h-[80vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 border-b border-slate-700">
+              <div className="flex items-center gap-3">
+                <Eye className="w-5 h-5 text-blue-400" />
+                <div>
+                  <h3 className="text-lg font-semibold text-white">
+                    {previewModal.fileName}
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    {previewModal.content.length.toLocaleString('tr-TR')} karakter
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setPreviewModal(null)}
+                className="p-2 hover:bg-slate-800 rounded-lg transition-colors"
+                title="Kapat"
+              >
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-auto p-4">
+              <pre className="text-sm text-slate-300 whitespace-pre-wrap font-mono bg-slate-800/50 p-4 rounded-lg">
+                {previewModal.content}
+              </pre>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-700 flex justify-end">
+              <button
+                onClick={() => setPreviewModal(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-colors flex items-center gap-2"
+              >
+                <X className="w-4 h-4" />
+                Kapat
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -160,15 +160,23 @@ export async function POST(request: Request) {
       const files = [];
 
       for (const [filename, file] of Object.entries(zip.files)) {
+        const lowerFilename = filename.toLowerCase();
+        
+        // 🚫 HTML/HTM dosyalarını filtrele
+        if (lowerFilename.endsWith('.html') || lowerFilename.endsWith('.htm')) {
+          console.log(`⏭️ HTML dosyası atlandı: ${filename}`);
+          continue;
+        }
+        
         if (!file.dir && (
-          filename.toLowerCase().endsWith('.pdf') ||
-          filename.toLowerCase().endsWith('.doc') ||
-          filename.toLowerCase().endsWith('.docx') ||
-          filename.toLowerCase().endsWith('.txt') ||
-          filename.toLowerCase().endsWith('.json') ||
-          filename.toLowerCase().endsWith('.csv') ||
-          filename.toLowerCase().endsWith('.xls') ||
-          filename.toLowerCase().endsWith('.xlsx')
+          lowerFilename.endsWith('.pdf') ||
+          lowerFilename.endsWith('.doc') ||
+          lowerFilename.endsWith('.docx') ||
+          lowerFilename.endsWith('.txt') ||
+          lowerFilename.endsWith('.json') ||
+          lowerFilename.endsWith('.csv') ||
+          lowerFilename.endsWith('.xls') ||
+          lowerFilename.endsWith('.xlsx')
         )) {
           const content = await file.async('base64');
 
@@ -202,11 +210,23 @@ export async function POST(request: Request) {
     }
 
     // Not a ZIP - return single file
+    const filename = url.split('/').pop() || 'document';
+    const lowerFilename = filename.toLowerCase();
+    
+    // 🚫 HTML/HTM dosyalarını reddet
+    if (lowerFilename.endsWith('.html') || lowerFilename.endsWith('.htm') || contentType.includes('text/html')) {
+      console.log(`⏭️ HTML dosyası reddedildi: ${filename}`);
+      return NextResponse.json({
+        success: false,
+        error: 'HTML dosyaları desteklenmiyor',
+      }, { status: 400 });
+    }
+    
     return NextResponse.json({
       success: true,
       isZip: false,
       file: {
-        name: url.split('/').pop() || 'document',
+        name: filename,
         content: buffer.toString('base64'),
         type: contentType,
       },

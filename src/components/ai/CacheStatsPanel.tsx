@@ -24,8 +24,9 @@ export function CacheStatsPanel() {
   useEffect(() => {
     loadStats();
 
-    // Her 5 saniyede stats'ı güncelle
-    const interval = setInterval(loadStats, 5000);
+    // 🎯 Optimize: 30 saniyeye çıkarıldı (5sn → 30sn)
+    // Scheduler violation'ı önlemek için interval artırıldı
+    const interval = setInterval(loadStats, 30000);
     return () => clearInterval(interval);
   }, []);
 

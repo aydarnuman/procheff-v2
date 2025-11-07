@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { motion } from "framer-motion";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 
@@ -45,8 +45,8 @@ export function PaginatedTextViewer({
   const goToNextPage = () => setCurrentPage(prev => Math.min(totalPages, prev + 1));
   const goToLastPage = () => setCurrentPage(totalPages);
 
-  // Akıllı metin formatlama (orjinal fonksiyondan)
-  const formatSmartText = (text: string) => {
+  // 🎯 OPTIMIZED: Akıllı metin formatlama (memoized)
+  const formatSmartText = useCallback((text: string) => {
     return text.split('\n').map((line, index) => {
       const trimmedLine = line.trim();
 
@@ -92,7 +92,7 @@ export function PaginatedTextViewer({
       // Boş satır
       return <div key={index} className="h-2" />;
     });
-  };
+  }, []); // 🎯 Empty dependency array - fonksiyon sabit kalır
 
   return (
     <div className="space-y-4">

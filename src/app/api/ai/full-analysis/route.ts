@@ -371,14 +371,36 @@ async function createStreamingResponse(text: string, csvAnalyses: any[] | undefi
           `${analyzedDocsMessage} ${(totalProcessingTime / 1000).toFixed(1)}s`
         ))}\n\n`));
 
-        // Calculate overall confidence
+        // Calculate overall confidence (NaN korumalı)
+        console.log('🔍 [CONFIDENCE DEBUG] extractedData.guven_skoru:', extractedData.guven_skoru);
+        console.log('🔍 [CONFIDENCE DEBUG] Type:', typeof extractedData.guven_skoru);
+        console.log('🔍 [CONFIDENCE DEBUG] isNaN check:', isNaN(extractedData.guven_skoru as any));
+        
+        const baseConfidence = typeof extractedData.guven_skoru === 'number' && !isNaN(extractedData.guven_skoru)
+          ? extractedData.guven_skoru
+          : 0.7; // Varsayılan güven skoru
+        
+        console.log('🔍 [CONFIDENCE DEBUG] baseConfidence:', baseConfidence);
+        
+        // ✅ FIX: AI güven skoru döndürmediyse, extracted_data'ya yaz (UI için)
+        if (!extractedData.guven_skoru || isNaN(extractedData.guven_skoru)) {
+          extractedData.guven_skoru = baseConfidence;
+          console.warn('⚠️ Güven skoru AI tarafından döndürülmedi, varsayılan 0.7 kullanıldı');
+          console.log('🔍 [CONFIDENCE DEBUG] After fix, extractedData.guven_skoru:', extractedData.guven_skoru);
+        }
+        
         const overallConfidence = Math.min(
-          extractedData.guven_skoru,
+          baseConfidence,
           extractedData.kisi_sayisi && extractedData.tahmini_butce ? 0.95 : 0.8
         );
+        
+        console.log('🔍 [CONFIDENCE DEBUG] overallConfidence:', overallConfidence);
 
         const result: AIAnalysisResult = {
-          extracted_data: extractedData,
+          extracted_data: {
+            ...extractedData,
+            guven_skoru: baseConfidence, // ✅ FIX: Force valid value for UI
+          },
           contextual_analysis: contextualAnalysis,
           processing_metadata: {
             processing_time: totalProcessingTime,
@@ -388,6 +410,9 @@ async function createStreamingResponse(text: string, csvAnalyses: any[] | undefi
           validation_warnings: validationResult.warnings.length > 0 ? validationResult.warnings : undefined,
           csv_analyses: csvAnalyses, // CSV analizlerini ekle
         };
+        
+        console.log('🔍 [RESULT DEBUG] Final result.extracted_data.guven_skoru:', result.extracted_data.guven_skoru);
+        console.log('🔍 [RESULT DEBUG] Final result.processing_metadata.confidence_score:', result.processing_metadata.confidence_score);
 
         // Serialization için veriyi düzleştir
         const sanitizedResult = JSON.parse(JSON.stringify(result));
@@ -707,15 +732,36 @@ export async function POST(request: NextRequest) {
     console.log(`Bağlamsal analiz tamamlandı: ${analysisTime}ms`);
     console.log(`Toplam işleme süresi: ${totalProcessingTime}ms`);
 
-    // Calculate overall confidence score
+    // Calculate overall confidence score (NaN korumalı)
+    console.log('🔍 [NON-STREAMING CONFIDENCE DEBUG] extractedData.guven_skoru:', extractedData.guven_skoru);
+    console.log('🔍 [NON-STREAMING CONFIDENCE DEBUG] Type:', typeof extractedData.guven_skoru);
+    
+    const baseConfidence = typeof extractedData.guven_skoru === 'number' && !isNaN(extractedData.guven_skoru)
+      ? extractedData.guven_skoru
+      : 0.7; // Varsayılan güven skoru
+    
+    console.log('🔍 [NON-STREAMING CONFIDENCE DEBUG] baseConfidence:', baseConfidence);
+    
+    // ✅ FIX: AI güven skoru döndürmediyse, extracted_data'ya yaz (UI için)
+    if (!extractedData.guven_skoru || isNaN(extractedData.guven_skoru)) {
+      extractedData.guven_skoru = baseConfidence;
+      console.warn('⚠️ [NON-STREAMING] Güven skoru AI tarafından döndürülmedi, varsayılan 0.7 kullanıldı');
+      console.log('🔍 [NON-STREAMING CONFIDENCE DEBUG] After fix:', extractedData.guven_skoru);
+    }
+    
     const overallConfidence = Math.min(
-      extractedData.guven_skoru,
+      baseConfidence,
       // Weight contextual analysis based on data quality
       extractedData.kisi_sayisi && extractedData.tahmini_butce ? 0.95 : 0.8
     );
+    
+    console.log('🔍 [NON-STREAMING CONFIDENCE DEBUG] overallConfidence:', overallConfidence);
 
     const result: AIAnalysisResult = {
-      extracted_data: extractedData,
+      extracted_data: {
+        ...extractedData,
+        guven_skoru: baseConfidence, // ✅ FIX: Force valid value for UI
+      },
       contextual_analysis: contextualAnalysis,
       processing_metadata: {
         processing_time: totalProcessingTime,

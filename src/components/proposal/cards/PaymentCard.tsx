@@ -203,8 +203,10 @@ export function PaymentCard({ data, onChange }: PaymentCardProps) {
 
       {/* Notes */}
       <div>
-        <label className="block text-sm text-gray-400 mb-2">Ek Notlar</label>
+        <label htmlFor="payment-notes" className="block text-sm text-gray-400 mb-2">Ek Notlar</label>
         <textarea
+          id="payment-notes"
+          name="payment-notes"
           value={formData.notes}
           onChange={(e) => handleChange("notes", e.target.value)}
           className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:border-cyan-500 focus:outline-none resize-none"

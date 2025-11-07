@@ -212,10 +212,12 @@ export function DocumentsCard({ data, analysis, onChange }: DocumentsCardProps) 
 
       {/* Notlar */}
       <div className="p-4 bg-gray-900/50 border border-gray-700 rounded-lg">
-        <label className="block text-sm font-medium text-gray-400 mb-2">
+        <label htmlFor="documents-notes" className="block text-sm font-medium text-gray-400 mb-2">
           Belge Hazırlama Notları
         </label>
         <textarea
+          id="documents-notes"
+          name="documents-notes"
           placeholder="Belgelerle ilgili notlarınızı, eksik olanları veya özel durumları buraya yazabilirsiniz..."
           className="w-full px-4 py-3 bg-gray-900/50 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-colors resize-none"
           rows={3}

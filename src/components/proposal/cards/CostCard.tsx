@@ -323,10 +323,12 @@ export function CostCard({ data, analysis, onChange, personnelCost = 0, operatio
 
         {/* Notlar */}
         <div>
-          <label className="block text-sm font-medium text-gray-400 mb-2">
+          <label htmlFor="cost-notes" className="block text-sm font-medium text-gray-400 mb-2">
             📝 Notlar
           </label>
           <textarea
+            id="cost-notes"
+            name="cost-notes"
             rows={3}
             className="w-full px-4 py-3 bg-gray-900/50 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors resize-none"
             placeholder="Teklif için özel notlarınızı buraya ekleyebilirsiniz..."

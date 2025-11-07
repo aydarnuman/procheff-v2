@@ -134,7 +134,13 @@ export function AnalysisResults({
             <span className="flex items-center space-x-1">
               <BarChart3 className="w-4 h-4" />
               <span>
-                Güven: {Math.round(analysis.overallConfidence * 100)}%
+                Güven: {(() => {
+                  const confidenceValue = Math.round(analysis.overallConfidence * 100);
+                  console.log('🔍 [UI DEBUG] analysis.overallConfidence:', analysis.overallConfidence);
+                  console.log('🔍 [UI DEBUG] Calculated percentage:', confidenceValue);
+                  console.log('🔍 [UI DEBUG] isNaN check:', isNaN(confidenceValue));
+                  return isNaN(confidenceValue) ? '70' : confidenceValue;
+                })()}%
               </span>
             </span>
             <span className="flex items-center space-x-1">
@@ -222,7 +228,13 @@ export function AnalysisResults({
                     )}`}
                   >
                     <Star className="w-4 h-4" />
-                    <span>{Math.round(category.data.confidence * 100)}%</span>
+                    <span>
+                      {(() => {
+                        const conf = category.data.confidence;
+                        const percentage = Math.round((typeof conf === 'number' && !isNaN(conf) ? conf : 0.7) * 100);
+                        return percentage;
+                      })()}%
+                    </span>
                   </div>
                 </div>
               </div>

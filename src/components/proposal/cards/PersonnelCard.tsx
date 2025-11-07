@@ -276,10 +276,12 @@ export function PersonnelCard({ data, analysis, onChange }: PersonnelCardProps) 
 
       {/* Notlar */}
       <div className="p-4 bg-gray-900/50 border border-gray-700 rounded-lg">
-        <label className="block text-sm font-medium text-gray-400 mb-2">
+        <label htmlFor="personnel-notes" className="block text-sm font-medium text-gray-400 mb-2">
           Personel Planlaması Notları
         </label>
         <textarea
+          id="personnel-notes"
+          name="personnel-notes"
           placeholder="Personel planlaması ile ilgili ekstra notlarınızı buraya yazabilirsiniz..."
           className="w-full px-4 py-3 bg-gray-900/50 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors resize-none"
           rows={3}
