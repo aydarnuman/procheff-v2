@@ -117,6 +117,7 @@ const config: Config = {
         "slide-down": "slideDown 0.3s ease-out",
         "pulse-slow": "pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",
         "slideIn": "slideIn 0.4s ease-out",
+        "shimmer": "shimmer 2s infinite linear",
       },
 
       keyframes: {
@@ -139,6 +140,10 @@ const config: Config = {
         progressBar: {
           "0%": { width: "0%" },
           "100%": { width: "100%" },
+        },
+        shimmer: {
+          "0%": { transform: "translateX(-100%)" },
+          "100%": { transform: "translateX(100%)" },
         },
       },
     },
