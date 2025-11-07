@@ -51,7 +51,7 @@ export class ScraperOrchestrator {
   /**
    * Run all enabled scrapers
    */
-  async runAll(testMode: boolean = false, sourceFilter?: string): Promise<{
+  async runAll(testMode: boolean = false, mode: 'new' | 'full' = 'new', sourceFilter?: string): Promise<{
     success: boolean;
     results: ScrapeResult[];
     totalNew: number;
@@ -60,6 +60,7 @@ export class ScraperOrchestrator {
     const startTime = Date.now();
     this.logger.info('runAll', 'Starting scraping orchestration', { 
       testMode, 
+      mode,
       sourceFilter: sourceFilter || 'all',
       logPath: this.logger.getLogPath()
     });
@@ -103,7 +104,7 @@ export class ScraperOrchestrator {
             scraper = new IlanGovScraper(config);
             break;
           case 'ihalebul':
-            scraper = new IhalebulScraper();
+            scraper = new IhalebulScraper(mode); // 🆕 Pass mode to scraper
             break;
           case 'ekap':
             scraper = new EkapScraper(config);
@@ -187,8 +188,8 @@ export class ScraperOrchestrator {
   /**
    * Run single scraper by source ID
    */
-  async runSingle(sourceId: string, testMode: boolean = false): Promise<ScrapeResult> {
-    console.log(`\n🎯 Running single scraper: ${sourceId}${testMode ? ' (TEST MODE)' : ''}`);
+  async runSingle(sourceId: string, testMode: boolean = false, mode: 'new' | 'full' = 'new'): Promise<ScrapeResult> {
+    console.log(`\n🎯 Running single scraper: ${sourceId}${testMode ? ' (TEST MODE)' : ''} [mode: ${mode}]`);
 
     const config = getScrapersByPriority().find(s => s.id === sourceId);
     if (!config) {
@@ -203,7 +204,7 @@ export class ScraperOrchestrator {
         scraper = new IlanGovScraper(config);
         break;
       case 'ihalebul':
-        scraper = new IhalebulScraper();
+        scraper = new IhalebulScraper(mode); // 🆕 Pass mode to scraper
         break;
       case 'ekap':
         scraper = new EkapScraper(config);

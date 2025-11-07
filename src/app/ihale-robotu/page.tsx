@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
-import { RefreshCw, ExternalLink, ChevronUp, ChevronDown, Search, Trash2, Sparkles, Bot, FileText, Download, Loader2, Calendar, Building2, MapPin, Clock, AlertCircle, AlertTriangle, Wand2, Eye, CheckCircle } from 'lucide-react';
+import { RefreshCw, ExternalLink, ChevronUp, ChevronDown, Search, Trash2, Sparkles, Bot, FileText, Download, Loader2, Calendar, Building2, MapPin, Clock, AlertCircle, AlertTriangle, Wand2, Eye, CheckCircle, Database } from 'lucide-react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useIhaleStore } from '@/lib/stores/ihale-store';
 
@@ -232,14 +232,14 @@ function IhaleTakipPageInner() {
     }
   };
 
-  const triggerScrape = async () => {
+  const triggerScrape = async (mode: 'new' | 'full' = 'new') => {
     try {
       setScraping(true);
       setIsScrapingActive(true);
-      console.log('🚀 Scraping arka planda başlatılıyor...');
+      console.log(`🚀 Scraping arka planda başlatılıyor... (mode: ${mode})`);
 
-      // Test endpoint kullan (async mode - hemen döner)
-      const response = await fetch('/api/ihale-scraper/test');
+      // Test endpoint kullan (async mode - hemen döner) + mode parametresi
+      const response = await fetch(`/api/ihale-scraper/test?mode=${mode}`);
       const data = await response.json();
 
       if (data.success) {
@@ -1275,15 +1275,28 @@ function IhaleTakipPageInner() {
                 <Wand2 className="w-4 h-4 relative z-10" />
                 <span className="relative z-10">Yeni Analiz</span>
               </button>
+              {/* Yeni İhaleler Çek (mode=new - stop on duplicates) */}
               <button
-                onClick={triggerScrape}
+                onClick={() => triggerScrape('new')}
                 disabled={scraping}
                 className="group relative flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:shadow-lg hover:shadow-emerald-500/30 disabled:from-gray-800 disabled:to-gray-800 disabled:text-gray-600 disabled:shadow-none disabled:cursor-not-allowed text-sm font-medium transition-all duration-300 hover:scale-[1.02] overflow-hidden"
-                title={scraping ? 'Scraping devam ediyor...' : 'Yeni ihaleleri siteden çek'}
+                title={scraping ? 'Scraping devam ediyor...' : 'Sadece yeni ihaleleri çek (duplicate sayfalarda dur)'}
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-emerald-700 to-teal-700 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                 <RefreshCw className={`w-4 h-4 relative z-10 ${scraping ? 'animate-spin' : ''}`} />
-                <span className="relative z-10">{scraping ? 'Çekiliyor...' : 'Yeni İhaleler'}</span>
+                <span className="relative z-10">{scraping ? 'Çekiliyor...' : 'Yeni İhaleler Çek'}</span>
+              </button>
+
+              {/* Tüm Aktif İhaleleri Yenile (mode=full - scrape all) */}
+              <button
+                onClick={() => triggerScrape('full')}
+                disabled={scraping}
+                className="group relative flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-orange-600 to-amber-600 text-white rounded-xl hover:shadow-lg hover:shadow-orange-500/30 disabled:from-gray-800 disabled:to-gray-800 disabled:text-gray-600 disabled:shadow-none disabled:cursor-not-allowed text-sm font-medium transition-all duration-300 hover:scale-[1.02] overflow-hidden"
+                title={scraping ? 'Scraping devam ediyor...' : 'Tüm aktif ihaleleri yenile (tüm sayfaları tara)'}
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-orange-700 to-amber-700 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                <Database className={`w-4 h-4 relative z-10 ${scraping ? 'animate-spin' : ''}`} />
+                <span className="relative z-10">{scraping ? 'Yenileniyor...' : 'Tüm İhaleler Yenile'}</span>
               </button>
               <button
                 onClick={deleteAllTenders}
