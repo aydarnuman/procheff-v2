@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { NextResponse } from 'next/server';
-import { getDatabase } from '@/lib/ihale-scraper/database/sqlite-client';
+import { TenderDatabase } from '@/lib/ihale-scraper/database';
 
 export async function GET(request: Request) {
   try {
@@ -20,7 +20,6 @@ export async function GET(request: Request) {
     console.log('🧹 CRON: Smart Cleanup başlatıldı...');
     console.log('⏰ Zamanlama: Her gün 09:00');
 
-    const db = getDatabase();
     const now = new Date();
     
     // ============================================================================
@@ -33,51 +32,61 @@ export async function GET(request: Request) {
     const sevenDaysAgoISO = sevenDaysAgo.toISOString();
     
     console.log('\n📋 Kural 1: Deadline\'ı 7+ gün geçmiş ihaleler...');
-    const expiredResult = db.prepare(`
-      DELETE FROM ihale_listings 
-      WHERE deadline_date IS NOT NULL 
-        AND deadline_date < ?
-        AND deadline_date != ''
-    `).run(sevenDaysAgoISO);
+    const expiredIds = await TenderDatabase.getTenders({
+      is_active: true,
+    });
+    const expiredToDelete = expiredIds.filter((t: any) => {
+      if (!t.deadline_date) return false;
+      return new Date(t.deadline_date) < sevenDaysAgo;
+    }).map((t: any) => t.id);
     
-    console.log(`   ✅ ${expiredResult.changes || 0} süresi geçmiş ihale silindi`);
+    const expiredResult = expiredToDelete.length > 0 
+      ? await TenderDatabase.deleteTenders(expiredToDelete)
+      : { success: true, deletedCount: 0 };
+    
+    console.log(`   ✅ ${expiredResult.deletedCount} süresi geçmiş ihale silindi`);
     
     // Rule 2: 30+ gün önce eklenmiş VE deadline bilgisi OLMAYAN ihaleler
     const thirtyDaysAgo = new Date(now);
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const thirtyDaysAgoISO = thirtyDaysAgo.toISOString();
     
     console.log('\n📋 Kural 2: 30+ gün önce eklenmiş + deadline bilgisi olmayan...');
-    const oldNoDeadlineResult = db.prepare(`
-      DELETE FROM ihale_listings 
-      WHERE (deadline_date IS NULL OR deadline_date = '')
-        AND first_seen_at < ?
-    `).run(thirtyDaysAgoISO);
+    const oldNoDeadlineIds = expiredIds.filter((t: any) => {
+      if (t.deadline_date) return false;
+      if (!t.first_seen_at) return false;
+      return new Date(t.first_seen_at) < thirtyDaysAgo;
+    }).map((t: any) => t.id);
     
-    console.log(`   ✅ ${oldNoDeadlineResult.changes || 0} eski ihale silindi`);
+    const oldNoDeadlineResult = oldNoDeadlineIds.length > 0
+      ? await TenderDatabase.deleteTenders(oldNoDeadlineIds)
+      : { success: true, deletedCount: 0 };
+    
+    console.log(`   ✅ ${oldNoDeadlineResult.deletedCount} eski ihale silindi`);
     
     // Rule 3: is_active = 0 olan ihaleler (manuel olarak devre dışı bırakılmış)
     console.log('\n📋 Kural 3: Devre dışı bırakılmış ihaleler...');
-    const inactiveResult = db.prepare(`
-      DELETE FROM ihale_listings 
-      WHERE is_active = 0
-    `).run();
+    const inactiveIds = await TenderDatabase.getTenders({
+      is_active: false,
+    });
+    const inactiveResult = inactiveIds.length > 0
+      ? await TenderDatabase.deleteTenders(inactiveIds.map((t: any) => t.id))
+      : { success: true, deletedCount: 0 };
     
-    console.log(`   ✅ ${inactiveResult.changes || 0} devre dışı ihale silindi`);
+    console.log(`   ✅ ${inactiveResult.deletedCount} devre dışı ihale silindi`);
     
     // ============================================================================
     // STATISTICS
     // ============================================================================
-    const totalDeleted = (expiredResult.changes || 0) + 
-                        (oldNoDeadlineResult.changes || 0) + 
-                        (inactiveResult.changes || 0);
+    const totalDeleted = expiredResult.deletedCount + 
+                        oldNoDeadlineResult.deletedCount + 
+                        inactiveResult.deletedCount;
     
     // Kalan aktif ihale sayısı
-    const remainingCount = db.prepare('SELECT COUNT(*) as count FROM ihale_listings').get() as { count: number };
+    const stats = await TenderDatabase.getStats();
     
     console.log('\n📊 TEMİZLİK RAPORU:');
     console.log(`   🗑️  Toplam silinen: ${totalDeleted}`);
-    console.log(`   ✅ Kalan aktif ihale: ${remainingCount.count}`);
+    console.log(`   ✅ Kalan aktif ihale: ${stats.total}`);
     console.log(`   ⏰ Timestamp: ${now.toISOString()}`);
 
     return NextResponse.json({
@@ -85,11 +94,11 @@ export async function GET(request: Request) {
       message: `✅ Smart cleanup tamamlandı`,
       deletedCount: totalDeleted,
       breakdown: {
-        expired: expiredResult.changes || 0,
-        oldWithoutDeadline: oldNoDeadlineResult.changes || 0,
-        inactive: inactiveResult.changes || 0,
+        expired: expiredResult.deletedCount,
+        oldWithoutDeadline: oldNoDeadlineResult.deletedCount,
+        inactive: inactiveResult.deletedCount,
       },
-      remainingTenders: remainingCount.count,
+      remainingTenders: stats.total,
       timestamp: now.toISOString(),
     });
   } catch (error: any) {

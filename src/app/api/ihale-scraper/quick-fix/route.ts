@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { NextResponse } from 'next/server';
-import { getDatabase } from '@/lib/ihale-scraper/database/sqlite-client';
+import { TenderDatabase } from '@/lib/ihale-scraper/database';
 import Anthropic from '@anthropic-ai/sdk';
 import puppeteer from 'puppeteer';
 
@@ -18,18 +18,15 @@ export async function POST(request: Request) {
   try {
     console.log('⚡ Quick Fix başlatıldı (Haiku)...');
 
-    const db = getDatabase();
     const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
     // Get tenders with missing data
-    const tenders = db.prepare(`
-      SELECT id, title, organization, registration_number, source_url
-      FROM ihale_listings
-      WHERE (registration_number IS NULL OR organization = 'Belirtilmemiş' OR title = 'Belirtilmemiş')
-        AND created_at >= datetime('now', '-7 days')
-      ORDER BY id
-      LIMIT 50
-    `).all();
+    const allTenders = await TenderDatabase.getTenders({ limit: 100, offset: 0 });
+    const tenders = allTenders.filter((t: any) =>
+      !t.registration_number || 
+      t.organization === 'Belirtilmemiş' || 
+      t.title === 'Belirtilmemiş'
+    ).slice(0, 50);
 
     console.log(`📊 ${tenders.length} ihale bulundu\n`);
 
@@ -155,12 +152,15 @@ Bulamazsan null dön. SADECE JSON döndür!`;
         }
 
         if (updates.length > 0) {
-          values.push((tender as any).id);
-          db.prepare(`
-            UPDATE ihale_listings
-            SET ${updates.join(', ')}
-            WHERE id = ?
-          `).run(...values);
+          // Use TenderDatabase for update
+          const updateData: any = {};
+          if (parsed.kayit_no) updateData.registration_number = parsed.kayit_no;
+          if (parsed.kurum) {
+            updateData.organization = parsed.kurum;
+            updateData.title = parsed.kurum.slice(0, 100);
+          }
+
+          await TenderDatabase.updateTender((tender as any).id, updateData);
 
           console.log(`   ✅ Düzeltildi: ${parsed.kayit_no || 'YOK'} | ${parsed.kurum?.slice(0, 50) || 'YOK'}`);
           fixed++;

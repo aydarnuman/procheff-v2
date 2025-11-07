@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { NextResponse } from 'next/server';
-import { TenderDatabase } from '@/lib/ihale-scraper/database/sqlite-client';
+import { TenderDatabase } from '@/lib/ihale-scraper/database';
 
 export async function GET() {
   try {

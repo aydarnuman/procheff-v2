@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDatabase } from '@/lib/ihale-scraper/database/sqlite-client';
+import { TenderDatabase } from '@/lib/ihale-scraper/database';
 
 // Update single tender
 export async function PATCH(request: Request) {
@@ -14,24 +14,14 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ success: false, error: 'Updates required' }, { status: 400 });
     }
 
-    // Build update query
-    const fields = Object.keys(updates);
-    const setClause = fields.map(f => `${f} = ?`).join(', ');
-    const values = fields.map(f => updates[f]);
+    const result = await TenderDatabase.updateTender(id, updates);
 
-    const db = getDatabase();
-    const result = db.prepare(`
-      UPDATE ihale_listings
-      SET ${setClause}, last_updated_at = datetime('now')
-      WHERE id = ?
-    `).run(...values, id);
-
-    if (result.changes === 0) {
-      return NextResponse.json({ success: false, error: 'Tender not found' }, { status: 404 });
+    if (!result.success) {
+      return NextResponse.json({ success: false, error: 'Update failed' }, { status: 500 });
     }
 
     // Get updated data
-    const data = db.prepare('SELECT * FROM ihale_listings WHERE id = ?').get(id);
+    const data = await TenderDatabase.getTenderById(id);
 
     return NextResponse.json({ success: true, data });
   } catch (error) {
@@ -52,7 +42,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Updates array required' }, { status: 400 });
     }
 
-    const db = getDatabase();
     const results = [];
     const errors = [];
 
@@ -63,21 +52,13 @@ export async function POST(request: Request) {
       }
 
       try {
-        const fields = Object.keys(update.data);
-        const setClause = fields.map(f => `${f} = ?`).join(', ');
-        const values = fields.map(f => update.data[f]);
+        const result = await TenderDatabase.updateTender(update.id, update.data);
 
-        const result = db.prepare(`
-          UPDATE ihale_listings
-          SET ${setClause}, last_updated_at = datetime('now')
-          WHERE id = ?
-        `).run(...values, update.id);
-
-        if (result.changes > 0) {
-          const data = db.prepare('SELECT * FROM ihale_listings WHERE id = ?').get(update.id);
+        if (result.success) {
+          const data = await TenderDatabase.getTenderById(update.id);
           results.push(data);
         } else {
-          errors.push({ id: update.id, error: 'Tender not found' });
+          errors.push({ id: update.id, error: 'Update failed' });
         }
       } catch (error: any) {
         errors.push({ id: update.id, error: error.message });

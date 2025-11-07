@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { NextResponse } from 'next/server';
-import { getDatabase } from '@/lib/ihale-scraper/database/sqlite-client';
+import { TenderDatabase } from '@/lib/ihale-scraper/database';
 
 export async function GET(request: Request) {
   try {
@@ -21,21 +21,23 @@ export async function GET(request: Request) {
     console.log('🔧 CRON: Eksik veri düzeltme başlatıldı...');
 
     const startTime = Date.now();
-    const db = getDatabase();
 
-    // Get tenders with missing data
-    const tenders = db.prepare(`
-      SELECT id, title, organization, registration_number, source_url
-      FROM ihale_listings
-      WHERE (registration_number IS NULL OR organization = 'Belirtilmemiş' OR title = 'Belirtilmemiş')
-        AND created_at >= datetime('now', '-7 days')
-      ORDER BY id
-      LIMIT 50
-    `).all();
+    // Get tenders with missing data (last 7 days, limit 50)
+    const tenders = await TenderDatabase.getTenders({
+      limit: 50,
+      offset: 0,
+    });
 
-    console.log(`📊 ${tenders.length} ihale bulundu`);
+    // Filter for missing data
+    const missingDataTenders = tenders.filter((t: any) =>
+      !t.registration_number || 
+      t.organization === 'Belirtilmemiş' || 
+      t.title === 'Belirtilmemiş'
+    );
 
-    if (tenders.length === 0) {
+    console.log(`📊 ${missingDataTenders.length} ihale bulundu`);
+
+    if (missingDataTenders.length === 0) {
       return NextResponse.json({
         success: true,
         message: 'Eksik veri yok',
@@ -48,8 +50,8 @@ export async function GET(request: Request) {
     let failed = 0;
 
     // Process each tender
-    for (const tender of tenders) {
-      console.log(`\n🔍 [${fixed + failed + 1}/${tenders.length}] ${(tender as any).id}: ${(tender as any).title}`);
+    for (const tender of missingDataTenders) {
+      console.log(`\n🔍 [${fixed + failed + 1}/${missingDataTenders.length}] ${tender.id}: ${tender.title}`);
 
       try {
         // Call fetch-full-content API
@@ -57,8 +59,8 @@ export async function GET(request: Request) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            url: (tender as any).source_url,
-            tenderId: (tender as any).id,
+            url: tender.source_url,
+            tenderId: tender.id,
           }),
         });
 

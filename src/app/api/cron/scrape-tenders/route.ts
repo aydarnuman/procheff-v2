@@ -6,7 +6,7 @@
 
 import { NextResponse } from 'next/server';
 import { ScraperOrchestrator } from '@/lib/ihale-scraper/orchestrator';
-import { getDatabase } from '@/lib/ihale-scraper/database/sqlite-client';
+import { getDatabase } from '@/lib/ihale-scraper/database';
 
 export async function GET(request: Request) {
   try {

@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { NextResponse } from 'next/server';
-import { getDatabase } from '@/lib/ihale-scraper/database/sqlite-client';
+import { TenderDatabase } from '@/lib/ihale-scraper/database';
 import Anthropic from '@anthropic-ai/sdk';
 
 export async function POST(request: Request) {
@@ -14,14 +14,7 @@ export async function POST(request: Request) {
     console.log('🧹 Detay sayfalarından veri çekme başlatıldı...');
 
     // Get ALL tenders that need cleaning
-    const db = getDatabase();
-    const tenders = db.prepare(`
-      SELECT id, source_url, organization_city, deadline_date, announcement_date,
-             tender_date, organization, title, budget, procurement_type, raw_json,
-             registration_number
-      FROM ihale_listings
-      LIMIT 1000
-    `).all();
+    const tenders = await TenderDatabase.getTenders({ limit: 1000, offset: 0 });
 
     if (!tenders || tenders.length === 0) {
       return NextResponse.json({ success: false, message: 'Temizlenecek kayıt bulunamadı' });
@@ -179,31 +172,17 @@ SADECE JSON döndür!`;
 
         // 4. Database'i güncelle (+ registration_number ve clean organization)
         try {
-          const db = getDatabase();
-          db.prepare(`
-            UPDATE ihale_listings
-            SET title = ?,
-                organization_city = ?,
-                deadline_date = ?,
-                announcement_date = ?,
-                tender_date = ?,
-                organization = ?,
-                budget = ?,
-                procurement_type = ?,
-                registration_number = ?
-            WHERE id = ?
-          `).run(
-            cleanedData.title,
-            cleanedData.city,
-            cleanedData.deadline_date,
-            cleanedData.announcement_date,
-            cleanedData.tender_date,
-            cleanOrganization || cleanedData.organization, // Temiz organization kullan
-            cleanedData.budget,
-            cleanedData.procurement_type,
-            registrationNumber, // raw_json'dan çıkarılan kayıt no
-            tender.id
-          );
+          await TenderDatabase.updateTender(tender.id, {
+            title: cleanedData.title,
+            organization_city: cleanedData.city,
+            deadline_date: cleanedData.deadline_date,
+            announcement_date: cleanedData.announcement_date,
+            tender_date: cleanedData.tender_date,
+            organization: cleanOrganization || cleanedData.organization,
+            budget: cleanedData.budget,
+            procurement_type: cleanedData.procurement_type,
+            registration_number: registrationNumber,
+          });
           console.log('   ✅ Database güncellendi');
           if (registrationNumber) {
             console.log(`   🔢 Kayıt no kaydedildi: ${registrationNumber}`);

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import puppeteer from 'puppeteer';
 import Anthropic from '@anthropic-ai/sdk';
-import { TenderDatabase } from '@/lib/ihale-scraper/database/sqlite-client';
+import { TenderDatabase } from '@/lib/ihale-scraper/database';
 
 // Force Node.js runtime (required for Anthropic SDK)
 export const runtime = 'nodejs';

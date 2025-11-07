@@ -4,22 +4,17 @@
 // ============================================================================
 
 import { NextResponse } from 'next/server';
-import { getDatabase } from '@/lib/ihale-scraper/database/sqlite-client';
+import { TenderDatabase } from '@/lib/ihale-scraper/database';
 
 export async function POST(request: Request) {
   try {
     console.log('🔧 Eksik verileri düzeltme başlatıldı...');
 
-    const db = getDatabase();
-
     // Get tenders with missing data
-    const tenders = db.prepare(`
-      SELECT id, title, organization, registration_number, source_url
-      FROM ihale_listings
-      WHERE registration_number IS NULL
-         OR organization = 'Belirtilmemiş'
-      ORDER BY id
-    `).all();
+    const allTenders = await TenderDatabase.getTenders({ limit: 500, offset: 0 });
+    const tenders = allTenders.filter((t: any) =>
+      !t.registration_number || t.organization === 'Belirtilmemiş'
+    );
 
     console.log(`📊 ${tenders.length} ihale bulundu`);
 

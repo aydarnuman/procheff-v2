@@ -1,4 +1,4 @@
-import { TenderDatabase } from '@/lib/ihale-scraper/database/sqlite-client';
+import { TenderDatabase } from '@/lib/ihale-scraper/database';
 import { NextRequest } from 'next/server';
 
 export async function GET(req: NextRequest, context: { params: Promise<{ tenderId: string }> }) {

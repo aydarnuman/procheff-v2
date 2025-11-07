@@ -4,16 +4,16 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { TenderDatabase } from '@/lib/ihale-scraper/database/sqlite-client';
+import { TenderDatabase } from '@/lib/ihale-scraper/database';
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
 
     // 🆕 Eğer ID parametresi varsa, tek tender getir
-    const tenderId = searchParams.get('id');
-    if (tenderId) {
-      const tender = await TenderDatabase.getTenderById(tenderId);
+    const tenderIdStr = searchParams.get('id');
+    if (tenderIdStr) {
+      const tender = await TenderDatabase.getTenderById(parseInt(tenderIdStr, 10));
       if (!tender) {
         return NextResponse.json(
           { success: false, error: 'Tender bulunamadı' },

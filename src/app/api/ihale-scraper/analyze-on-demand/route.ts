@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { OnDemandAnalyzer } from '@/lib/ihale-scraper/ai/on-demand-analyzer';
-import { TenderDatabase } from '@/lib/ihale-scraper/database/sqlite-client';
+import { TenderDatabase } from '@/lib/ihale-scraper/database';
 
 export const maxDuration = 60; // 60 saniye timeout (AI analizi için)
 

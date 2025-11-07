@@ -9,7 +9,7 @@ import { EkapScraper } from './scrapers/ekap-scraper';
 import { TenderCategorizer } from './ai/tender-categorizer';
 import { GeminiCategorizer } from './ai/gemini-categorizer';
 import { ClaudeCategorizer } from './ai/claude-categorizer';
-import { TenderDatabase } from './database/sqlite-client';
+import { TenderDatabase } from './database';
 import { NotificationService } from './notifications/notification-service';
 import { getScrapersByPriority, GLOBAL_CONFIG } from './config';
 import { OrchestratorLogger } from './logger/orchestrator-logger';

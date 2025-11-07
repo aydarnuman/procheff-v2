@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDatabase } from '@/lib/ihale-scraper/database/sqlite-client';
+import { TenderDatabase } from '@/lib/ihale-scraper/database';
 
 // Delete single tender
 export async function DELETE(request: Request) {
@@ -11,11 +11,10 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ success: false, error: 'ID required' }, { status: 400 });
     }
 
-    const db = getDatabase();
-    const result = db.prepare('DELETE FROM ihale_listings WHERE id = ?').run(id);
+    const result = await TenderDatabase.deleteTenders([parseInt(id, 10)]);
 
-    if (result.changes === 0) {
-      return NextResponse.json({ success: false, error: 'Tender not found' }, { status: 404 });
+    if (!result.success) {
+      return NextResponse.json({ success: false, error: 'Delete failed' }, { status: 500 });
     }
 
     return NextResponse.json({ success: true });
@@ -37,11 +36,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'IDs array required' }, { status: 400 });
     }
 
-    const db = getDatabase();
-    const placeholders = ids.map(() => '?').join(',');
-    const result = db.prepare(`DELETE FROM ihale_listings WHERE id IN (${placeholders})`).run(...ids);
+    const result = await TenderDatabase.deleteTenders(ids);
 
-    return NextResponse.json({ success: true, deleted: result.changes });
+    return NextResponse.json({ success: result.success, deleted: ids.length });
   } catch (error) {
     console.error('Bulk delete error:', error);
     return NextResponse.json(
