@@ -5,11 +5,8 @@ import { getAnalysis, updateAnalysis } from "@/lib/analysis/records";
 
 export const dynamic = "force-dynamic";
 
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
+// Note: bodyParser config is deprecated in Next.js App Router
+// Raw body reading works by default with req.arrayBuffer()
 
 export async function POST(req: Request) {
   try {

@@ -673,7 +673,7 @@ export function SimpleDocumentList({
                       📄 {fileStatuses.reduce((sum, f) => sum + (f.wordCount || 0), 0).toLocaleString('tr-TR')} kelime
                     </span>
                     <span className="flex items-center gap-1">
-                      💾 {(fileStatuses.reduce((sum, f) => sum + (f.size || 0), 0) / 1024).toFixed(1)} KB
+                      💾 {(fileStatuses.reduce((sum, f) => sum + (f.fileMetadata.size || 0), 0) / 1024).toFixed(1)} KB
                     </span>
                   </div>
                 </div>
