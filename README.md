@@ -78,6 +78,29 @@ Auto-save with 2-second debounce to localStorage
 
 ---
 
+## Recent Updates (v0.3.0 - Production Deployed)
+
+### 🌐 Production Deployment (November 8, 2025)
+- **Live URL**: [https://procheff.app](https://procheff.app)
+- **Cloudflare Tunnel**: Secure tunnel from Tailscale network to public internet
+  - Automatic HTTPS/SSL certificates
+  - DDoS protection and CDN caching
+  - Zero Trust access controls
+- **DigitalOcean Infrastructure**:
+  - Server: Frankfurt datacenter (4GB RAM, 2 vCPUs, 120GB SSD)
+  - Docker containerization (Next.js + Cloudflared)
+  - Tailscale VPN for secure private access
+- **CI/CD Pipeline**: GitHub Actions auto-deployment
+  - Automatic deployment on push to main branch
+  - Health check validation after deployment
+  - Average deployment time: 17 seconds
+- **Backup System**:
+  - Daily automated backups to secondary GitHub repo
+  - Server-side data backups (database, logs, uploads)
+  - 3-2-1 backup strategy (DigitalOcean snapshots + scripts + local)
+
+---
+
 ## Recent Updates (v0.2.0 - Production Ready)
 
 ### � UI/UX Enhancements (November 7, 2025)
@@ -208,6 +231,17 @@ Auto-save with 2-second debounce to localStorage
 ---
 
 ## Getting Started
+
+### Live Production Site
+
+**🌐 Official URL:** [https://procheff.app](https://procheff.app)
+
+**Infrastructure:**
+- **Hosting:** DigitalOcean Droplet (Frankfurt, 4GB RAM)
+- **CDN:** Cloudflare Tunnel
+- **VPN:** Tailscale (secure access)
+- **SSL:** Automatic HTTPS via Cloudflare
+- **Deployment:** GitHub Actions auto-deploy on push
 
 ### Prerequisites
 ```bash

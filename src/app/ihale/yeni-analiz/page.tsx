@@ -1719,7 +1719,7 @@ function PageInner() {
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-yellow-400">3️⃣</span>
-                          <span>Tüm dosyalar işlendikten sonra <span className="text-green-400 font-medium">"Analiz Et"</span> butonuna basın</span>
+                          <span>Tüm dosyalar işlendikten sonra <span className="text-purple-400 font-medium">"AI ile Analiz Et"</span> (mor) butonuna basın</span>
                         </div>
                       </div>
                     </div>
@@ -1747,23 +1747,7 @@ function PageInner() {
                     </button>
                   )}
 
-                  {/* KALDIRILDI: Pending dosyaları işle butonu - Artık her kartta kendi "İşle" butonu var */}
-
-                  {/* Completed dosyaları analiz et */}
-                  {fileStatuses.some(fs => fs.status === 'completed') && (
-                    <button
-                      type="button"
-                      onClick={handleProcessAllFiles}
-                      disabled={fileStatuses.some(fs => fs.status === 'processing')}
-                      className="flex-1 px-6 py-3.5 bg-green-600/90 hover:bg-green-600 text-white rounded-xl transition-all font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-green-500/25"
-                    >
-                      <Brain className="w-5 h-5" />
-                      <span>
-                        Analiz Et ({fileStatuses.filter(fs => fs.status === 'completed').length} PDF/DOC
-                        {csvFiles.filter(c => c.status === 'completed').length > 0 && ` + ${csvFiles.filter(c => c.status === 'completed').length} CSV`})
-                      </span>
-                    </button>
-                  )}
+                  {/* KALDIRILDI: Yeşil "Analiz Et" butonu - Mor banner butonu kullanılıyor (SimpleDocumentList.tsx) */}
                 </div>
               )}
         </motion.div>

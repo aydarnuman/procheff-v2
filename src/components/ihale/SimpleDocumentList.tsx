@@ -654,33 +654,45 @@ export function SimpleDocumentList({
           className="mt-6 p-6 bg-gradient-to-br from-purple-900/30 to-blue-900/30 border-2 border-purple-600/50 rounded-xl shadow-xl"
         >
           <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-gradient-to-br from-purple-500/20 to-blue-500/20 rounded-lg">
-                <svg className="w-8 h-8 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                </svg>
+            <div className="flex-1">
+              <div className="flex items-center gap-4 mb-3">
+                <div className="p-3 bg-gradient-to-br from-purple-500/20 to-blue-500/20 rounded-lg">
+                  <svg className="w-8 h-8 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    🎯 Dosyalar Hazır!
+                    <span className="px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded-full font-semibold">
+                      {fileStatuses.filter(fs => fs.status === 'completed').length} PDF/DOC
+                    </span>
+                  </h3>
+                  <div className="flex items-center gap-4 mt-1 text-sm text-slate-400">
+                    <span className="flex items-center gap-1">
+                      📄 {fileStatuses.reduce((sum, f) => sum + (f.wordCount || 0), 0).toLocaleString('tr-TR')} kelime
+                    </span>
+                    <span className="flex items-center gap-1">
+                      💾 {(fileStatuses.reduce((sum, f) => sum + (f.size || 0), 0) / 1024).toFixed(1)} KB
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div>
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  🎯 Dosyalar Hazır!
-                  <span className="px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded-full">
-                    {fileStatuses.length} dosya
-                  </span>
-                </h3>
-                <p className="text-sm text-slate-400 mt-1">
-                  {fileStatuses.reduce((sum, f) => sum + (f.wordCount || 0), 0).toLocaleString('tr-TR')} kelime • AI analizi için hazır
+              <div className="flex items-center justify-between gap-4 pl-16">
+                <p className="text-sm text-purple-300">
+                  ✨ Tüm dosyalar işlendi • AI analizi başlatmaya hazır
                 </p>
+                <button
+                  onClick={onStartAnalysis}
+                  className="px-6 py-3 bg-gradient-to-r from-purple-600 via-purple-500 to-blue-600 hover:from-purple-700 hover:via-purple-600 hover:to-blue-700 text-white rounded-xl font-bold transition-all flex items-center gap-3 shadow-lg hover:shadow-purple-500/50 transform hover:scale-105 whitespace-nowrap"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  <span>AI ile Analiz Et</span>
+                </button>
               </div>
             </div>
-            <button
-              onClick={onStartAnalysis}
-              className="px-6 py-3 bg-gradient-to-r from-purple-600 via-purple-500 to-blue-600 hover:from-purple-700 hover:via-purple-600 hover:to-blue-700 text-white rounded-xl font-bold transition-all flex items-center gap-3 shadow-lg hover:shadow-purple-500/50 transform hover:scale-105"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-              <span>AI ile Analiz Et</span>
-            </button>
           </div>
         </motion.div>
       )}

@@ -779,17 +779,17 @@ rm -rf "$PROJECT_DIR/.next"
 
 ## 🚀 Production Deployment (November 8, 2025)
 
-### Platform: DigitalOcean + Tailscale + Docker
+### Platform: DigitalOcean + Tailscale + Cloudflare Tunnel + Docker
 
 **Status**: ✅ Live in Production
-**Deployment Date**: November 8, 2025, 10:58 UTC
+**Deployment Date**: November 8, 2025, 10:58 UTC (Updated: 12:28 UTC - Cloudflare Tunnel added)
 
 ### Infrastructure
 
 **Server Details**:
 - **Provider**: DigitalOcean Droplet
 - **Location**: Frankfurt, Germany (FRA1)
-- **IP**: 161.35.217.113
+- **Public IP**: 161.35.217.113
 - **Tailscale IP**: 100.88.13.45
 - **OS**: Ubuntu 24.04 LTS
 - **CPU**: 2 vCPU Premium Intel
@@ -797,36 +797,79 @@ rm -rf "$PROJECT_DIR/.next"
 - **Disk**: 120GB NVMe SSD
 - **Cost**: $33.60/month (vs Vercel $79/mo - 57% cheaper)
 
-**Network**:
+**Network & CDN**:
+- **Cloudflare**: Domain (procheff.app) + Tunnel + SSL/CDN
 - **Tailscale VPN**: Secure peer-to-peer access
 - **Network**: yedek-arsiv.com
-- **Free tier**: Up to 100 devices
+- **Plans**: Cloudflare Free + Zero Trust Access ($3/mo) + Tailscale Free
 
 ### Deployment Architecture
 
 ```
-GitHub Repo (source code)
-    ↓ git clone/pull
-Server (/opt/procheff-v2)
-    ↓ docker compose build
-Docker Container (isolated runtime)
+Public Internet (https://procheff.app)
+    ↓ Cloudflare Tunnel (encrypted)
+Tailscale Network (100.88.13.45:3000)
+    ↓ internal routing
+Docker Containers (procheff-app + cloudflared-tunnel)
     ↓ runs on
-DigitalOcean Droplet
-    ↓ accessible via
-Tailscale VPN (http://100.88.13.45:3000)
+DigitalOcean Droplet (161.35.217.113)
+    ↓ code from
+GitHub Repo (main branch)
+```
+
+**Cloudflare Tunnel Flow**:
+```
+User → https://procheff.app
+  ↓
+Cloudflare Edge (SSL termination, DDoS protection, CDN)
+  ↓
+Cloudflare Tunnel (cloudflared container on server)
+  ↓
+Tailscale Network (100.88.13.45:3000)
+  ↓
+Next.js App (procheff-app container)
 ```
 
 ### Access URLs
 
-**Primary (Recommended)**:
+**Public (Production - Recommended)**:
+```
+https://procheff.app
+```
+
+**Private (Tailscale VPN only)**:
 ```
 http://100.88.13.45:3000
 ```
 
-**Health Check**:
+**Health Checks**:
 ```
-http://100.88.13.45:3000/api/health
+https://procheff.app/api/health
+http://100.88.13.45:3000/api/health (Tailscale)
 ```
+
+### Cloudflare Configuration
+
+**Tunnel Details**:
+- **Tunnel Name**: procheff-tunnel
+- **Tunnel ID**: 351ffc48-895d-4d64-8b76-25951f077aa0
+- **Container**: cloudflared-tunnel (Docker, auto-restart)
+- **Service Type**: HTTP
+- **Backend URL**: http://100.88.13.45:3000
+- **Domain**: procheff.app (all paths: *)
+- **SSL/TLS**: Full (automatic HTTPS)
+
+**DNS Configuration**:
+- **Nameservers**: Migrated from Google Domains/Squarespace → Cloudflare
+- **Old DNS records**: Removed (Google's 216.239.x.x IPs)
+- **Tunnel DNS**: Automatic CNAME creation by Cloudflare
+
+**Security Features**:
+- ✅ Automatic HTTPS/SSL certificates
+- ✅ DDoS protection (Cloudflare Free tier)
+- ✅ CDN caching & optimization
+- ✅ Zero Trust access controls
+- ✅ End-to-end encryption (Tailscale + Cloudflare Tunnel)
 
 ### Docker Configuration
 
