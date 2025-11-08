@@ -1,0 +1,807 @@
+# Procheff-v2 Claude AI Coding Rules
+
+## Project Context
+AI-powered Turkish catering tender analysis platform built with Next.js 16, React 19, TypeScript (strict), Tailwind CSS 4, Zustand, Claude AI, Gemini AI, and SQLite.
+
+**Core Modules**: İhale Takip (scraping), İhale Robotu (workspace analysis), İhale Detay (/ihale/[id] premium view), Menü Planlama, Fiyat Takip
+
+---
+
+## Critical Architecture Rules
+
+### 1. Routing System (CRITICAL - FIXED Nov 8, 2025)
+
+**Next.js Dynamic Routing Priority**:
+- `/ihale/[id]` catches ALL `/ihale/*` URLs
+- `/ihale/analysis-[id]` is NEVER reached (lower priority)
+- `/ihale/[id]/page.tsx` is THE premium detail page
+
+**Implementation Pattern**:
+```typescript
+// /ihale/[id]/page.tsx - Premium detail view
+const { ihale } = useMemo(() => {
+  const idStr = params.id as string;
+  const indexMatch = idStr.match(/analysis-(\d+)/);
+  if (!indexMatch) return { ihale: null };
+
+  const index = parseInt(indexMatch[1], 10);
+  return { ihale: analysisHistory[index] || null };
+}, [analysisHistory, params.id]);
+
+return (
+  <EnhancedAnalysisResults
+    analysis={ihale}
+    onReturnToView={() => router.push('/ihale/workspace')}
+    autoStartDeepAnalysis={false}
+  />
+);
+```
+
+**Workspace Redirect Pattern**:
+```typescript
+// After AI analysis completes
+const { setCurrentAnalysis } = useIhaleStore.getState();
+setCurrentAnalysis(result.data); // Auto-adds to history
+
+const updatedHistory = useIhaleStore.getState().analysisHistory;
+const lastIndex = updatedHistory.length - 1;
+
+// Redirect to premium detail page
+router.push(`/ihale/analysis-${lastIndex}`);
+```
+
+**NEVER**:
+- ❌ Create separate `/ihale/analysis-[id]/` folder (redundant, unreachable)
+- ❌ Use timestamp-based IDs (`analysis_${Date.now()}`)
+- ❌ Redirect to basic summary instead of premium detail
+
+**ALWAYS**:
+- ✅ Use index-based IDs (`analysis-0`, `analysis-1`, ...)
+- ✅ Store analyses in `analysisHistory` array (Zustand)
+- ✅ Render EnhancedAnalysisResults in `/ihale/[id]/page.tsx`
+
+### 2. State Management (Zustand)
+
+**Store Pattern**:
+```typescript
+// ALWAYS use persist middleware for localStorage
+export const useIhaleStore = create<IhaleStore>()(
+  persist(
+    (set, get) => ({
+      analysisHistory: [],
+      currentAnalysis: null,
+
+      setCurrentAnalysis: (analysis) => {
+        set({ currentAnalysis: analysis });
+        // Auto-add to history if new
+        const history = get().analysisHistory;
+        if (!exists) {
+          set({ analysisHistory: [...history, analysis] });
+        }
+      },
+    }),
+    { name: 'ihale-analysis-storage' }
+  )
+);
+```
+
+**NEVER**:
+- ❌ Use Redux, Context API for global state
+- ❌ Manually manage localStorage (Zustand handles it)
+- ❌ Mutate state directly (`history.push()` instead of `[...history, item]`)
+
+**ALWAYS**:
+- ✅ Use Zustand with persist middleware
+- ✅ Immutable updates (spread operator)
+- ✅ Computed selectors via custom hooks
+
+### 3. UI Component Patterns
+
+**Premium Styling Standards** (Nov 8, 2025):
+
+**Buttons (Dark Premium Style)**:
+```typescript
+// Premium dark buttons (NOT blue/orange)
+className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl
+           transition-all duration-200 shadow-lg hover:shadow-slate-700/50
+           border border-slate-700"
+```
+
+**Metadata Cards**:
+```typescript
+// Dark card with dividers
+<div className="bg-slate-800/30 rounded-lg px-6 py-3 border border-slate-700/50">
+  <div className="flex items-center space-x-8">
+    <Item1 />
+    <div className="w-px h-4 bg-slate-700" /> {/* Divider */}
+    <Item2 />
+  </div>
+</div>
+```
+
+**Special Tab Styling** (Derin Analiz):
+```typescript
+// Gradient + animation for premium tabs
+className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+  isActive
+    ? "bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 text-white shadow-lg shadow-purple-500/50 scale-105"
+    : "text-surface-secondary hover:text-white hover:bg-gradient-to-r hover:from-purple-600/20 hover:to-orange-500/20"
+}`}
+
+// Icon with pulse animation when active
+<TrendingUp className={`w-4 h-4 ${isActive ? "animate-pulse" : ""}`} />
+```
+
+**NEVER**:
+- ❌ Use inline styles
+- ❌ Use `style={}` attribute
+- ❌ Mix CSS modules with Tailwind
+- ❌ Use bright blue/orange for premium features (use slate-800/dark gradients)
+
+**ALWAYS**:
+- ✅ Tailwind CSS 4 utility classes only
+- ✅ Dark theme optimized (bg-gray-950, text-white)
+- ✅ Framer Motion for animations
+- ✅ Lucide icons
+- ✅ Premium dark styling (slate-800, gradients for special features)
+
+### 4. File Processing Rules
+
+**Supported Formats**:
+- ✅ PDF (pdf-parse, pdf2json, OCR fallback)
+- ✅ DOCX (mammoth)
+- ✅ TXT, JSON, CSV
+- ✅ XLSX (xlsx library)
+- ✅ ZIP (auto-extract with recursive processing)
+
+**Processing Pattern**:
+```typescript
+// SmartDocumentProcessor usage
+import { SmartDocumentProcessor } from '@/lib/utils/smart-document-processor';
+
+const { extractedText, wordCount, metadata } = await SmartDocumentProcessor.processFile(file);
+
+// Always validate file size
+if (file.size > 50 * 1024 * 1024) {
+  throw new Error('File too large (max 50MB)');
+}
+```
+
+**NEVER**:
+- ❌ Process files without size check
+- ❌ Use synchronous file operations in API routes
+- ❌ Forget Turkish normalization (İ, Ş, Ğ handling)
+
+**ALWAYS**:
+- ✅ Use SmartDocumentProcessor for all file types
+- ✅ Apply Turkish text normalization
+- ✅ Handle OCR fallback for scanned PDFs
+- ✅ Chunk large documents (Claude 200K limit, Gemini 1M limit)
+
+### 5. AI Integration Rules
+
+**Provider Selection**:
+```typescript
+// Use provider-factory for dynamic selection
+import { AIProviderFactory } from '@/lib/ai/provider-factory';
+
+const provider = AIProviderFactory.getProvider();
+const result = await provider.extractBasicData(text);
+```
+
+**Token Limits**:
+- Claude Sonnet 4: 200,000 tokens
+- Gemini 2.0 Flash: 1,000,000 tokens
+- ALWAYS chunk documents exceeding limits
+
+**Error Handling**:
+```typescript
+try {
+  const result = await claudeProvider.analyze(text);
+} catch (error) {
+  // Check error type
+  if (error.status === 429) {
+    // Rate limit - retry with exponential backoff
+  } else if (error.status === 401) {
+    // API key invalid - show user notification
+  }
+  throw error;
+}
+```
+
+**NEVER**:
+- ❌ Hardcode model names
+- ❌ Send full 100-page PDF in one request
+- ❌ Ignore rate limit errors
+- ❌ Use console.log for AI operations (use AILogger)
+
+**ALWAYS**:
+- ✅ Use AIProviderFactory
+- ✅ Chunk large documents
+- ✅ Handle 401, 429, quota errors
+- ✅ Use AILogger for all AI operations
+- ✅ Cache results with MD5 hashing
+- ✅ Display confidence scores (0-1 range)
+
+### 6. API Route Patterns
+
+**Next.js 16 App Router Convention**:
+```typescript
+// /app/api/[route]/route.ts
+import { NextResponse } from 'next/server';
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+
+    // Validation
+    if (!body.requiredField) {
+      return NextResponse.json(
+        { success: false, error: 'Missing field' },
+        { status: 400 }
+      );
+    }
+
+    // Process
+    const result = await processData(body);
+
+    return NextResponse.json({ success: true, data: result });
+  } catch (error: any) {
+    console.error('API Error:', error);
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 }
+    );
+  }
+}
+```
+
+**NEVER**:
+- ❌ Use pages/api/ directory (old Pages Router)
+- ❌ Return raw Error objects (use plain object)
+- ❌ Forget try-catch blocks
+
+**ALWAYS**:
+- ✅ Use app/api/ directory
+- ✅ Return NextResponse.json()
+- ✅ Include success boolean
+- ✅ Proper HTTP status codes
+- ✅ Validate request body
+
+---
+
+## TypeScript Rules (Strict Mode)
+
+### Type Safety
+
+**NEVER use `any`**:
+```typescript
+// ❌ BAD
+const data: any = fetchData();
+
+// ✅ GOOD
+interface FetchResult {
+  success: boolean;
+  data: TenderData;
+}
+const data: FetchResult = await fetchData();
+```
+
+**Explicit Return Types**:
+```typescript
+// ✅ ALWAYS specify return type
+async function analyze(text: string): Promise<AnalysisResult> {
+  // ...
+}
+```
+
+**Type Guards over Assertions**:
+```typescript
+// ❌ BAD
+const result = data as AnalysisResult;
+
+// ✅ GOOD
+function isAnalysisResult(data: unknown): data is AnalysisResult {
+  return typeof data === 'object' && data !== null && 'extracted_data' in data;
+}
+
+if (isAnalysisResult(data)) {
+  // TypeScript knows data is AnalysisResult
+}
+```
+
+**Interface Naming**:
+```typescript
+// ✅ Use PascalCase for interfaces
+interface TenderData {
+  id: string;
+  title: string;
+}
+
+// ✅ Use verb prefix for function types
+type OnAnalysisComplete = (result: AnalysisResult) => void;
+```
+
+---
+
+## React Component Rules (React 19)
+
+### Component Structure
+
+**Functional Components Only**:
+```typescript
+// ✅ GOOD - Arrow function with explicit types
+interface ButtonProps {
+  onClick: () => void;
+  children: React.ReactNode;
+  variant?: 'primary' | 'secondary';
+}
+
+export const Button = ({ onClick, children, variant = 'primary' }: ButtonProps) => {
+  return (
+    <button onClick={onClick} className={`btn btn-${variant}`}>
+      {children}
+    </button>
+  );
+};
+```
+
+**NEVER**:
+- ❌ Class components
+- ❌ Default exports (use named exports)
+- ❌ Prop spreading without types (`{...props}`)
+
+**ALWAYS**:
+- ✅ Named exports
+- ✅ TypeScript prop interfaces
+- ✅ Arrow function syntax
+- ✅ Explicit children type
+
+### Hooks Rules
+
+**useState Pattern**:
+```typescript
+// ✅ Explicit type annotation
+const [count, setCount] = useState<number>(0);
+const [data, setData] = useState<TenderData | null>(null);
+```
+
+**useEffect Dependencies**:
+```typescript
+// ✅ ALWAYS include all dependencies
+useEffect(() => {
+  fetchData(id);
+}, [id]); // id must be in deps array
+```
+
+**Custom Hooks**:
+```typescript
+// ✅ Prefix with "use"
+function useTenderAnalysis(tenderId: string) {
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Hook logic
+
+  return { analysis, isLoading };
+}
+```
+
+---
+
+## Database Rules (SQLite)
+
+### Singleton Pattern (CRITICAL)
+
+**ALWAYS use getDatabase()**:
+```typescript
+// ✅ GOOD
+import { getDatabase } from '@/lib/ihale-scraper/database/sqlite-client';
+
+const db = getDatabase();
+const tenders = db.prepare('SELECT * FROM tenders').all();
+```
+
+**NEVER**:
+- ❌ Create new Database instances
+- ❌ Use direct better-sqlite3 imports in routes
+
+**Global Singleton**:
+```typescript
+// This prevents re-initialization on hot reload
+declare global {
+  var __dbInstance: Database.Database | undefined;
+  var __dbSchemaInitialized: boolean | undefined;
+}
+```
+
+---
+
+## UI/UX & Notifications (Nov 7, 2025)
+
+### Toast Notifications (Sonner)
+
+**Usage Pattern**:
+```typescript
+import { toast } from 'sonner';
+
+// Success
+toast.success('İşlem başarılı!');
+
+// Error
+toast.error('Hata oluştu!', {
+  description: 'API anahtarı geçersiz'
+});
+
+// Warning
+toast.warning('Dikkat: Token limiti yaklaşıyor');
+
+// Loading (with promise)
+toast.promise(
+  analyzeDocument(),
+  {
+    loading: 'Analiz ediliyor...',
+    success: 'Analiz tamamlandı!',
+    error: 'Analiz başarısız'
+  }
+);
+```
+
+**NEVER**:
+- ❌ Use `alert()` or `confirm()` dialogs
+- ❌ Use blocking notifications
+- ❌ Forget duration control for long messages
+
+**ALWAYS**:
+- ✅ Use Sonner toast() for all user feedback
+- ✅ Non-blocking, top-right position
+- ✅ Rich colors (richColors prop)
+- ✅ Auto-dismiss (5s default)
+
+### AILogger Usage
+
+**Pattern**:
+```typescript
+import { AILogger } from '@/lib/utils/ai-logger';
+
+// API key status
+AILogger.apiKeyStatus('claude', true, 'Key valid');
+
+// Token usage with cache
+AILogger.tokenUsage('gemini', 1234, 567, 0.05, 89);
+
+// Rate limit warning
+AILogger.rateLimitWarning('claude', 60);
+
+// Analysis stage
+AILogger.analysisStage('Data Extraction', 'tamamlandı', 2500);
+
+// Scraper progress
+AILogger.scraperProgress('ihalebul', 3, 10, 15);
+```
+
+**NEVER**:
+- ❌ Use console.log() for AI operations
+- ❌ Log in production without AILogger
+
+**ALWAYS**:
+- ✅ Use AILogger for all AI/scraper operations
+- ✅ Türkçe output with emojis
+- ✅ Color-coded terminal output
+- ✅ Include metadata (provider, timing, cost)
+
+---
+
+## Error Handling
+
+### API Error Responses
+
+**Standard Pattern**:
+```typescript
+try {
+  const result = await processRequest();
+  return NextResponse.json({ success: true, data: result });
+} catch (error: any) {
+  console.error('Error:', error);
+
+  // Categorize error
+  if (error.status === 401) {
+    return NextResponse.json(
+      { success: false, error: 'Invalid API key' },
+      { status: 401 }
+    );
+  }
+
+  return NextResponse.json(
+    { success: false, error: error.message || 'Internal error' },
+    { status: 500 }
+  );
+}
+```
+
+### Client-Side Error Handling
+
+**Component Pattern**:
+```typescript
+const [error, setError] = useState<string | null>(null);
+const [isLoading, setIsLoading] = useState(false);
+
+const handleAnalyze = async () => {
+  try {
+    setIsLoading(true);
+    setError(null);
+
+    const response = await fetch('/api/analyze', {
+      method: 'POST',
+      body: JSON.stringify({ text })
+    });
+
+    if (!response.ok) {
+      throw new Error('Analysis failed');
+    }
+
+    const result = await response.json();
+    // Handle success
+  } catch (err: any) {
+    setError(err.message);
+    toast.error('Analiz hatası', { description: err.message });
+  } finally {
+    setIsLoading(false);
+  }
+};
+```
+
+---
+
+## Performance & Optimization
+
+### Code Splitting
+
+**Dynamic Imports**:
+```typescript
+// ✅ Lazy load heavy components
+import dynamic from 'next/dynamic';
+
+const DeepAnalysis = dynamic(() => import('@/components/ai/DeepAnalysis'), {
+  loading: () => <LoadingSkeleton />,
+  ssr: false // Client-only component
+});
+```
+
+### Memoization
+
+**useMemo for Expensive Calculations**:
+```typescript
+const sortedTenders = useMemo(() => {
+  return tenders.sort((a, b) =>
+    new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
+}, [tenders]);
+```
+
+**useCallback for Event Handlers**:
+```typescript
+const handleAnalyze = useCallback(async () => {
+  await analyzeDocument(selectedTender);
+}, [selectedTender]);
+```
+
+---
+
+## Git Commit Conventions
+
+### Commit Message Format
+
+```
+feat(ui): enhance analysis results page with premium styling
+
+## Ana Değişiklikler
+
+### 1. Premium Header Tasarımı
+- Koyu slate-800 butonlar
+- Metadata card görünümü
+- Divider'lar ile görsel ayrım
+
+### 2. Derin Analiz Sekmesi
+- Gradient: purple → pink → orange
+- Shadow efekti + pulse animasyonu
+- Emoji: ✨ Derin Analiz
+
+## Teknik Detaylar
+- Tailwind CSS: Premium dark theme
+- Framer Motion: Smooth animasyonlar
+
+## Test Edildi
+✅ Premium butonlar render
+✅ Gradient tab görünümü
+✅ Metadata card styling
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+**Prefix Types**:
+- `feat(module):` - New feature
+- `fix(module):` - Bug fix
+- `refactor(module):` - Code restructuring
+- `perf(module):` - Performance improvement
+- `docs:` - Documentation update
+- `style:` - Code formatting (not UI styling)
+- `test:` - Test additions
+
+---
+
+## Documentation Standards
+
+### Inline Comments
+
+**When to Comment**:
+```typescript
+// ✅ GOOD - Explains WHY, not WHAT
+// Use index-based IDs for routing compatibility with Next.js dynamic segments
+const tenderId = `analysis-${index}`;
+
+// ❌ BAD - States the obvious
+// Set the tender ID
+const tenderId = `analysis-${index}`;
+```
+
+### JSDoc for Complex Functions
+
+```typescript
+/**
+ * Analyzes tender document with AI extraction
+ *
+ * @param text - Extracted document text (max 200K tokens for Claude)
+ * @param provider - AI provider ('claude' | 'gemini')
+ * @returns Analysis result with confidence score
+ * @throws {Error} If document exceeds token limit or API fails
+ */
+async function analyzeTender(
+  text: string,
+  provider: AIProvider
+): Promise<AnalysisResult> {
+  // Implementation
+}
+```
+
+---
+
+## Testing Requirements
+
+### Test File Locations
+- `tests/ai-extraction-test.ts` - AI extraction validation
+- `tests/fixtures/` - Test documents
+- `tests/results/` - Test output logs
+
+### Test Pattern
+```typescript
+// Run: npm run test:ai
+import { AIProviderFactory } from '@/lib/ai/provider-factory';
+
+const testDocument = fs.readFileSync('tests/fixtures/ihale_test_1.txt', 'utf-8');
+const result = await AIProviderFactory.getProvider().extractBasicData(testDocument);
+
+// Validate
+assert(result.extracted_data.kurum !== null);
+assert(result.processing_metadata.confidence_score > 0.5);
+```
+
+---
+
+## Environment Variables (Production)
+
+### Required
+```bash
+ANTHROPIC_API_KEY=sk-ant-api03-xxxxx        # Claude AI (required)
+IHALEBUL_USERNAME=xxx                        # Scraper auth (required)
+IHALEBUL_PASSWORD=xxx                        # Scraper auth (required)
+```
+
+### Optional
+```bash
+DEFAULT_AI_MODEL=claude-sonnet-4-20250514    # Model selection
+AI_MODEL_TEMPERATURE=0.7                     # Randomness (0-1)
+AI_MAX_TOKENS=16000                          # Max response length
+SCRAPER_CRON_SECRET=xxx                      # Cron job security
+GOOGLE_API_KEY=xxx                           # Gemini fallback
+```
+
+### Validation
+- File: `src/lib/env-guard.ts`
+- Runs on: Build time + Runtime
+- Throws: Descriptive errors for missing critical vars
+
+---
+
+## Key File Structure
+
+```
+procheff-v2/
+├── src/
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── ai/full-analysis/route.ts     # Main AI endpoint
+│   │   │   └── ihale-scraper/*/route.ts      # Scraper APIs
+│   │   ├── ihale/
+│   │   │   ├── [id]/page.tsx                 # PREMIUM DETAIL (EnhancedAnalysisResults)
+│   │   │   ├── workspace/page.tsx            # Upload + Tracking UI
+│   │   │   └── teklif/page.tsx               # Proposal cards
+│   ├── components/
+│   │   ├── ai/
+│   │   │   ├── EnhancedAnalysisResults.tsx   # Premium analysis UI (3 tabs)
+│   │   │   ├── DeepAnalysis.tsx              # Deep analysis component
+│   │   │   └── APIKeyValidator.tsx           # API key testing
+│   │   └── proposal/ProposalCards.tsx        # 8 modular cards
+│   ├── lib/
+│   │   ├── ai/
+│   │   │   ├── provider-factory.ts           # AI provider selection
+│   │   │   ├── claude-provider.ts            # Claude integration
+│   │   │   └── prompts/basic-extraction.ts   # Layer 1 prompts
+│   │   ├── stores/
+│   │   │   ├── ihale-store.ts                # Analysis history (CRITICAL)
+│   │   │   ├── menu-store.ts                 # Recipe management
+│   │   │   └── price-store.ts                # Price tracking
+│   │   └── utils/
+│   │       ├── ai-logger.ts                  # Colored terminal logs
+│   │       └── smart-document-processor.ts   # Multi-format file processing
+│   └── types/
+│       └── ai.ts                             # AIAnalysisResult interface
+├── .clinerules                               # THIS FILE
+└── .github/copilot-instructions.md           # GitHub Copilot config
+```
+
+---
+
+## Common Pitfalls & Solutions
+
+### Pitfall 1: Routing Conflicts
+**Problem**: `/ihale/analysis-0` showing wrong page
+**Solution**: Use `/ihale/[id]/page.tsx` with EnhancedAnalysisResults
+
+### Pitfall 2: State Not Persisting
+**Problem**: analysisHistory empty after reload
+**Solution**: Check Zustand persist middleware configuration
+
+### Pitfall 3: AI Rate Limits
+**Problem**: 429 errors from Claude/Gemini
+**Solution**: Implement exponential backoff, cache results
+
+### Pitfall 4: File Processing Timeout
+**Problem**: Large PDF freezes
+**Solution**: Use SmartDocumentProcessor chunking
+
+### Pitfall 5: Database Lock
+**Problem**: "Database locked" error
+**Solution**: Use singleton pattern, avoid concurrent writes
+
+---
+
+## Quick Reference Commands
+
+```bash
+# Development
+npm run dev                    # Start dev server
+npm run build                  # Production build
+npm run fresh                  # Clean + install + dev
+
+# Testing
+npm run test:ai                # AI extraction test
+npm run test:smoke             # Smoke test
+
+# Maintenance
+npm run cleanup:servers        # Kill zombie processes
+npm run backup:db              # Database backup
+
+# Docker (Production)
+docker compose up -d           # Start containers
+docker compose logs -f         # Live logs
+docker compose restart         # Restart app
+```
+
+---
+
+**Last Updated**: November 8, 2025
+**Version**: 0.2.1
+**Major Focus**: Routing system fix, premium UI styling, workspace integration

@@ -1,1051 +1,249 @@
-# Procheff-v2 AI Coding Agent Instructions
+# Procheff-v2 GitHub Copilot Instructions
 
 ## 🎯 Project Overview
 
-**Catering tender analysis platform** - AI-powered document processing (PDF/DOCX/CSV) for Turkish public tenders. Analyzes documents, calculates risk, and generates bid proposals.
+**Catering tender analysis platform** - AI-powered document processing (PDF/DOCX/CSV/XLSX/ZIP) for Turkish public tenders. Analyzes documents, calculates risk, and generates bid proposals.
 
-**Tech Stack**: Next.js 16 (App Router), React 19, TypeScript (strict), Tailwind CSS 4, SQLite (better-sqlite3), Claude AI, Gemini AI
+**Tech Stack**: Next.js 16 (App Router), React 19, TypeScript (strict), Tailwind CSS 4, SQLite (better-sqlite3), Claude AI, Gemini AI, Zustand
 
-**4 Core Modules**:
+**Core Modules**:
 1. **İhale Takip** - Auto-scraping tenders from 3 sources (ihalebul, ilan.gov.tr, EKAP)
-2. **İhale Robotu** - Document upload & AI analysis (3-layer analysis pipeline)
-3. **Menü Planlama** - Recipe management with AI suggestions (5 institution types)
-4. **Fiyat Takip** - Market price tracking & supplier comparison (6 categories)
-5. **Teklif Hazırlama** - Modular proposal cards (8 cards with auto-save)
+2. **İhale Workspace** (`/ihale/workspace`) - Upload + Tracking dual-mode UI (NEW Nov 8, 2025)
+3. **İhale Detay** (`/ihale/[id]`) - Premium analysis detail page with EnhancedAnalysisResults (FIXED Nov 8, 2025)
+4. **Menü Planlama** - Recipe management with AI suggestions (5 institution types)
+5. **Fiyat Takip** - Market price tracking & supplier comparison (6 categories)
+6. **Teklif Hazırlama** - Modular proposal cards (8 cards with auto-save)
 
 ---
 
-## 🏗️ Architecture & Key Components
+## 🏗️ Critical Architecture (UPDATED Nov 8, 2025)
 
-### 1. Database: SQLite Singleton Pattern (Critical!)
+### 1. Routing System (MOST IMPORTANT!)
 
-**Location**: `src/lib/ihale-scraper/database/sqlite-client.ts`
+**Next.js Dynamic Route Priority**:
+- `/ihale/[id]/page.tsx` catches **ALL** `/ihale/*` URLs
+- `/ihale/analysis-[id]/` was DELETED (routing conflict, redundant)
+- `/ihale/[id]/page.tsx` is THE premium detail page
 
+**Implementation**:
 ```typescript
-// GLOBAL singleton - persists across Next.js hot reloads
-declare global {
-  var __dbInstance: Database.Database | undefined;
-  var __dbSchemaInitialized: boolean | undefined;
+// /ihale/[id]/page.tsx
+export default function IhaleDetailPage() {
+  const params = useParams();
+  const { analysisHistory } = useIhaleStore();
+
+  // Parse index from "analysis-0", "analysis-1", etc.
+  const { ihale } = useMemo(() => {
+    const idStr = params.id as string;
+    const indexMatch = idStr.match(/analysis-(\d+)/);
+    if (!indexMatch) return { ihale: null };
+
+    const index = parseInt(indexMatch[1], 10);
+    return { ihale: analysisHistory[index] || null };
+  }, [analysisHistory, params.id]);
+
+  if (!ihale) {
+    return <NotFoundView />;
+  }
+
+  return (
+    <EnhancedAnalysisResults
+      analysis={ihale}
+      onReturnToView={() => router.push('/ihale/workspace')}
+      onNewAnalysis={() => router.push('/ihale/workspace')}
+      autoStartDeepAnalysis={false}
+    />
+  );
 }
 ```
 
-**Why**: Prevents database re-initialization on every file save in dev mode. Always use `getDatabase()` to access DB.
+### 2. Premium UI Styling (Nov 8, 2025)
 
-**Schema**: `src/lib/ihale-scraper/database/schema.sql` (FTS5 triggers are commented out due to "unsafe use of virtual table" issue - resolved in production)
-
-### 2. Scraper System (3 Active Sources)
-
-**Orchestrator**: `src/lib/ihale-scraper/orchestrator.ts`
-- Runs scrapers sequentially: ihalebul → ilan.gov.tr → EKAP
-- **Duplicate detection**: Levenshtein similarity + organization matching
-  - Algorithm: Title similarity + organization name comparison
-  - Threshold: 85% similarity = duplicate
-  - Pre-existence check before marking duplicates
-- **AI categorization**: Claude identifies catering tenders (85%+ accuracy)
-- **Session logging**: `logs/orchestrator/session_*.log`
-- **Orchestration flow**:
-  1. Scrape → 2. Categorize (AI) → 3. Deduplicate → 4. Save to SQLite → 5. Log metrics
-
-**Scraper Priority Order** (configured in `src/lib/ihale-scraper/config.ts`):
-1. **ihalebul** (highest quality) - Login-based, full metadata cache
-2. **ilan.gov.tr** (government source) - Public tenders
-3. **EKAP** - E-procurement platform
-
-⚠️ **Note**: `ihaletakip` is configured but not implemented yet (reserved for future)
-
-**Critical Constraint**: 
-⚠️ **DO NOT manually test scrapers frequently!** Gemini API has **1500 requests/day limit** (free tier). Use cron schedule (09:00, 13:00, 18:00).
-
-**Field Extraction Accuracy** (production metrics):
-- City: 98%+ (3-method fallback: HTML regex → icon div → metadata)
-- Deadline: 87.8% (regex from "2.1. Tarih ve Saati")
-- Registration Number: 98.6% (multi-pattern ILN/2025/xxxx)
-
-**Two-Phase Metadata Cache** (ihalebul only):
-- Phase 1: List page scraping (title, organization, city, deadline)
-- Phase 2: Detail page extraction (full content)
-- **Why**: List page has 100% reliable metadata vs detail page parsing
-
-### 3. AI Analysis Pipeline (3 Layers)
-
-**Provider Factory**: `src/lib/ai/provider-factory.ts` - Switches between Claude/Gemini based on ENV
-
-**Layer 1: Data Extraction** (`src/lib/ai/prompts/basic-extraction.ts`)
-- Institution info, tender type, person/meal/day counts
-- Budget estimation (VAT included/excluded)
-- Confidence score (0-1)
-- Evidence passages (source citation for each data point)
-- **Critical Logic**: PERSONEL vs KİŞİ distinction
-  - ⚠️ "8 personel çalıştırılacak" → NOT kisi_sayisi (worker count ≠ served people)
-  - Pattern detection: "tarafından", "istihdam edilecek" → PERSONEL
-  - Pattern detection: "kişiye hizmet", "öğrenciye yemek" → KİŞİ SAYISI
-  - Formula validation: kisi_sayisi × ogun_sayisi × gun_sayisi
-  - Example: "260,000 öğün ÷ 365 gün ÷ 3 öğün = 237 kişi"
-
-**Layer 2: Contextual Analysis**
-- Budget feasibility with market price comparison
-- Risk factors (8-12 categories)
-- Participation recommendation
-
-**Layer 3: Deep Analysis**
-- Opportunity analysis, risk matrix
-- Cost strategy, operational plan
-- Final decision: PARTICIPATE / CAREFUL / SKIP
-
-**AI Categorization** (`src/lib/ihale-scraper/ai/`)
-- **Claude Haiku** (primary): 6x faster categorization
-- **Gemini** (fallback): 200x cheaper, 1500 req/day limit
-- **Keyword filter**: Final fallback if both AI fail
-- Detects catering tenders with 85%+ accuracy
-
-### 4. File Processing
-
-**Formats**: PDF (pdf-lib, pdf2json), DOCX (mammoth), CSV
-**OCR**: Tesseract support (`scripts/pdf_ocr_tesseract.sh`)
-**Max Size**: 50MB (configured in `next.config.ts` - serverActions.bodySizeLimit)
-**Smart Chunking**: Large documents split for AI processing
-
-### 5. Application Modules (4 Core Features)
-
-#### **A. İhale Robotu (Document Analysis)** 📂 `/ihale-robotu`
-**Purpose**: Upload tender documents, AI analysis, auto-generate proposals
-**File**: `src/app/ihale-robotu/page.tsx` (2275 lines - largest page)
-
-**Features**:
-- Multi-file upload (PDF/DOCX/CSV)
-- Tender selection from scraper database
-- Auto-download documents from tender URLs
-- 3-layer AI analysis (basic → contextual → deep)
-- Material list extraction (AI detects tables)
-- Proposal generation with 8 modular cards
-
-**Flow**:
-1. Select tender from `/ihale-takip` OR upload files
-2. AI extracts: institution, budget, people/meals/days
-3. Generate proposal cards (cost, personnel, timeline, etc.)
-4. Export to PDF/Excel
-
-#### **B. Menü Planlama (Menu Planning)** 📋 `/menu-planner`
-**Purpose**: Recipe management and menu creation with AI suggestions
-**Store**: `src/lib/stores/menu-store.ts`
-
-**Features**:
-- **AI Recipe Search**: Query dish name → Claude suggests recipe with ingredients/portions
-- **Institution-based Menus**: 5 institution types (hastane, okul, fabrika, belediye, askeri)
-- **Recipe Pool**: General pool + institution-specific recipes
-- **Gramaj Editing**: Adjust ingredient quantities per serving
-- **Bulk Import**: Text/file upload for multiple recipes
-
-**Institution Types** (defined in `src/types/menu.ts`):
+**Dark Premium Buttons** (slate-800, NOT blue/orange):
 ```typescript
-type InstitutionType = "hastane" | "okul" | "fabrika" | "belediye" | "askeri";
+className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl
+           transition-all duration-200 shadow-lg hover:shadow-slate-700/50
+           border border-slate-700"
 ```
 
-**Key Pattern**:
-- Recipes with empty `institutions` array = general pool
-- Recipes with specific institutions = filtered view
-- localStorage persistence via Zustand
-
-#### **C. Fiyat Takip (Price Feed)** 💰 `/price-feed`
-**Purpose**: Market price tracking and supplier comparison
-**Store**: `src/lib/stores/price-store.ts`
-
-**Features**:
-- **Product Cards**: Track products across suppliers
-- **Price Comparison**: Find cheapest supplier automatically
-- **AI Price Search**: Ask "domates fiyatı" → searches market data
-- **6 Categories**: sebze, et-tavuk, bakliyat, süt-peynir, temel-gıda, baharat
-- **Price Levels**: cheapest, cheap, normal, expensive, very-expensive
-
-**Data Structure** (from `src/types/price.ts`):
+**Special Tab Styling** (Derin Analiz with gradient):
 ```typescript
-interface ProductCard {
-  id: string;
-  category: PriceCategory;
-  name: string;
-}
+className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+  isActive
+    ? "bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 text-white shadow-lg shadow-purple-500/50 scale-105"
+    : "text-surface-secondary hover:text-white hover:bg-gradient-to-r hover:from-purple-600/20 hover:to-orange-500/20"
+}`}
 
-interface PriceEntry {
-  productCardId: string;
-  supplier: string;
-  price: number;
-  unit: string;
-  date: string;
-}
-```
-
-**Key Pattern**:
-- One ProductCard → Multiple PriceEntries (historical + multi-supplier)
-- `getCheapestPriceForProduct()` returns lowest current price
-
-#### **D. Teklif Hazırlama (Proposal System)** 📝 `/ihale/teklif-olustur`
-**Purpose**: Modular proposal card system with auto-save
-**Components**: `src/components/proposal/ProposalCards.tsx`
-**Store**: `src/lib/stores/proposal-store.ts`
-
-**8 Modular Cards**:
-1. **Maliyet Hesaplama** - Dynamic pricing calculator
-2. **Personel Planlama** - Staff organization chart
-3. **Doküman Yönetimi** - Required documents checklist
-4. **Zaman Çizelgesi** - Tender calendar/timeline
-5. **Risk Yönetimi** - Identified risks with mitigation
-6. **Ödeme Planı** - Payment schedule
-7. **Malzeme Listesi** - Supply planning
-8. **Menü Programı** - Daily menu design
-
-**Auto-save Pattern**:
-- localStorage persistence via Zustand
-- 2-second debounce on input changes
-- No manual save button needed
-
-**Integration**:
-- Pulls data from AI analysis (from `/ihale-robotu`)
-- Uses menu data (from `/menu-planner`)
-- Uses price data (from `/price-feed`)
-
----
-
-## 🛠️ Developer Workflows
-
-### Clean Restart
-```bash
-./scripts/clean-restart.sh
-# OR
-npm run fresh  # clean + install + dev
-```
-
-### Testing
-```bash
-npm run test:ai      # AI extraction test (tests/ai-extraction-test.ts)
-npm run test:smoke   # Smoke test
-```
-
-### Database Backup
-```bash
-./scripts/backup-database.sh
-# Uploads to Google Cloud Storage (gs://procheff-backups)
-# Keeps last 7 local backups
-```
-
-### Build & Deploy
-```bash
-npm run build  # Validates ENV secrets via env-guard.ts
+<TrendingUp className={`w-4 h-4 ${isActive ? "animate-pulse" : ""}`} />
+<span className="font-semibold">✨ Derin Analiz</span>
 ```
 
 ---
 
-## 📝 Code Style Rules (Non-Negotiable)
-
-### TypeScript
-✅ **Always use strict mode** - No `any`, use `unknown` or proper types
-✅ **Explicit typing** - Define interfaces for all data structures
-✅ **Type guards** over type assertions
-❌ **Never use** `@ts-ignore` or `// @ts-expect-error`
+## 📝 TypeScript Rules (Strict Mode)
 
 ```typescript
-// ✅ GOOD
+// ❌ NEVER use any
+const data: any = await fetch();
+
+// ✅ ALWAYS explicit types
 interface AnalysisResult {
-  success: boolean;
-  data: TenderData;
-  error?: string;
+  extracted_data: ExtractedData;
+  contextual_analysis: ContextualAnalysis;
 }
 
-// ❌ BAD
-const result: any = await analyze();
+const data: AnalysisResult = await fetch();
 ```
 
-### React Components
-✅ **Functional components only** (React 19)
-✅ **Arrow function syntax**: `const Component = () => {}`
-✅ **Named exports** (NO default exports)
-✅ **TypeScript prop typing**
-❌ **No class components**
-❌ **No inline styles** (use Tailwind)
+---
+
+## ⚛️ React Component Rules (React 19)
 
 ```typescript
-// ✅ GOOD
+// ✅ GOOD - Named export with explicit types
 interface ButtonProps {
   onClick: () => void;
   children: React.ReactNode;
 }
 
-export const Button = ({ onClick, children }: ButtonProps) => (
-  <button onClick={onClick} className="px-4 py-2 bg-blue-500">
-    {children}
-  </button>
-);
-
-// ❌ BAD
-export default function Button(props: any) {
-  return <button style={{ color: "red" }}>{props.children}</button>;
-}
-```
-
-### Async/Await
-✅ **Always use async/await** (never `.then().catch()` chains)
-✅ **Try-catch error handling**
-✅ **Manage loading and error states**
-
-```typescript
-// ✅ GOOD
-const analyzeDocument = async (file: File): Promise<AnalysisResult> => {
-  try {
-    const response = await fetch("/api/analyze", {
-      method: "POST",
-      body: formData,
-    });
-    
-    if (!response.ok) throw new Error("Analysis failed");
-    return await response.json();
-  } catch (error) {
-    console.error("Analysis error:", error);
-    throw error;
-  }
+export const Button = ({ onClick, children }: ButtonProps) => {
+  return <button onClick={onClick}>{children}</button>;
 };
 ```
 
----
-
-## 🔒 Environment Variables
-
-### Required
-```bash
-ANTHROPIC_API_KEY=sk-ant-api03-xxxxx        # Claude AI
-IHALEBUL_USERNAME=xxx                        # Scraper auth
-IHALEBUL_PASSWORD=xxx                        # Scraper auth
-```
-
-### Optional
-```bash
-DEFAULT_AI_MODEL=claude-sonnet-4-20250514
-AI_MODEL_TEMPERATURE=0.7
-AI_MAX_TOKENS=16000
-SCRAPER_CRON_SECRET=xxx                      # Cron job security
-```
-
-**Validation**: `src/lib/env-guard.ts` validates critical vars at runtime
+**⚠️ NEVER**:
+- Use class components
+- Use default exports
+- Use inline styles
 
 ---
 
-## 📁 Key File Locations
+## 🗄️ Database Rules (SQLite Singleton)
 
-### Types & Interfaces
-- `src/types/ai.ts` - AI model interfaces (BasicExtraction, MenuExtraction, etc.)
-- `src/types/menu.ts` - Menu planning types
-- `src/types/price.ts` - Price feed types
-- `src/types/proposal.ts` - Proposal module types
-
-### State Management (Zustand)
-- `src/lib/stores/menu-store.ts` - Recipe and menu state
-- `src/lib/stores/price-store.ts` - Market price tracking
-- `src/lib/stores/proposal-store.ts` - Proposal cards state
-- `src/lib/stores/ihale-store.ts` - Tender listings state
-- `src/lib/stores/tenders-store.ts` - Active tender selection
-
-**Zustand Pattern**:
 ```typescript
-// All stores use persist middleware for localStorage
-export const useMenuStore = create<MenuStore>()(
-  persist(
-    (set, get) => ({
-      // State and actions
-    }),
-    { name: 'menu-store' } // localStorage key
-  )
-);
-```
+// ✅ ALWAYS use getDatabase()
+import { getDatabase } from '@/lib/ihale-scraper/database/sqlite-client';
 
-### AI Prompts
-- `src/lib/ai/prompts/basic-extraction.ts` - Layer 1 extraction logic
-- `src/lib/ai/prompts/*.ts` - Stage-specific prompts
-
-### API Routes
-- `/api/ai/*` - AI analysis endpoints
-- `/api/ihale-scraper/*` - Scraper management
-  - `list` - Get tenders from SQLite
-  - `stats` - Scraping statistics
-  - `analyze-on-demand` - Trigger AI analysis for specific tender
-  - `delete` - Remove tenders
-  - `update` - Update tender data
-- `/api/cron/*` - Cron jobs (protected by SCRAPER_CRON_SECRET)
-  - `scrape-tenders` - Trigger orchestrator
-  - `delete-tenders` - Cleanup old tenders
-
-### Components
-- `/components/ai/` - AI-specific components
-- `/components/ihale/` - Tender module components
-- `/components/nav/` - Sidebar, Topbar
-- `/components/ui/` - Reusable UI components
-- `/components/providers/` - Context providers (theme, cache, error)
-
-### Scripts
-- `scripts/clean-restart.sh` - Clean .next, node_modules cache, restart dev
-- `scripts/backup-database.sh` - GCS backup + local rotation
-- `scripts/pdf_ocr_tesseract.sh` - OCR for scanned PDFs
-- `scripts/pdf_optimizer.sh` - Compress large PDFs
-
----
-
-## 🎨 UI/UX Patterns
-
-### Theme
-- **next-themes**: Dark/light mode toggle
-- **Tailwind CSS 4**: Utility-first styling
-- **framer-motion**: Animations
-- **lucide-react**: Icon library
-
-### State Persistence
-- **Zustand**: Global state (no Redux)
-- **localStorage**: Auto-save with 2s debounce (proposal cards)
-
-### Component Layout
-```tsx
-// Root layout structure
-<ThemeProvider>
-  <div className="flex h-screen">
-    <Sidebar />
-    <div className="flex-1 flex flex-col">
-      <Topbar />
-      <main className="flex-1 overflow-auto">
-        {children}
-      </main>
-    </div>
-  </div>
-</ThemeProvider>
+const db = getDatabase();
+const tenders = db.prepare('SELECT * FROM tenders WHERE id = ?').get(id);
 ```
 
 ---
 
-## 🚨 Critical Gotchas
+## 🎨 UI/UX & Notifications
 
-### 1. SQLite FTS5 Triggers
-**Issue**: Full-text search triggers caused "unsafe use of virtual table" errors
-**Solution**: Triggers commented out in `schema.sql` - FTS works without them
-**Impact**: 213 tenders successfully saved in production
+### Toast Notifications (Sonner)
 
-### 2. Gemini Rate Limits
-**Free Tier**: 1500 requests/day, 8 requests/minute (safe margin)
-**Risk**: Manual scraper testing exhausts quota
-**Solution**: Only test via scheduled cron jobs
-
-### 3. Next.js 16 Metadata
-**Issue**: `authors` field in metadata causes serialize error
-**Solution**: Removed from `src/app/layout.tsx` metadata object
-
-### 4. File Upload Size
-**Config**: `next.config.ts` → `experimental.serverActions.bodySizeLimit: '30mb'`
-**User-facing limit**: 50MB (documented in UI)
-
-### 5. Notification Service
-**Status**: Currently disabled (see `src/lib/ihale-scraper/notifications/notification-service.ts`)
-**Why**: SQLite migration - notifications deferred to future release
-**Package**: `resend` is installed but not actively used
-
-### 6. Scraper Optimization ✅ IMPLEMENTED
-**Status**: ✅ **LIVE** (November 7, 2025)
-
-**Implementation**:
-- **UI**: 2 buttons in `/ihale-robotu`
-  1. 🟢 **"Yeni İhaleler Çek"** (mode=new) - Stops on duplicate pages
-  2. 🟠 **"Tüm İhaleler Yenile"** (mode=full) - Scrapes all 10 pages
-- **API**: `/api/ihale-scraper/test?mode=new|full` parameter
-- **Backend**: Early duplicate check in `ihalebul-scraper.ts`
-
-**How It Works** (mode=new):
-1. Extract `source_id` from list page URLs (regex: `/tender/(\d+)`)
-2. Check DB for existing tenders BEFORE detail scraping
-3. Stop pagination when entire page is duplicates
-4. Example: Page 1-2 new → Page 3 all duplicates → **STOP at page 3**
-
-**Performance Impact**:
-- 🚀 **50-90% bandwidth savings** after first run
-- 💰 **Gemini API quota preserved** (no categorization on duplicates)
-- ⚡ **Faster scraping** (typical: 2-3 pages vs 10 pages)
-
-**Safety**:
-- ✅ Maintains existing duplicate detection as fallback
-- ✅ Zero risk to data integrity
-- ✅ Full backward compatibility (mode=full)
-- ✅ Git branch: `feature/scraper-stop-on-duplicate`
-
----
-
-## 🎨 UI/UX & Logging System (November 7, 2025)
-
-### Toast Notification System
-**Library**: Sonner (v2.0.7)
-**Location**: `src/app/layout.tsx` (Toaster component)
-
-**Configuration**:
-```tsx
-<Toaster 
-  position="top-right" 
-  duration={5000} 
-  richColors 
-/>
-```
-
-**Usage Patterns**:
 ```typescript
 import { toast } from 'sonner';
 
 toast.success('İşlem başarılı!');
 toast.error('Hata oluştu!');
-toast.warning('Dikkat: Token limiti yaklaşıyor');
-toast.info('Yeni ihaleler bulundu');
+toast.promise(analyzeDocument(), {
+  loading: 'Analiz ediliyor...',
+  success: 'Tamamlandı!',
+  error: 'Başarısız'
+});
 ```
 
-**Replaced Components**:
-- ❌ `alert()` dialogs → ✅ `toast()` notifications
-- ❌ Blocking confirmations → ✅ Non-blocking toasts
-- Example: `src/app/ihale-robotu/page.tsx` - All scraper operations use toasts
+**⚠️ NEVER** use `alert()` or `confirm()`
 
-### AILogger Utility
-**Location**: `src/lib/utils/ai-logger.ts` (299 lines)
+### AILogger for Terminal Output
 
-**Purpose**: Unified, colored, Türkçe terminal logging for AI operations
-
-**Key Methods**:
 ```typescript
-// Temel loglar
-AILogger.info(message, { provider, operation, metadata });
-AILogger.success(message);
-AILogger.warning(message);
-AILogger.error(message);
-AILogger.debug(message); // Sadece development
+import { AILogger } from '@/lib/utils/ai-logger';
 
-// Özel loglar
-AILogger.apiKeyStatus('claude', true, 'API key geçerli');
-AILogger.tokenUsage('gemini', 1234, 567, 0.05, 89); // önbellekli token dahil
-AILogger.rateLimitWarning('claude', 60); // 60 saniye sonra tekrar dene
-AILogger.quotaExceeded('gemini', '1500 req/day', '02:00');
-AILogger.apiError('claude', 401, 'Invalid API key', 'API anahtarını kontrol edin');
-AILogger.scraperProgress('ihalebul', 3, 10, 15); // Sayfa 3/10, 15 yeni
-AILogger.analysisStage('Data Extraction', 'tamamlandı', 2500); // 2.5s
+AILogger.tokenUsage('gemini', 1234, 567, 0.05, 89);
+AILogger.apiKeyStatus('claude', true, 'Key valid');
+AILogger.rateLimitWarning('claude', 60);
 ```
 
-**Output Examples**:
-```
-🔑 API Anahtar Durumu: CLAUDE ✅ AKTİF
-💰 Token Kullanımı: GEMINI - ↓1,234 / ↑567 (📦 89 önbellekli)
-   Maliyet: ₺0.0543
-⏱️ İSTEK LİMİTİ AŞILDI: CLAUDE 60 saniye sonra tekrar deneyin
-   💡 İpucu: İstek sıklığını azaltın veya planınızı yükseltin
-```
+**⚠️ NEVER** use `console.log()` for AI operations
 
-**Integration Points**:
-- `src/lib/ai/claude-provider.ts` - 62 console.log → AILogger calls
-- `src/lib/ai/gemini-extraction-provider.ts` - Full integration
-- `src/app/api/internal/test-api-keys/route.ts` - API key testing
+---
 
-### API Key Validator Component
-**Location**: `src/components/ai/APIKeyValidator.tsx` (240 lines)
-**Page**: `/ai-settings`
+## 🔌 AI Integration Rules
 
-**Features**:
-- Real-time Claude & Gemini API key testing
-- Visual status badges (✅ AKTİF / ❌ GEÇERSİZ / ⏳ Test ediliyor)
-- Toast notifications on test results
-- Gradient card design (purple for Claude, emerald for Gemini)
-
-**API Endpoint**: `/api/internal/test-api-keys`
-- Provider-specific testing: `testClaudeAPI()`, `testGeminiAPI()`
-- Returns: success status, model info, usage metadata, error messages
-
-### Token Cost Warning System
-**Location**: `src/components/analytics/TokenCostCard.tsx`
-
-**Thresholds**:
 ```typescript
-const thresholds = {
-  warning: 50,   // ₺50  - Sarı
-  danger: 100,   // ₺100 - Turuncu
-  critical: 200  // ₺200 - Kırmızı
-};
+import { AIProviderFactory } from '@/lib/ai/provider-factory';
+
+const provider = AIProviderFactory.getProvider();
+const result = await provider.extractBasicData(text);
 ```
 
-**Features**:
-- useEffect hook for real-time monitoring
-- Color-coded display with gradient borders
-- Toast notifications (hourly rate limit to prevent spam)
-- Visual AlertTriangle icon
-- Inline warning messages
+**Token Limits**:
+- Claude Sonnet 4: 200,000 tokens
+- Gemini 2.0 Flash: 1,000,000 tokens
+- Always chunk large documents
 
-**Example**:
-```tsx
-{totalCost >= 200 && (
-  <toast.warning>
-    💰 Kritik: Aylık token maliyeti ₺200'ü aştı!
-  </toast.warning>
-)}
-```
+---
 
-### Enhanced Error Boundary
-**Location**: `src/app/error.tsx`
+## 🛠️ File Processing
 
-**Smart Error Detection**:
 ```typescript
-function getErrorSuggestions(error: Error): ErrorSuggestion[] {
-  // API Key errors (401)
-  // Rate limit errors (429)
-  // Quota errors (quota exceeded)
-  // Network errors (fetch, connection)
-  // Invalid model errors
-  // Server errors (500, 502, 503)
+import { SmartDocumentProcessor } from '@/lib/utils/smart-document-processor';
+
+if (file.size > 50 * 1024 * 1024) {
+  throw new Error('File too large (max 50MB)');
 }
+
+const { extractedText, wordCount } = 
+  await SmartDocumentProcessor.processFile(file);
 ```
 
-**UI Components**:
-- Error header with AlertTriangle icon
-- Actionable suggestion cards
-- Quick action buttons (Tekrar Dene, Ana Sayfaya Dön)
-- Internal/external links (e.g., /ai-settings, Anthropic pricing)
-- Error ID display for debugging
-
-**Example Suggestion**:
-```tsx
-{
-  title: '🔑 API Anahtarı Sorunu',
-  description: 'Claude veya Gemini API anahtarınız geçersiz',
-  action: {
-    label: 'API Ayarlarını Kontrol Et',
-    href: '/ai-settings'
-  }
-}
-```
-
-### Scraper Progress Notifications
-**Location**: `src/app/ihale-robotu/page.tsx`
-
-**Toast Flow**:
-```typescript
-// 1. Start
-toast.loading('İhaleler taranıyor...');
-
-// 2. Progress (live updates)
-toast.info(`📊 Sayfa ${currentPage}/${totalPages} - ${newCount} yeni ihale`);
-
-// 3. Completion
-toast.success(`✅ ${totalNew} yeni ihale eklendi!`);
-
-// 4. Error
-toast.error('Scraping hatası!');
-```
-
-**Features**:
-- Real-time page counters
-- Duplicate count display
-- Delete operation confirmations
-- Non-blocking feedback
+**Supported**: PDF, DOCX, TXT, JSON, CSV, XLSX, ZIP
 
 ---
 
-## 🛠️ Developer Workflows & Scripts
+## 📁 Key Files
 
-### Quick Start
-```bash
-# Hızlı kurulum (5 dakika)
-cp .env.example .env.local  # Template'i kopyala
-nano .env.local             # API keylerini ekle
-npm install                 # Bağımlılıkları yükle
-npm run dev                 # Sunucuyu başlat
-```
-
-See `QUICKSTART.md` for detailed guide.
-
-### Environment Variables
-**Template**: `.env.example` (comprehensive)
-- Required: ANTHROPIC_API_KEY, IHALEBUL credentials
-- Optional: GOOGLE_API_KEY, SCRAPER_CRON_SECRET, GCS_BACKUP_BUCKET
-- Deployment notes for Vercel
-
-### npm Scripts
-```bash
-# Geliştirme
-npm run dev          # Development server
-npm run build        # Production build
-npm run start        # Production server
-
-# Temizleme & Bakım
-npm run clean        # .next, cache temizle
-npm run fresh        # Tam temizlik + install + dev
-npm run cleanup:servers  # Zombie server'ları temizle
-npm run backup:db    # Database backup (GCS + local)
-
-# Test
-npm run test:ai      # AI extraction test
-npm run test:smoke   # Smoke test
-```
-
-### VS Code Tasks
-**Location**: `.vscode/tasks.json`
-
-**Available Tasks**:
-1. 🧹 Clean Restart - `./scripts/clean-restart.sh`
-2. 🚀 Start Dev Server - `npm run dev`
-3. 🛑 Kill All Servers - Kill node processes
-4. 📦 Build Production - `npm run build`
-5. 💾 Backup Database - `npm run backup:db` (NEW)
-6. 🧹 Cleanup Zombie Servers - `npm run cleanup:servers` (NEW)
-
-**Usage**: Cmd+Shift+P → "Tasks: Run Task"
-
-### Portable Scripts
-**Improvement**: Dynamic path detection (November 7, 2025)
-
-**Before**:
-```bash
-# ❌ Hardcoded path
-rm -rf /Users/numanaydar/Desktop/procheff-v2/.next
-```
-
-**After**:
-```bash
-# ✅ Dynamic detection
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-PROJECT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
-rm -rf "$PROJECT_DIR/.next"
-```
-
-**Benefits**:
-- Works on any machine
-- No manual path edits
-- Reliable across different setups
+- `/src/app/ihale/[id]/page.tsx` - **Premium detail page**
+- `/src/app/ihale/workspace/page.tsx` - Upload + Tracking UI
+- `/src/components/ai/EnhancedAnalysisResults.tsx` - 3-tab analysis UI
+- `/src/lib/stores/ihale-store.ts` - **analysisHistory** (CRITICAL)
+- `/src/lib/utils/smart-document-processor.ts` - File processing
+- `/src/types/ai.ts` - **AIAnalysisResult** interface
 
 ---
 
-## 🔄 Recent Migration Context
+## 🚨 Common Pitfalls
 
-**Date**: January 2025
-**Change**: Supabase → SQLite migration (see `MIGRATION-SUMMARY.md`)
-**Reason**: Simplified local development, reduced external dependencies
-**Impact**: All database operations now use `better-sqlite3`
-**Files Affected**: All `/api/ihale-scraper/*` routes, orchestrator, scrapers
-**Deferred Features**: Notification system temporarily disabled (will use email/webhook in future)
+### Pitfall 1: Wrong Page After Analysis
+**Solution**: Redirect to `/ihale/analysis-${lastIndex}` (index-based)
 
----
+### Pitfall 2: analysisHistory Not Persisting
+**Solution**: Check Zustand persist middleware in ihale-store.ts
 
-## 🧪 Testing Strategy
-
-### AI Extraction Tests
-- Location: `tests/ai-extraction-test.ts`
-- Fixtures: `tests/fixtures/ihale_test_*.txt`
-- Results: `tests/results/ai-extraction-test-*.json`
-- Run: `npm run test:ai`
-
-### Smoke Tests
-- Location: `tests/smoke-test.ts`
-- Run: `npm run test:smoke`
+### Pitfall 3: AI Rate Limits
+**Solution**: Exponential backoff + MD5 caching
 
 ---
 
-## 📊 Production Monitoring
+## 🎯 Quick Reference
 
-### Logging
-- **Orchestrator**: Session-based logs (`logs/orchestrator/session_*.log`)
-- **Buffered writes**: Auto-flush every 5s
-- **Timing metrics**: Per-scraper performance tracking
-- **Retention**: 30 days
+```bash
+npm run dev              # Start dev
+npm run build            # Build
+npm run test:ai          # AI test
+docker compose up -d     # Production start
+```
 
-### Database Sessions
-- **Tender sessions**: `data/sessions/tender_YYYYMMDD_HHMMSS/`
-- **Contains**: Scraped HTML, metadata, AI responses
+**Git Commit Format**:
+```
+feat(ui): enhance premium styling
+
+## Değişiklikler
+- Premium dark buttons
+- Gradient tabs
+
+✅ Tested
+
+🤖 Generated with Claude Code
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
 
 ---
 
-## 🎯 When Adding Features
-
-1. **Check types first**: `src/types/*.ts` - extend existing interfaces
-2. **Follow singleton pattern**: For any global resources (DB, cache)
-3. **Use Zustand for state**: Create new store in `src/lib/stores/`
-4. **Add API route**: `/api/[feature]/route.ts` with proper error handling
-5. **Test with fixtures**: Add test case to `tests/` directory
-6. **Update ENV guard**: If new secrets required, add to `env-guard.ts`
-
----
-
-## 📚 Reference Documentation
-
-- **Project README**: `/README.md` - Feature overview, setup, tech stack
-- **Quick Start Guide**: `/QUICKSTART.md` - 5-minute setup guide (NEW)
-- **Environment Template**: `/.env.example` - Configuration template (NEW)
-- **Scraper README**: `/src/lib/ihale-scraper/README.md` - Detailed scraper architecture
-- **Migration Summary**: `/MIGRATION-SUMMARY.md` - Supabase → SQLite context
-- **Cron Setup**: `/CRON_SETUP.md` - Scheduled job configuration
-
----
-
----
-
-## 🚀 Production Deployment (November 8, 2025)
-
-### Platform: DigitalOcean + Tailscale + Cloudflare Tunnel + Docker
-
-**Status**: ✅ Live in Production
-**Deployment Date**: November 8, 2025, 10:58 UTC (Updated: 12:28 UTC - Cloudflare Tunnel added)
-
-### Infrastructure
-
-**Server Details**:
-- **Provider**: DigitalOcean Droplet
-- **Location**: Frankfurt, Germany (FRA1)
-- **Public IP**: 161.35.217.113
-- **Tailscale IP**: 100.88.13.45
-- **OS**: Ubuntu 24.04 LTS
-- **CPU**: 2 vCPU Premium Intel
-- **RAM**: 4GB
-- **Disk**: 120GB NVMe SSD
-- **Cost**: $33.60/month (vs Vercel $79/mo - 57% cheaper)
-
-**Network & CDN**:
-- **Cloudflare**: Domain (procheff.app) + Tunnel + SSL/CDN
-- **Tailscale VPN**: Secure peer-to-peer access
-- **Network**: yedek-arsiv.com
-- **Plans**: Cloudflare Free + Zero Trust Access ($3/mo) + Tailscale Free
-
-### Deployment Architecture
-
-```
-Public Internet (https://procheff.app)
-    ↓ Cloudflare Tunnel (encrypted)
-Tailscale Network (100.88.13.45:3000)
-    ↓ internal routing
-Docker Containers (procheff-app + cloudflared-tunnel)
-    ↓ runs on
-DigitalOcean Droplet (161.35.217.113)
-    ↓ code from
-GitHub Repo (main branch)
-```
-
-**Cloudflare Tunnel Flow**:
-```
-User → https://procheff.app
-  ↓
-Cloudflare Edge (SSL termination, DDoS protection, CDN)
-  ↓
-Cloudflare Tunnel (cloudflared container on server)
-  ↓
-Tailscale Network (100.88.13.45:3000)
-  ↓
-Next.js App (procheff-app container)
-```
-
-### Access URLs
-
-**Public (Production - Recommended)**:
-```
-https://procheff.app
-```
-
-**Private (Tailscale VPN only)**:
-```
-http://100.88.13.45:3000
-```
-
-**Health Checks**:
-```
-https://procheff.app/api/health
-http://100.88.13.45:3000/api/health (Tailscale)
-```
-
-### Cloudflare Configuration
-
-**Tunnel Details**:
-- **Tunnel Name**: procheff-tunnel
-- **Tunnel ID**: 351ffc48-895d-4d64-8b76-25951f077aa0
-- **Container**: cloudflared-tunnel (Docker, auto-restart)
-- **Service Type**: HTTP
-- **Backend URL**: http://100.88.13.45:3000
-- **Domain**: procheff.app (all paths: *)
-- **SSL/TLS**: Full (automatic HTTPS)
-
-**DNS Configuration**:
-- **Nameservers**: Migrated from Google Domains/Squarespace → Cloudflare
-- **Old DNS records**: Removed (Google's 216.239.x.x IPs)
-- **Tunnel DNS**: Automatic CNAME creation by Cloudflare
-
-**Security Features**:
-- ✅ Automatic HTTPS/SSL certificates
-- ✅ DDoS protection (Cloudflare Free tier)
-- ✅ CDN caching & optimization
-- ✅ Zero Trust access controls
-- ✅ End-to-end encryption (Tailscale + Cloudflare Tunnel)
-
-### Docker Configuration
-
-**Files**:
-- `Dockerfile` - Multi-stage build with Tesseract, Chromium
-- `docker-compose.yml` - Production orchestration
-- `docker-setup.sh` - Automated server setup script
-- `.dockerignore` - Build optimization
-
-**Container Features**:
-- ✅ Node.js 20 (Bookworm)
-- ✅ Tesseract OCR (Turkish + English)
-- ✅ Chromium for Puppeteer
-- ✅ All fonts and dependencies
-- ✅ Health check endpoint
-- ✅ Volume persistence (data, logs, tmp)
-- ✅ Auto-restart policy
-
-**Build Command**:
-```bash
-docker compose build
-docker compose up -d
-```
-
-### Development Workflow (UPDATED)
-
-**Local Development** (Mac):
-```bash
-# 1. Write code
-cd /Users/numanaydar/Desktop/procheff-v2
-code .  # VS Code
-
-# 2. Test locally (optional)
-npm run dev
-# http://localhost:3000
-
-# 3. Commit and push
-git add .
-git commit -m "Feature: New feature"
-git push origin main
-```
-
-**Server Deployment**:
-```bash
-# SSH to server
-ssh root@161.35.217.113
-
-# Navigate to project
-cd /opt/procheff-v2
-
-# Pull latest code
-git pull
-
-# Rebuild (if Dockerfile/dependencies changed)
-docker compose build
-
-# Restart
-docker compose up -d
-
-# Check logs
-docker compose logs -f
-```
-
-**Quick Update Script** (one-liner):
-```bash
-ssh root@161.35.217.113 "cd /opt/procheff-v2 && git pull && docker compose restart"
-```
-
-### Management Commands
-
-**Container Operations**:
-```bash
-docker ps                      # Status
-docker compose logs -f         # Live logs
-docker compose logs --tail=100 # Last 100 lines
-docker compose restart         # Restart
-docker compose down            # Stop
-docker compose up -d           # Start
-docker stats procheff-app      # Resource usage
-```
-
-**Database Backup**:
-```bash
-# Export from container
-docker cp procheff-app:/app/data/ihale-scraper.db ./backup-$(date +%Y%m%d).db
-
-# Download to local
-scp root@161.35.217.113:/opt/procheff-v2/backup-*.db ~/Desktop/
-```
-
-**Full System Backup**:
-```bash
-cd /opt
-tar -czf procheff-backup-$(date +%Y%m%d).tar.gz procheff-v2
-```
-
-### User Access (Tailscale)
-
-**Setup for New Users**:
-1. Install Tailscale: https://tailscale.com/download
-2. Login with Gmail
-3. Admin approves via: https://login.tailscale.com/admin/machines
-4. Access URL: http://100.88.13.45:3000
-
-### Monitoring & Security
-
-**Active Security**:
-- ✅ Firewall (UFW) - Only Tailscale port open
-- ✅ Tailscale end-to-end encryption
-- ✅ Docker container isolation
-- ✅ Daily automated backups (7-day retention)
-- ✅ Environment variables encrypted (.env file)
-
-**Resource Monitoring**:
-```bash
-free -m              # Memory
-df -h                # Disk
-docker stats         # Container resources
-tailscale status     # VPN status
-```
-
-### Troubleshooting
-
-**Container won't start**:
-```bash
-docker compose logs procheff
-docker compose restart
-```
-
-**Port conflict**:
-```bash
-lsof -i :3000
-kill -9 PID
-```
-
-**Disk full**:
-```bash
-docker system prune -a -f
-docker volume prune -f
-```
-
-### Key Differences from Vercel
-
-| Feature | DigitalOcean + Docker | Vercel |
-|---------|----------------------|--------|
-| **Timeout** | Unlimited | 60s (Pro) |
-| **File Size** | Unlimited | 50MB |
-| **OCR** | Tesseract (free) | Not supported |
-| **Puppeteer** | Full support | Not supported |
-| **Cost** | $33.60/mo | $79/mo |
-| **Control** | Full root access | Limited |
-
-### Performance
-
-**Benchmarks**:
-- NVMe SSD: 3-4x faster than regular SSD
-- Premium Intel CPUs: Optimized for AI workloads
-- Frankfurt datacenter: Low latency to Turkey
-- Tailscale P2P: Direct connection (no relay overhead)
-
-### Documentation
-
-**Deployment Guides**:
-- `DEPLOYMENT_SUCCESS.md` - Complete production guide
-- `DOCKER_DEPLOYMENT.md` - Docker setup details
-- `QUICK_START.md` - Fast setup guide
-- `TROUBLESHOOTING.md` - Common issues & solutions
-
-**Important Notes**:
-- ⚠️ Mac no longer runs the application (zero CPU load)
-- ⚠️ All processing happens on DigitalOcean server
-- ⚠️ Vercel deployment is now redundant (can be deleted)
-- ✅ GitHub remains essential for code management
-
----
-
-**Last Updated**: November 8, 2025 11:30 TST
-**Version**: 0.2.1 (Production Deployed)
-**Major Changes**: DigitalOcean + Tailscale deployment, Docker containerization, full feature support (OCR, Puppeteer), 57% cost reduction
+**Version**: 0.2.1
+**Last Updated**: November 8, 2025
+**Major Changes**: Routing fix, premium UI, workspace integration

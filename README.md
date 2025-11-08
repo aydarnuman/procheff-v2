@@ -78,6 +78,35 @@ Auto-save with 2-second debounce to localStorage
 
 ---
 
+## Recent Updates (v0.3.1 - Premium UI & Routing Fix)
+
+### 🎨 Premium UI Enhancements (November 8, 2025)
+- **Routing System Fixed**: `/ihale/[id]` now THE premium detail page
+  - Deleted redundant `/ihale/analysis-[id]/` folder (routing conflict)
+  - Index-based routing: `analysis-0`, `analysis-1`, etc.
+  - EnhancedAnalysisResults integrated into `/ihale/[id]/page.tsx`
+  - Workspace correctly redirects to premium detail after AI analysis
+- **Premium Dark Styling**:
+  - Butonlar: slate-800 koyu premium stil (NOT blue/orange)
+  - Header: Metadata card with dividers (bg-slate-800/30)
+  - Processing time: Milisaniye → Saniye formatı (96.05s)
+  - Shadow effects: hover:shadow-slate-700/50 (premium glow)
+- **Derin Analiz Tab**: Gradient + Animation
+  - Gradient arka plan: purple-600 → pink-600 → orange-500
+  - Shadow efekti: shadow-purple-500/50 (mor glow)
+  - Scale efekti: scale-105 (hover büyüme)
+  - Icon animasyonu: animate-pulse (TrendingUp icon)
+  - Emoji: ✨ Derin Analiz (sparkles)
+- **Workspace Integration**: Dual-mode UI
+  - Upload tab: File drag-and-drop
+  - Tracking tab: SimpleDocumentList (140+ tenders)
+  - Seamless transition to premium detail page
+- **New Utility Files**:
+  - xlsx-processor.ts: Excel file processing
+  - zip-extractor.ts: ZIP archive extraction
+
+---
+
 ## Recent Updates (v0.3.0 - Production Deployed)
 
 ### 🌐 Production Deployment (November 8, 2025)
@@ -736,6 +765,6 @@ This project is under private license. Contact for commercial use.
 
 **Modern AI-powered tender analysis platform**
 
-*Last updated: November 2025*
-*Version: 0.1.0*
+*Last updated: November 8, 2025*
+*Version: 0.3.1 (Premium UI & Routing Fix)*
 *Next.js: 16.0.1 | React: 19.2.0*
