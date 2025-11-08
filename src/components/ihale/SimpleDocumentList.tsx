@@ -643,11 +643,10 @@ export function SimpleDocumentList({
         </div>
       )}
 
-      {/* 🚀 AI Analiz Başlat Butonu - Tüm dosyalar tamamlandığında göster */}
+      {/* 🚀 AI Analiz Başlat Butonu - Completed dosyalar varsa göster */}
       {onStartAnalysis && 
        fileStatuses.length > 0 && 
-       fileStatuses.every(f => f.status === 'completed') && 
-       fileStatuses.some(f => f.extractedText && f.extractedText.trim().length > 0) && (
+       fileStatuses.some(f => f.status === 'completed' && f.extractedText && f.extractedText.trim().length > 0) && (
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}

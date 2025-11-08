@@ -90,7 +90,7 @@ export default function IhaleDashboard() {
           </div>
 
           <Link
-            href="/ihale/yeni-analiz"
+            href="/ihale/workspace"
             className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
           >
             <Plus className="w-5 h-5" />
@@ -154,7 +154,7 @@ export default function IhaleDashboard() {
             title="Yeni Analiz"
             description="İhale şartnamesi yükle ve AI ile analiz et"
             icon={Plus}
-            href="/ihale/yeni-analiz"
+            href="/ihale/workspace"
             color="blue"
           />
           <QuickActionCard
@@ -205,7 +205,7 @@ export default function IhaleDashboard() {
                   İlk ihale analizinizi oluşturmak için başlayın
                 </p>
                 <Link
-                  href="/ihale/yeni-analiz"
+                  href="/ihale/workspace"
                   className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
                 >
                   <Plus className="w-5 h-5" />

@@ -44,6 +44,7 @@ export const navItems: NavItem[] = [
     children: [
       { label: "Dashboard", href: "/ihale", icon: "LayoutDashboard" },
       { label: "İhale Robotu", href: "/ihale-robotu", icon: "Target" },
+      { label: "Yeni Analiz", href: "/ihale/workspace", icon: "Plus" },
       { label: "İhale Listesi", href: "/ihale/liste", icon: "List" },
       { label: "Karşılaştırma", href: "/ihale/karsilastirma", icon: "GitCompare" },
     ],

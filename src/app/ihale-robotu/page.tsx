@@ -1035,18 +1035,18 @@ function IhaleTakipPageInner() {
         });
 
         const elapsed = Math.floor((Date.now() - loadingStartTime!) / 1000);
-        toast.success(`✅ Hazırlama tamamlandı (${elapsed}s)`, { id: 'doc-prep' });
+        toast.success(`✅ Hazırlama tamamlandı (${elapsed}s) → Analize gönderiliyor...`, { id: 'doc-prep', duration: 2000 });
         
         // ✅ Detay modal içinde gösterilecek (ayrı modal yok artık)
       }
 
-      // ⏱️ Reset timer
+      // ⏱️ Reset timer (sendToAnalysis çağrılacağı için burada resetleme)
       setIsAnalyzing(false);
       setLoadingStartTime(null);
 
     } catch (error: any) {
       console.error('❌ prepareDocuments hatası:', error);
-      toast.error('Dökümanlar hazırlanırken hata oluştu');
+      toast.error('❌ Dökümanlar hazırlanırken hata oluştu', { id: 'doc-prep' });
       setIsAnalyzing(false);
       setLoadingStartTime(null);
     }
@@ -1067,7 +1067,13 @@ function IhaleTakipPageInner() {
     }
 
     try {
-      toast.loading('Analize gönderiliyor...', { id: 'send-analysis' });
+      // ✅ Kullanıcıya net feedback: Kaç döküman gönderiliyor
+      const docCount = preparedDocuments.length;
+      const message = docCount > 0 
+        ? `🚀 Analize gönderiliyor (${docCount} döküman)...`
+        : '🚀 Analize gönderiliyor (sadece ihale metni)...';
+      
+      toast.loading(message, { id: 'send-analysis' });
 
       // 🔍 Debug: preparedDocuments durumu
       console.log('🔍 preparedDocuments:', {
@@ -1076,10 +1082,9 @@ function IhaleTakipPageInner() {
         hasBlobs: preparedDocuments.some(doc => doc.blob || doc.file)
       });
 
-      // ⚠️ preparedDocuments boşsa uyar (opsiyonel - analiz sadece text ile de yapılabilir)
+      // ⚠️ preparedDocuments boşsa console warn (toast'u yukarıda gösteriyoruz)
       if (preparedDocuments.length === 0) {
         console.warn('⚠️ preparedDocuments boş - sadece ihale metni gönderilecek');
-        toast.warning('⚠️ Döküman yok - sadece ihale metni gönderiliyor', { duration: 3000 });
       }
 
       // 1️⃣ Benzersiz ID üret
@@ -1197,7 +1202,12 @@ Lütfen tarayıcı konsolunu kontrol edin ve geliştiriciyle iletişime geçin.`
       params.delete('detail'); // Modal'ı kapat
       router.push(`/ihale/yeni-analiz?from=${tempId}`);
       
-      toast.success('Analize yönlendiriliyor...', { id: 'send-analysis' });
+      // ✅ Başarılı mesaj: Kaç döküman gönderildiğini belirt
+      const successMsg = preparedDocuments.length > 0
+        ? `✅ Yönlendiriliyor (${preparedDocuments.length} döküman hazır)`
+        : '✅ Yönlendiriliyor (ihale metni hazır)';
+      
+      toast.success(successMsg, { id: 'send-analysis', duration: 2000 });
 
     } catch (error: any) {
       console.error('❌ sendToAnalysis hatası:', error);
@@ -1880,34 +1890,6 @@ Lütfen tarayıcı konsolunu kontrol edin ve geliştiriciyle iletişime geçin.`
 
             {/* Action Buttons */}
             <div className="flex items-center gap-3">
-              <button
-                onClick={async () => {
-                  // [DEBUG] fullContent ve payload zinciri
-                  console.log('[DEBUG] Yeni Analiz Butonu - fullContent:', fullContent);
-                  if (selectedTender && fullContent && fullContent.fullText) {
-                    const tempId = `ihale_${Date.now()}`;
-                    const payload = {
-                      title: selectedTender.title,
-                      text: fullContent.fullText,
-                      size: fullContent.fullText.length,
-                      timestamp: Date.now(),
-                    };
-                    console.log('[DEBUG] Yeni Analiz Butonu - payload:', payload);
-                    sessionStorage.setItem(tempId, JSON.stringify(payload));
-                    await new Promise(r => setTimeout(r, 150));
-                    router.push(`/ihale/yeni-analiz?from=${tempId}`);
-                  } else {
-                    console.warn('[DEBUG] Yeni Analiz Butonu - Yönlendirme için yeterli veri yok, fullContent veya selectedTender eksik');
-                    router.push('/ihale/yeni-analiz');
-                  }
-                }}
-                className="group relative flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl hover:shadow-lg hover:shadow-purple-500/30 text-sm font-medium transition-all duration-300 hover:scale-[1.02] overflow-hidden"
-                title="Yeni ihale analizi yap"
-              >
-                <div className="absolute inset-0 bg-gradient-to-r from-purple-700 to-blue-700 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                <Wand2 className="w-4 h-4 relative z-10" />
-                <span className="relative z-10">Yeni Analiz</span>
-              </button>
               {/* Yeni İhaleler Çek (mode=new - stop on duplicates) */}
               <button
                 onClick={() => triggerScrape('new')}
@@ -2986,35 +2968,37 @@ Lütfen tarayıcı konsolunu kontrol edin ve geliştiriciyle iletişime geçin.`
                               </div>
                             )}
                             
-                            {/* Action Bar - Modern Design */}
+                            {/* Action Bar - Sadece İndirme */}
                             <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
                               <div className="flex items-center justify-between gap-4">
-                                {/* Sol: Ana Buton */}
+                                {/* Toplu İndirme Butonu */}
                                 <button
                                   onClick={async () => {
-                                    await prepareDocuments(); // 📦 Önce hazırla, sonra önizleme göster
+                                    if (selectedDocuments.length === 0) {
+                                      toast.error('⚠️ Lütfen en az 1 döküman seçin');
+                                      return;
+                                    }
+
+                                    toast.info(`📥 ${selectedDocuments.length} döküman indiriliyor...`);
+                                    
+                                    // Dökümanları bilgisayara indir
+                                    await prepareDocuments();
+                                    
+                                    toast.success(`✅ ${selectedDocuments.length} döküman indirildi!`);
                                   }}
-                                  disabled={selectedDocuments.length === 0 || isAnalyzing}
-                                  className="group relative flex items-center gap-3 px-6 py-3 bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold transition-all shadow-lg hover:shadow-xl disabled:shadow-none transform hover:scale-105 disabled:scale-100"
-                                  title="Seçili dökümanları analize hazırla"
+                                  disabled={selectedDocuments.length === 0}
+                                  className="group relative flex items-center gap-3 px-6 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold transition-all shadow-lg hover:shadow-xl disabled:shadow-none transform hover:scale-105 disabled:scale-100"
+                                  title="Seçili dökümanları bilgisayara indir"
                                 >
                                   <div className="flex items-center gap-2">
-                                    {isAnalyzing ? (
-                                      <Loader2 className="w-5 h-5 animate-spin" />
-                                    ) : (
-                                      <Wand2 className="w-5 h-5" />
-                                    )}
-                                    <span>{isAnalyzing ? 'Hazırlanıyor...' : 'Analize Hazırla'}</span>
+                                    <Download className="w-5 h-5" />
+                                    <span>Toplu İndir</span>
                                   </div>
-                                  {isAnalyzing && loadingStartTime ? (
-                                    <span className="px-2.5 py-0.5 bg-white/20 rounded-full text-xs font-bold">
-                                      ⏱️ {formatElapsedTime(elapsedTime)}
-                                    </span>
-                                  ) : selectedDocuments.length > 0 ? (
+                                  {selectedDocuments.length > 0 && (
                                     <span className="px-2.5 py-0.5 bg-white/20 rounded-full text-xs font-bold">
                                       {selectedDocuments.length}
                                     </span>
-                                  ) : null}
+                                  )}
                                 </button>
 
                                 {/* Orta: Seçim Kontrolü */}
@@ -3539,22 +3523,24 @@ Lütfen tarayıcı konsolunu kontrol edin ve geliştiriciyle iletişime geçin.`
                               })}
                             </div>
 
-                            {/* Action Button - Analize Gönder */}
+                            {/* Action Button - İşlemeye Gönder */}
                             <div className="mt-6 pt-4 border-t border-gray-200">
                               <button
                                 onClick={async () => {
-                                  await sendToAnalysis();
+                                  // ✅ Sadece dökümanları hazırla (indirmeye hazır hale getir)
+                                  await prepareDocuments();
+                                  toast.success(`✅ ${preparedDocuments.length} dosya hazır! İndirme başlayabilir.`);
                                 }}
-                                className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-xl text-base font-bold transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
+                                className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white rounded-xl text-base font-bold transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
                               >
-                                <Wand2 className="w-5 h-5" />
-                                <span>Analiz Sayfasına Gönder</span>
+                                <Download className="w-5 h-5" />
+                                <span>Dosyaları İşlemeye Hazırla</span>
                                 <span className="px-3 py-1 bg-white/20 rounded-full text-sm">
                                   {preparedDocuments.length} dosya
                                 </span>
                               </button>
                               <p className="text-xs text-center text-gray-500 mt-3">
-                                Tüm dökümanlar ve ihale detayı analiz sayfasına aktarılacak
+                                Dökümanlar indirmeye hazır hale getirilecek (otomatik analiz yok)
                               </p>
                             </div>
                           </div>
