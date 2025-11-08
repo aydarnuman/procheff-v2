@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { createAnalysisRecord, getAnalysisByHash } from "@/lib/analysis/records";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 30; // 30 seconds timeout
 
 type InitBody = {
   filename: string;
@@ -12,10 +13,26 @@ type InitBody = {
 };
 
 export async function POST(req: Request) {
+  const startTime = Date.now();
+  
   try {
     const body = await req.json().catch(() => null) as InitBody | null;
     if (!body || !body.filename || !body.size) {
-      return NextResponse.json({ code: "invalid_payload", message: "filename and size required" }, { status: 400 });
+      console.log("❌ Invalid init payload:", { hasBody: !!body, hasFilename: !!body?.filename, hasSize: !!body?.size });
+      return NextResponse.json({ 
+        code: "invalid_payload", 
+        message: "filename and size required" 
+      }, { status: 400 });
+    }
+
+    // Validate file size (max 50MB)
+    const maxSize = 50 * 1024 * 1024; // 50MB
+    if (body.size > maxSize) {
+      console.log(`❌ File too large: ${body.filename} (${(body.size / 1024 / 1024).toFixed(2)}MB)`);
+      return NextResponse.json({ 
+        code: "file_too_large", 
+        message: `File size ${(body.size / 1024 / 1024).toFixed(2)}MB exceeds limit of 50MB` 
+      }, { status: 413 });
     }
 
     const userId = req.headers.get("x-user-id") ?? undefined;
@@ -24,7 +41,12 @@ export async function POST(req: Request) {
     if (body.fileHash) {
       const existing = getAnalysisByHash(userId, body.fileHash);
       if (existing) {
-        return NextResponse.json({ analysisId: existing.analysisId, status: existing.status }, { status: 200 });
+        console.log(`♻️ Returning existing analysis: ${existing.analysisId} (${existing.status})`);
+        return NextResponse.json({ 
+          analysisId: existing.analysisId, 
+          status: existing.status,
+          cached: true 
+        }, { status: 200 });
       }
     }
 
@@ -43,10 +65,22 @@ export async function POST(req: Request) {
       error: null,
     });
 
-    // For dev fallback, we return a local-upload URL in PR2. For now just return analysisId.
-    return NextResponse.json({ analysisId, status: "created" }, { status: 201 });
+    const duration = Date.now() - startTime;
+    console.log(`✅ Analysis initialized: ${analysisId} | ${body.filename} (${(body.size / 1024).toFixed(1)}KB) | ${duration}ms`);
+
+    return NextResponse.json({ 
+      analysisId, 
+      status: "created",
+      uploadUrl: `/api/analysis/upload-local?analysisId=${analysisId}&filename=${encodeURIComponent(body.filename)}`
+    }, { status: 201 });
+    
   } catch (err) {
-    console.error("init error", err);
-    return NextResponse.json({ code: "server_error", message: "init failed" }, { status: 500 });
+    const duration = Date.now() - startTime;
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error(`❌ Init error (${duration}ms):`, errorMsg);
+    return NextResponse.json({ 
+      code: "server_error", 
+      message: "Analysis initialization failed" 
+    }, { status: 500 });
   }
 }
