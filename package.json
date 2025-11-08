@@ -15,6 +15,7 @@
     "test:ai": "npx tsx tests/ai-extraction-test.ts",
     "backup:db": "./scripts/backup-database.sh",
     "cleanup:servers": "./scripts/cleanup-servers.sh",
+    "cleanup:old-files": "./scripts/cleanup-old-files.sh",
     "monitor:start": "./scripts/port-monitor.sh start",
     "monitor:stop": "./scripts/port-monitor.sh stop",
     "monitor:status": "./scripts/port-monitor.sh status"
