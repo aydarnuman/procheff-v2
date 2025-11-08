@@ -40,7 +40,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-data/
 
-# uploads
+# data (database, sessions, uploads)
+data/
+logs/
 tmp_uploads/
+
+# test results (keep fixtures, ignore results)
+tests/results/*.json
+!tests/results/.gitkeep
