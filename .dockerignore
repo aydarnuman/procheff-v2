@@ -1,0 +1,45 @@
+# Dependencies
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Next.js
+.next
+out
+.turbo
+
+# Development
+.env*.local
+.env.development
+*.log
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.md
+!README.md
+docs/
+.github/
+
+# Test
+coverage
+.nyc_output
+
+# Build artifacts
+dist
+build
+
+# Temporary files
+tmp/*
+!tmp/.gitkeep
