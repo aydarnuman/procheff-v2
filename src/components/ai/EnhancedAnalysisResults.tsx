@@ -370,14 +370,14 @@ export function EnhancedAnalysisResults({
           <div className="flex items-center space-x-3">
             <Brain className="w-8 h-8 text-accent-400" />
             <h2 className="text-2xl font-bold text-surface-primary">
-              {analysis.processing_metadata.ai_provider || 'AI'} Analiz Sonuçları
+              AI Analiz Sonuçları
             </h2>
           </div>
           <div className="flex-1 flex justify-end gap-3">
             <button
               type="button"
               onClick={onNewAnalysis}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors shadow-lg"
+              className="flex items-center space-x-2 px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl transition-all duration-200 shadow-lg hover:shadow-slate-700/50 border border-slate-700"
             >
               <Upload className="w-4 h-4" />
               <span>Yeni Analiz</span>
@@ -385,7 +385,7 @@ export function EnhancedAnalysisResults({
             <button
               type="button"
               onClick={() => setShowProposal(true)}
-              className="flex items-center space-x-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl transition-colors shadow-lg"
+              className="flex items-center space-x-2 px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl transition-all duration-200 shadow-lg hover:shadow-slate-700/50 border border-slate-700"
             >
               <Clipboard className="w-4 h-4" />
               <span>Teklif Hazırla</span>
@@ -393,13 +393,21 @@ export function EnhancedAnalysisResults({
           </div>
         </div>
 
-        <div className="flex items-center justify-center space-x-6 text-sm">
+        <div className="flex items-center justify-center space-x-8 text-sm bg-slate-800/30 rounded-lg px-6 py-3 border border-slate-700/50">
+          <div className="flex items-center space-x-2">
+            <Database className="w-4 h-4 text-accent-400" />
+            <span className="text-surface-primary font-medium">
+              {analysis.processing_metadata.ai_provider || 'AI'}
+            </span>
+          </div>
+          <div className="w-px h-4 bg-slate-700" /> {/* Divider */}
           <div className="flex items-center space-x-2">
             <Clock className="w-4 h-4 text-surface-secondary" />
             <span className="text-surface-secondary">
-              {analysis.processing_metadata.processing_time}ms
+              {(analysis.processing_metadata.processing_time / 1000).toFixed(2)}s
             </span>
           </div>
+          <div className="w-px h-4 bg-slate-700" /> {/* Divider */}
           <div className="flex items-center space-x-2">
             <Star className="w-4 h-4 text-surface-secondary" />
             <span
@@ -412,12 +420,6 @@ export function EnhancedAnalysisResults({
                 return isNaN(confidenceValue) ? '70' : confidenceValue;
               })()}%
               güven
-            </span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Database className="w-4 h-4 text-surface-secondary" />
-            <span className="text-surface-secondary">
-              {analysis.processing_metadata.ai_provider}
             </span>
           </div>
         </div>
@@ -502,13 +504,13 @@ export function EnhancedAnalysisResults({
             onClick={() => setActiveTab("deep")}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
               activeTab === "deep"
-                ? "bg-accent-500/20 text-accent-400 shadow-sm"
-                : "text-surface-secondary hover:text-surface-primary"
+                ? "bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 text-white shadow-lg shadow-purple-500/50 scale-105"
+                : "text-surface-secondary hover:text-white hover:bg-gradient-to-r hover:from-purple-600/20 hover:to-orange-500/20"
             }`}
           >
             <div className="flex items-center space-x-2">
-              <TrendingUp className="w-4 h-4" />
-              <span>Derin Analiz</span>
+              <TrendingUp className={`w-4 h-4 ${activeTab === "deep" ? "animate-pulse" : ""}`} />
+              <span className="font-semibold">✨ Derin Analiz</span>
             </div>
           </button>
         </div>

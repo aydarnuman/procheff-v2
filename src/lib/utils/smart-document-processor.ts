@@ -1,5 +1,7 @@
 import mammoth from "mammoth";
 import { TurkishNormalizer } from "./turkish-normalizer";
+import { ZipExtractor } from "./zip-extractor";
+import { XlsxProcessor } from "./xlsx-processor";
 
 export interface SmartProcessingResult {
   success: boolean;
@@ -28,6 +30,10 @@ export class SmartDocumentProcessor {
     "image/jpeg", // .jpg (taranmış belgeler)
     "application/json", // .json
     "text/json", // .json alternate
+    "application/zip", // .zip
+    "application/x-zip-compressed", // .zip alternate
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
+    "application/vnd.ms-excel", // .xls
   ];
 
   private static readonly SUPPORTED_EXTENSIONS = [
@@ -42,6 +48,9 @@ export class SmartDocumentProcessor {
     ".jpg",
     ".jpeg",
     ".json",
+    ".zip",
+    ".xlsx",
+    ".xls",
   ];
 
   /**
@@ -108,6 +117,148 @@ export class SmartDocumentProcessor {
         } catch (error) {
           console.error("DOCX işleme hatası:", error);
           warnings.push("DOCX işleme başarısız");
+        }
+      }
+
+      // 1.5️⃣ ZIP İşleme - İçindeki tüm dosyaları çıkar ve işle
+      if (mimeType.includes("zip") || fileName.endsWith(".zip")) {
+        try {
+          console.log("🗜️ ZIP işleme başladı...");
+          onProgress?.("📦 ZIP dosyası açılıyor...");
+
+          const zipResult = await ZipExtractor.extract(file, (msg) => {
+            onProgress?.(msg);
+          });
+
+          if (!zipResult.success) {
+            console.error("ZIP extraction hatası:", zipResult.error);
+            return {
+              success: false,
+              text: '',
+              method: 'zip-extraction',
+              fileType: 'zip',
+              processingTime: Date.now() - startTime,
+              error: zipResult.error || 'ZIP dosyası açılamadı',
+              warnings,
+            };
+          }
+
+          console.log(`✅ ZIP'den ${zipResult.totalFiles} dosya çıkarıldı`);
+          onProgress?.(`⚙️ ${zipResult.totalFiles} dosya işleniyor...`);
+
+          // Her dosyayı recursive olarak işle
+          const extractedTexts: string[] = [];
+          let processedCount = 0;
+
+          for (const extractedFile of zipResult.files) {
+            try {
+              console.log(`📄 İşleniyor: ${extractedFile.name}`);
+
+              const file = ZipExtractor.arrayBufferToFile(
+                extractedFile.content,
+                extractedFile.name,
+                extractedFile.type
+              );
+
+              const result = await this.extractText(file, (msg, progress) => {
+                onProgress?.(`[${extractedFile.name}] ${msg}`, progress);
+              });
+
+              if (result.success && result.text.trim()) {
+                extractedTexts.push(`\n=== ${extractedFile.name} ===\n${result.text}`);
+                processedCount++;
+                console.log(`✅ ${extractedFile.name} işlendi (${result.text.length} karakter)`);
+              } else {
+                console.warn(`⚠️ ${extractedFile.name} boş veya işlenemedi`);
+                warnings.push(`${extractedFile.name} işlenemedi`);
+              }
+            } catch (fileError: any) {
+              console.error(`❌ ${extractedFile.name} işleme hatası:`, fileError);
+              warnings.push(`${extractedFile.name}: ${fileError.message}`);
+            }
+          }
+
+          const combinedText = extractedTexts.join('\n\n');
+          console.log(`🎉 ZIP işleme tamamlandı: ${processedCount}/${zipResult.totalFiles} dosya başarılı`);
+
+          return {
+            success: true,
+            text: combinedText,
+            method: 'zip-extraction-recursive',
+            fileType: 'zip',
+            processingTime: Date.now() - startTime,
+            warnings: [
+              `ZIP arşivinden ${processedCount}/${zipResult.totalFiles} dosya işlendi`,
+              ...warnings,
+            ],
+          };
+        } catch (error: any) {
+          console.error("ZIP işleme hatası:", error);
+          return {
+            success: false,
+            text: '',
+            method: 'zip-extraction',
+            fileType: 'zip',
+            processingTime: Date.now() - startTime,
+            error: error.message || 'ZIP işleme hatası',
+            warnings,
+          };
+        }
+      }
+
+      // 1.6️⃣ XLSX/XLS İşleme - Excel dosyalarını metin formatına çevir
+      if (
+        mimeType.includes("spreadsheetml.sheet") || // .xlsx
+        (mimeType.includes("ms-excel") && !mimeType.includes("csv")) || // .xls
+        fileName.endsWith(".xlsx") ||
+        fileName.endsWith(".xls")
+      ) {
+        try {
+          console.log("📊 Excel işleme başladı...");
+          onProgress?.("📊 Excel dosyası okunuyor...");
+
+          const xlsxResult = await XlsxProcessor.process(file, (msg) => {
+            onProgress?.(msg);
+          });
+
+          if (!xlsxResult.success) {
+            console.error("Excel işleme hatası:", xlsxResult.error);
+            return {
+              success: false,
+              text: '',
+              method: 'xlsx-processing',
+              fileType: fileName.endsWith('.xlsx') ? 'xlsx' : 'xls',
+              processingTime: Date.now() - startTime,
+              error: xlsxResult.error || 'Excel dosyası işlenemedi',
+              warnings,
+            };
+          }
+
+          const normalizedText = TurkishNormalizer.normalize(xlsxResult.text);
+          console.log(`✅ Excel başarılı: ${xlsxResult.sheets.length} sheet, ${xlsxResult.totalRows} satır`);
+
+          return {
+            success: true,
+            text: normalizedText,
+            method: 'xlsx-processor',
+            fileType: fileName.endsWith('.xlsx') ? 'xlsx' : 'xls',
+            processingTime: Date.now() - startTime,
+            warnings: [
+              `${xlsxResult.sheets.length} sheet işlendi (${xlsxResult.totalRows} satır, ${xlsxResult.totalCells} hücre)`,
+              ...warnings,
+            ],
+          };
+        } catch (error: any) {
+          console.error("Excel işleme hatası:", error);
+          return {
+            success: false,
+            text: '',
+            method: 'xlsx-processing',
+            fileType: fileName.endsWith('.xlsx') ? 'xlsx' : 'xls',
+            processingTime: Date.now() - startTime,
+            error: error.message || 'Excel işleme hatası',
+            warnings,
+          };
         }
       }
 

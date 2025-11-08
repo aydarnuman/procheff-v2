@@ -56,15 +56,8 @@ export default function TenderWorkspacePage() {
 }
 
 function TenderWorkspacePageInner() {
-  const searchParams = useSearchParams();
-  const sessionId = searchParams.get('sessionId');
-
-  // DUAL MODE: sessionId varsa tracking, yoksa processing
-  if (!sessionId) {
-    return <ProcessingMode />;
-  }
-
-  return <TrackingMode sessionId={sessionId} />;
+  // Simple mode: Sadece processing (session tracking kaldırıldı)
+  return <ProcessingMode />;
 }
 
 // ============================================================================
@@ -163,8 +156,18 @@ function ProcessingMode() {
                     progress: data.message
                   });
                 } else if (data.type === 'success') {
-                  const extractedText = data.result?.extracted_text || data.result?.text || '';
-                  const wordCount = extractedText.split(/\s+/).filter((w: string) => w.length > 0).length;
+                  // SSE'den gelen data formatı: { type: 'success', text: '...', stats: { wordCount: ... } }
+                  const extractedText = data.text || '';
+                  const wordCount = data.stats?.wordCount ||
+                                   data.stats?.totalWordCount ||
+                                   extractedText.split(/\s+/).filter((w: string) => w.length > 0).length;
+
+                  console.log('✅ Dosya işlendi:', {
+                    fileName,
+                    textLength: extractedText.length,
+                    wordCount,
+                    stats: data.stats
+                  });
 
                   updateFileStatus(fileName, {
                     status: 'completed',
@@ -194,7 +197,7 @@ function ProcessingMode() {
     }
   };
 
-  // Analiz başlat
+  // Analiz başlat - Mevcut premium API kullanarak
   const handleStartAnalysis = async () => {
     // Tüm dosyalar işlendi mi kontrol et
     const allCompleted = fileStatuses.every(f => f.status === 'completed');
@@ -204,66 +207,54 @@ function ProcessingMode() {
     }
 
     setProcessing(true);
+    toast.loading('AI analizi başlatılıyor...');
 
     try {
-      // 1. Create session
-      const createRes = await fetch('/api/tender/session/start', {
+      // Tüm dosyaların text'lerini birleştir
+      const combinedText = fileStatuses
+        .map(f => `\n\n=== DOSYA: ${f.fileMetadata.name} ===\n${f.extractedText || ''}`)
+        .join('\n');
+
+      // Premium AI analysis endpoint'i kullan
+      const response = await fetch('/api/ai/full-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          source: 'manual',
-          userId: 'workspace-user'
+          text: combinedText,
+          csvData: null // İleride CSV desteği eklenebilir
         })
       });
 
-      const createData = await createRes.json();
-      if (!createData.success) {
-        throw new Error(createData.error || 'Session oluşturulamadı');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Analiz başarısız oldu');
       }
 
-      const sessionId = createData.sessionId;
-      toast.success('Session oluşturuldu');
+      const result = await response.json();
 
-      // 2. Upload processed files
-      const formData = new FormData();
-      fileStatuses.forEach((fileStatus, index) => {
-        const fileObject = fileObjects.get(fileStatus.fileMetadata.name);
-        if (fileObject) {
-          formData.append(`file${index}`, fileObject);
-        }
-      });
-      formData.append('fileCount', fileStatuses.length.toString());
-      formData.append('sessionId', sessionId);
-
-      const uploadRes = await fetch('/api/tender/session/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const uploadData = await uploadRes.json();
-      if (!uploadData.success) {
-        throw new Error(uploadData.error || 'Dosyalar yüklenemedi');
+      // API response: { success: true, data: AIAnalysisResult, metadata: {...} }
+      if (!result.success || !result.data) {
+        throw new Error('Analiz sonucu alınamadı');
       }
 
-      toast.success('Dosyalar yüklendi, analiz başlatılıyor...');
+      toast.dismiss();
+      toast.success('Analiz tamamlandı!');
 
-      // 3. Start analysis
-      const analyzeRes = await fetch('/api/tender/session/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId }),
-      });
+      // Zustand store'a kaydet (setCurrentAnalysis otomatik olarak history'e de ekler)
+      const { setCurrentAnalysis } = useIhaleStore.getState();
+      setCurrentAnalysis(result.data);
 
-      const analyzeData = await analyzeRes.json();
-      if (!analyzeData.success) {
-        throw new Error(analyzeData.error || 'Analiz başlatılamadı');
-      }
+      // Store güncel analysisHistory'yi al (yeni analiz eklendi)
+      const updatedHistory = useIhaleStore.getState().analysisHistory;
+      const lastIndex = updatedHistory.length - 1;
 
-      // 4. Redirect to tracking mode
-      router.push(`/ihale/workspace?sessionId=${sessionId}`);
+      // Premium detay sayfasına yönlendir (HAM VERİ, TABLOLAR, DERİN ANALİZ)
+      router.push(`/ihale/analysis-${lastIndex}`);
+
     } catch (error: any) {
-      console.error('Analysis start error:', error);
-      toast.error(error.message || 'Analiz başlatılamadı');
+      console.error('Analysis error:', error);
+      toast.dismiss();
+      toast.error(error.message || 'Analiz başarısız oldu');
       setProcessing(false);
     }
   };
@@ -280,8 +271,6 @@ function ProcessingMode() {
             <ArrowLeft className="w-4 h-4" />
             İhale Dashboard'a Dön
           </button>
-          <h1 className="text-3xl font-bold text-white">Yeni İhale Analizi</h1>
-          <p className="text-gray-400 mt-1">Dosyalarınızı işleyin ve AI ile analiz edin</p>
         </div>
 
         {/* SimpleDocumentList Component */}
@@ -290,7 +279,6 @@ function ProcessingMode() {
           onFileSelect={handleFileSelect}
           onFileRemove={handleFileRemove}
           onFileProcess={handleFileProcess}
-          onStartAnalysis={fileStatuses.every(f => f.status === 'completed') ? handleStartAnalysis : undefined}
         />
 
         {/* Start Analysis Button - Sadece tüm dosyalar işlendiyse */}
@@ -300,20 +288,31 @@ function ProcessingMode() {
               onClick={handleStartAnalysis}
               disabled={processing}
               className={`
-                w-full py-4 rounded-xl font-bold text-lg transition-all duration-300
+                w-full relative overflow-hidden group
+                py-3 px-6 rounded-xl font-semibold text-sm
+                transition-all duration-500 ease-out
                 ${processing
-                  ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white shadow-lg hover:shadow-xl transform hover:scale-[1.02]'
+                  ? 'bg-slate-800/50 text-slate-500 cursor-not-allowed border border-slate-700/50'
+                  : 'bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 hover:from-slate-800 hover:via-slate-700 hover:to-slate-800 text-white border border-slate-600/50 shadow-xl shadow-slate-900/40 hover:shadow-slate-700/50 transform hover:scale-[1.01] hover:-translate-y-0.5'
                 }
               `}
             >
+              {/* Premium glow effect */}
+              {!processing && (
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000" />
+              )}
+
               {processing ? (
                 <div className="flex items-center justify-center gap-2">
-                  <Loader2 className="w-6 h-6 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                   <span>Analiz Başlatılıyor...</span>
                 </div>
               ) : (
-                '🚀 AI ile Analiz Et'
+                <div className="flex items-center justify-center gap-2 relative z-10">
+                  <span className="text-lg">✨</span>
+                  <span>AI ile Analiz Et</span>
+                  <span className="text-lg">✨</span>
+                </div>
               )}
             </button>
           </div>

@@ -98,10 +98,10 @@ export function SimpleDocumentList({
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'completed': return <CheckCircle className="w-5 h-5 text-green-400" />;
-      case 'processing': return <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />;
-      case 'error': return <AlertCircle className="w-5 h-5 text-red-400" />;
-      default: return <FileText className="w-5 h-5 text-yellow-400" />;
+      case 'completed': return <CheckCircle className="w-3 h-3 text-green-400" />;
+      case 'processing': return <Loader2 className="w-3 h-3 text-blue-400 animate-spin" />;
+      case 'error': return <AlertCircle className="w-3 h-3 text-red-400" />;
+      default: return <FileText className="w-3 h-3 text-yellow-400" />;
     }
   };
 
@@ -110,19 +110,19 @@ export function SimpleDocumentList({
     const ext = fileName.toLowerCase().split('.').pop();
     switch (ext) {
       case 'pdf':
-        return <FileText className="w-6 h-6 text-red-400" />;
+        return <FileText className="w-4 h-4 text-red-400" />;
       case 'doc':
       case 'docx':
-        return <FileCode className="w-6 h-6 text-blue-400" />;
+        return <FileCode className="w-4 h-4 text-blue-400" />;
       case 'jpg':
       case 'jpeg':
       case 'png':
       case 'gif':
-        return <FileImage className="w-6 h-6 text-purple-400" />;
+        return <FileImage className="w-4 h-4 text-purple-400" />;
       case 'csv':
-        return <FileText className="w-6 h-6 text-green-400" />;
+        return <FileText className="w-4 h-4 text-green-400" />;
       default:
-        return <FileText className="w-6 h-6 text-gray-400" />;
+        return <FileText className="w-4 h-4 text-gray-400" />;
     }
   };
 
@@ -149,7 +149,7 @@ export function SimpleDocumentList({
   const getStatusText = (file: FileProcessingStatus) => {
     switch (file.status) {
       case 'completed':
-        return `✓ ${file.wordCount?.toLocaleString() || 0} kelime`;
+        return '✓ Tamamlandı';
       case 'processing':
         return file.progress || 'İşleniyor...';
       case 'error':
@@ -366,56 +366,61 @@ export function SimpleDocumentList({
                   exit={{ opacity: 0, x: -50, scale: 0.95 }}
                   transition={{ duration: 0.2, delay: index * 0.03 }}
                   className={`
-                    group relative flex items-center gap-3 p-4 rounded-lg border
-                    transition-all hover:scale-[1.01] hover:shadow-lg
-                    ${file.status === 'processing' 
-                      ? 'bg-blue-500/5 border-blue-600/30' 
-                      : getStatusColor(file.status)
+                    group relative flex items-center gap-3 p-3 rounded-xl border backdrop-blur-sm
+                    transition-all duration-300 hover:scale-[1.01] hover:shadow-2xl hover:shadow-purple-500/10
+                    bg-gradient-to-br from-slate-900/90 to-slate-800/90
+                    ${file.status === 'processing'
+                      ? 'border-blue-500/40 shadow-lg shadow-blue-500/20'
+                      : file.status === 'completed'
+                      ? 'border-emerald-500/40 shadow-lg shadow-emerald-500/10'
+                      : file.status === 'error'
+                      ? 'border-red-500/40 shadow-lg shadow-red-500/10'
+                      : 'border-slate-700/50'
                     }
                   `}
                 >
-                  {/* Dosya Tipi İkonu */}
-                  <div className="flex-shrink-0 transform group-hover:scale-105 transition-transform">
+                  {/* Dosya Tipi İkonu - Premium */}
+                  <div className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-lg bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/50 transform group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
                     {getFileTypeIcon(file.fileMetadata.name)}
                   </div>
 
                   {/* File Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1.5">
-                      <h4 className="font-medium text-white text-sm truncate">
+                      <h4 className="font-semibold text-white text-sm truncate group-hover:text-blue-400 transition-colors">
                         {file.fileMetadata.name}
                       </h4>
                       
-                      {/* Status Badge */}
+                      {/* Status Badge - Premium */}
                       <div className={`
-                        flex items-center gap-1 px-2 py-0.5 rounded text-xs
-                        ${file.status === 'completed' ? 'bg-green-500/20 text-green-400' :
-                          file.status === 'processing' ? 'bg-blue-500/20 text-blue-400 animate-pulse' :
-                          file.status === 'error' ? 'bg-red-500/20 text-red-400' :
-                          'bg-yellow-500/20 text-yellow-400'
+                        flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium backdrop-blur-sm
+                        ${file.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                          file.status === 'processing' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30 animate-pulse' :
+                          file.status === 'error' ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
+                          'bg-amber-500/20 text-amber-400 border border-amber-500/30'
                         }
                       `}>
                         {getStatusIcon(file.status)}
                         <span>{getStatusText(file)}</span>
                       </div>
-                      
+
                       {file.detectedType && (
-                        <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded text-xs">
+                        <span className="px-2 py-1 bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-purple-300 border border-purple-500/30 rounded-lg text-xs font-medium backdrop-blur-sm">
                           {BELGE_TURU_LABELS[file.detectedType as BelgeTuru]}
                         </span>
                       )}
                     </div>
                     
-                    {/* Dosya Bilgileri */}
-                    <div className="flex items-center gap-2 text-xs text-slate-500">
-                      {/* 🆕 Dosya Formatı - Her zaman göster */}
-                      <span className="px-2 py-0.5 bg-slate-700/50 text-slate-300 rounded font-medium">
+                    {/* Dosya Bilgileri - Premium */}
+                    <div className="flex items-center gap-2 text-xs">
+                      {/* Dosya Formatı */}
+                      <span className="px-2 py-0.5 bg-gradient-to-r from-slate-700/80 to-slate-800/80 text-slate-200 rounded-md font-semibold border border-slate-600/50">
                         {getFileFormat(file.fileMetadata.name)}
                       </span>
 
-                      <span>•</span>
+                      <span className="text-slate-600">•</span>
 
-                      <span>
+                      <span className="text-slate-400 font-medium">
                         {file.fileMetadata.size < 1024 * 1024
                           ? `${(file.fileMetadata.size / 1024).toFixed(1)} KB`
                           : `${(file.fileMetadata.size / 1024 / 1024).toFixed(2)} MB`
@@ -424,10 +429,13 @@ export function SimpleDocumentList({
 
                       {file.status === 'completed' && file.wordCount && (
                         <>
-                          <span>•</span>
-                          <span className="text-emerald-400">
-                            {file.wordCount.toLocaleString('tr-TR')} kelime
-                          </span>
+                          <span className="text-slate-600">•</span>
+                          <div className="flex items-center gap-1 px-2 py-0.5 bg-gradient-to-r from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 rounded-md">
+                            <span className="text-emerald-400 font-bold">
+                              {file.wordCount.toLocaleString('tr-TR')}
+                            </span>
+                            <span className="text-emerald-300/80 text-[10px]">kelime</span>
+                          </div>
                         </>
                       )}
                     </div>
@@ -619,7 +627,7 @@ export function SimpleDocumentList({
           <div className="bg-slate-900 border border-slate-800 rounded-lg p-5 hover:border-blue-900/50 transition-colors">
             <div className="flex items-center gap-3 mb-2">
               <div className="p-2 bg-blue-950/50 rounded">
-                <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                <span className="text-xl">⚙️</span>
               </div>
               <div className="text-2xl font-bold text-blue-600">
                 {fileStatuses.filter(f => f.status === 'processing').length + csvFiles.filter(c => c.status === 'processing').length}

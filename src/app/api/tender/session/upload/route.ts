@@ -10,8 +10,10 @@ import path from 'path';
 
 export async function POST(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const sessionId = searchParams.get('sessionId');
+    // FormData'dan dosyaları ve sessionId'yi al
+    const formData = await request.formData();
+    const sessionId = formData.get('sessionId') as string;
+    const fileCount = parseInt(formData.get('fileCount') as string || '0');
 
     if (!sessionId) {
       return NextResponse.json(
@@ -20,13 +22,9 @@ export async function POST(request: Request) {
       );
     }
 
-    // FormData'dan dosyayı al
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
-
-    if (!file) {
+    if (fileCount === 0) {
       return NextResponse.json(
-        { success: false, error: 'No file provided' },
+        { success: false, error: 'No files provided' },
         { status: 400 }
       );
     }
@@ -37,34 +35,39 @@ export async function POST(request: Request) {
       fs.mkdirSync(sessionDir, { recursive: true });
     }
 
-    // Dosyayı kaydet
-    const filePath = path.join(sessionDir, file.name);
-    const buffer = Buffer.from(await file.arrayBuffer());
-    fs.writeFileSync(filePath, buffer);
+    const uploadedFiles: any[] = [];
 
-    console.log(`✅ Dosya kaydedildi: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
+    // Her dosyayı kaydet
+    for (let i = 0; i < fileCount; i++) {
+      const file = formData.get(`file${i}`) as File;
 
-    // ZIP/RAR ise bildir (backend'de extract edilecek)
-    const isArchive = file.name.toLowerCase().endsWith('.zip') || file.name.toLowerCase().endsWith('.rar');
-    
-    if (isArchive) {
-      // ZIP extraction'ı simüle et (gerçek extraction analyze endpoint'inde olacak)
-      return NextResponse.json({
-        success: true,
+      if (!file) {
+        console.warn(`⚠️ file${i} bulunamadı, atlanıyor`);
+        continue;
+      }
+
+      // Dosyayı kaydet
+      const filePath = path.join(sessionDir, file.name);
+      const buffer = Buffer.from(await file.arrayBuffer());
+      fs.writeFileSync(filePath, buffer);
+
+      console.log(`✅ Dosya kaydedildi: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
+
+      // ZIP/RAR ise bildir
+      const isArchive = file.name.toLowerCase().endsWith('.zip') || file.name.toLowerCase().endsWith('.rar');
+
+      uploadedFiles.push({
         filename: file.name,
         size: file.size,
-        isArchive: true,
-        extractedFiles: [], // Şimdilik boş, analyze'de dolacak
-        message: `ZIP file uploaded: ${file.name}`
+        isArchive,
       });
     }
 
     return NextResponse.json({
       success: true,
-      filename: file.name,
-      size: file.size,
-      isArchive: false,
-      message: 'File uploaded successfully'
+      filesUploaded: uploadedFiles.length,
+      files: uploadedFiles,
+      message: `${uploadedFiles.length} dosya başarıyla yüklendi`
     });
 
   } catch (error: any) {
