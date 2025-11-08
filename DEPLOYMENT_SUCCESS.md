@@ -128,15 +128,44 @@ docker stats procheff-app
 
 ## 🔄 GÜNCELLEME SÜRECİ
 
-### **Kod Güncellemesi (GitHub'dan)**
+### **🤖 OTOMATİK (GitHub Actions) - ÖNERİLEN**
+
+**Mac'te sadece:**
 ```bash
+git add .
+git commit -m "feat: Yeni özellik"
+git push
+```
+
+✅ **GitHub Actions otomatik yapar:**
+- Server'a SSH bağlantısı
+- `git pull` çalıştırır
+- `docker compose restart`
+- Health check yapar
+- **Süre:** 30 saniye
+
+**Kurulum:** [GITHUB_ACTIONS_SETUP.md](GITHUB_ACTIONS_SETUP.md)
+
+**İzleme:** https://github.com/aydarnuman/procheff-v2/actions
+
+---
+
+### **📱 MANUEL (SSH ile)**
+
+#### **Kod Güncellemesi (GitHub'dan)**
+```bash
+# Tek satır (hızlı)
+ssh root@161.35.217.113 "cd /opt/procheff-v2 && git pull && docker compose restart"
+
+# Veya detaylı:
+ssh root@161.35.217.113
 cd /opt/procheff-v2
 git pull
-docker compose build
+docker compose build  # Sadece dependency değişirse
 docker compose up -d
 ```
 
-### **Environment Variables Değişikliği**
+#### **Environment Variables Değişikliği**
 ```bash
 nano .env
 # Değişiklikleri yap
@@ -145,7 +174,7 @@ nano .env
 docker compose restart
 ```
 
-### **Container Rebuild (Sıfırdan)**
+#### **Container Rebuild (Sıfırdan)**
 ```bash
 docker compose down
 docker compose build --no-cache
