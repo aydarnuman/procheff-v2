@@ -1,0 +1,32 @@
+name: Backup to Secondary Repo
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Manuel tetikleme
+
+jobs:
+  backup:
+    name: Push to Backup Repo
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Tüm history
+
+      - name: Push to backup repo
+        env:
+          BACKUP_TOKEN: ${{ secrets.BACKUP_GITHUB_TOKEN }}
+        run: |
+          git remote add backup https://x-access-token:${BACKUP_TOKEN}@github.com/aydarnuman/procheff-v2-backup.git
+          git push backup main --force
+          git push backup --tags --force
+
+      - name: Notify on success
+        if: success()
+        run: |
+          echo "✅ Backup başarıyla tamamlandı!"
+          echo "📍 Backup repo: https://github.com/aydarnuman/procheff-v2-backup"
