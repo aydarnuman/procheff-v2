@@ -17,6 +17,18 @@ function getErrorSuggestions(error: Error): ErrorSuggestion[] {
   const message = error.message.toLowerCase();
   const suggestions: ErrorSuggestion[] = [];
 
+  // 🆕 File object missing errors
+  if (message.includes('file') && (message.includes('bulunamad') || message.includes('undefined') || message.includes('null'))) {
+    suggestions.push({
+      title: '📁 Dosya Yükleme Sorunu',
+      description: 'Dosya objesi kaybedildi veya yükleme tamamlanmadan işleme başlatıldı',
+      action: {
+        label: 'Dosyayı Yeniden Yükle',
+        href: '/ihale/yeni-analiz',
+      },
+    });
+  }
+
   // API Key errors
   if (message.includes('api key') || message.includes('authentication') || message.includes('401')) {
     suggestions.push({

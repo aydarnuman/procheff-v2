@@ -1324,6 +1324,7 @@ Sadece executable JavaScript kodu döndür. Örnek:
         registration_number: kayitNo || undefined,
         source_url: url,
         scraped_at: new Date(),
+        announcement_text: htmlContent || undefined, // ✅ FIX: İhale metnini kaydet
       };
 
   // --- Tüm tekrar eden ve eski kod blokları kaldırıldı ---

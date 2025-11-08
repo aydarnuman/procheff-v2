@@ -99,6 +99,12 @@ export async function POST(request: NextRequest) {
 
         for (const file of files) {
           logger.debug(LogKategori.VALIDATION, `${file.name} kontrol ediliyor`);
+          console.log(`🔍 [FILE DEBUG] ${file.name}`, {
+            size: file.size,
+            type: file.type,
+            name: file.name,
+            lastModified: file.lastModified
+          });
 
           if (file.size > MAX_FILE_SIZE) {
             logger.hata(LogKategori.VALIDATION, `${file.name} çok büyük`, {
@@ -111,11 +117,16 @@ export async function POST(request: NextRequest) {
           }
 
           if (!SmartDocumentProcessor.isFormatSupported(file)) {
+            const extension = file.name.substring(file.name.lastIndexOf("."));
+            const supportedFormats = SmartDocumentProcessor.getSupportedFormats().join(', ');
+            
             logger.hata(LogKategori.VALIDATION, `${file.name} desteklenmeyen format`, {
               kod: 'UNSUPPORTED_FORMAT',
-              mesaj: `Format: ${file.type}`,
+              mesaj: `MIME: ${file.type || 'boş'}, Extension: ${extension}, Size: ${file.size}`,
             });
-            sendError(controller, `${file.name} desteklenmeyen format`, 'UNSUPPORTED_FORMAT');
+            
+            const errorMsg = `Desteklenmeyen dosya formatı: ${file.name}. Desteklenen formatlar: ${supportedFormats}`;
+            sendError(controller, errorMsg, 'UNSUPPORTED_FORMAT');
             controller.close();
             return;
           }

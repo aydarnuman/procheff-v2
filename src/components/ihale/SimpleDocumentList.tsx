@@ -15,6 +15,8 @@ interface SimpleDocumentListProps {
   onCSVSelect?: (files: File[]) => void;
   onCSVRemove?: (fileName: string) => void;
   onCSVProcess?: (fileName: string) => Promise<void>;
+  readOnly?: boolean; // 🆕 Yeni prop - sadece görüntüleme modu için
+  onStartAnalysis?: () => void; // 🚀 AI Analiz başlatma butonu için
 }
 
 export function SimpleDocumentList({
@@ -25,12 +27,15 @@ export function SimpleDocumentList({
   onFileProcess,
   onCSVSelect,
   onCSVRemove,
-  onCSVProcess
+  onCSVProcess,
+  readOnly = false, // 🆕 Default false - upload adımında düzenlenebilir
+  onStartAnalysis // 🚀 AI Analiz başlatma butonu için
 }: SimpleDocumentListProps) {
   const [isDragging, setIsDragging] = React.useState(false);
   const [previewModal, setPreviewModal] = React.useState<{ fileName: string; content: string } | null>(null);
 
   const handleFileInput = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (readOnly) return;
     const files = Array.from(event.target.files || []);
     if (files.length > 0) {
       onFileSelect(files);
@@ -39,6 +44,7 @@ export function SimpleDocumentList({
   };
 
   const handleCSVInput = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (readOnly) return;
     const files = Array.from(event.target.files || []);
     if (files.length > 0 && onCSVSelect) {
       onCSVSelect(files);
@@ -48,12 +54,14 @@ export function SimpleDocumentList({
 
   // Drag & Drop handlers
   const handleDragEnter = (e: React.DragEvent) => {
+    if (readOnly) return;
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(true);
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
+    if (readOnly) return;
     e.preventDefault();
     e.stopPropagation();
     if (e.currentTarget === e.target) {
@@ -62,11 +70,13 @@ export function SimpleDocumentList({
   };
 
   const handleDragOver = (e: React.DragEvent) => {
+    if (readOnly) return;
     e.preventDefault();
     e.stopPropagation();
   };
 
   const handleDrop = (e: React.DragEvent) => {
+    if (readOnly) return;
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
@@ -114,6 +124,26 @@ export function SimpleDocumentList({
       default:
         return <FileText className="w-6 h-6 text-gray-400" />;
     }
+  };
+
+  // 🆕 Dosya formatını otomatik algıla
+  const getFileFormat = (fileName: string): string => {
+    const ext = fileName.toLowerCase().split('.').pop() || '';
+    const formatMap: Record<string, string> = {
+      'pdf': '📄 PDF',
+      'doc': '📝 DOC',
+      'docx': '📝 DOCX',
+      'txt': '📃 TXT',
+      'rtf': '📃 RTF',
+      'html': '🌐 HTML',
+      'json': '🔧 JSON',
+      'csv': '📊 CSV',
+      'jpg': '🖼️ JPG',
+      'jpeg': '🖼️ JPEG',
+      'png': '🖼️ PNG',
+      'gif': '🖼️ GIF',
+    };
+    return formatMap[ext] || `❓ ${ext.toUpperCase()}`;
   };
 
   const getStatusText = (file: FileProcessingStatus) => {
@@ -219,48 +249,56 @@ export function SimpleDocumentList({
       <div className="relative">
         {/* Main Card */}
         <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6">
-          {/* Upload Buttons */}
-          <div className="flex items-center justify-end gap-2 mb-4">
-            <label className="cursor-pointer group/btn" htmlFor="document-file-input">
-              <input
-                id="document-file-input"
-                name="document-files"
-                type="file"
-                multiple
-                accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
-                onChange={handleFileInput}
-                className="hidden"
-                aria-label="PDF, Word veya resim dosyası yükle"
-              />
-              <div className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-blue-600 text-slate-200 rounded-lg transition-all flex items-center gap-2 text-sm font-medium">
-                <Upload className="w-4 h-4" />
-                <span>Belge Ekle</span>
-              </div>
-            </label>
-
-            {onCSVSelect && (
-              <label className="cursor-pointer" htmlFor="csv-file-input">
+          {/* Upload Buttons - Sadece readOnly değilse göster */}
+          {!readOnly && (
+            <div className="flex items-center justify-end gap-2 mb-4">
+              <label className="cursor-pointer group/btn" htmlFor="document-file-input">
                 <input
-                  id="csv-file-input"
-                  name="csv-files"
+                  id="document-file-input"
+                  name="document-files"
                   type="file"
                   multiple
-                  accept=".csv"
-                  onChange={handleCSVInput}
+                  accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt,.json,.html"
+                  onChange={handleFileInput}
                   className="hidden"
-                  aria-label="CSV maliyet dosyası yükle"
+                  aria-label="PDF, Word, TXT, JSON veya resim dosyası yükle"
                 />
-                <div className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-emerald-600 text-slate-200 rounded-lg transition-all flex items-center gap-2 text-sm font-medium">
-                  <span className="text-base">📊</span>
-                  <span>CSV Ekle</span>
+                <div className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-blue-600 text-slate-200 rounded-lg transition-all flex items-center gap-2 text-sm font-medium">
+                  <Upload className="w-4 h-4" />
+                  <span>Belge Ekle</span>
                 </div>
               </label>
-            )}
-          </div>
+
+              {onCSVSelect && (
+                <label className="cursor-pointer" htmlFor="csv-file-input">
+                  <input
+                    id="csv-file-input"
+                    name="csv-files"
+                    type="file"
+                    multiple
+                    accept=".csv,.xls,.xlsx"
+                    onChange={handleCSVInput}
+                    className="hidden"
+                    aria-label="CSV veya Excel maliyet dosyası yükle"
+                  />
+                  <div className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-emerald-600 text-slate-200 rounded-lg transition-all flex items-center gap-2 text-sm font-medium">
+                    <span className="text-base">📊</span>
+                    <span>CSV Ekle</span>
+                  </div>
+                </label>
+              )}
+            </div>
+          )}
 
           {/* File List */}
           <div className="space-y-2">
           {fileStatuses.length === 0 ? (
+            readOnly ? (
+              <div className="text-center py-8 px-6 rounded-xl border border-slate-700 bg-slate-800/20">
+                <FileText className="w-8 h-8 mx-auto text-slate-600 mb-2" />
+                <p className="text-sm text-slate-500">Henüz dosya yüklenmemiş</p>
+              </div>
+            ) : (
             <div 
               className={`
                 text-center py-12 px-6 rounded-xl border-2 border-dashed transition-all
@@ -317,6 +355,7 @@ export function SimpleDocumentList({
                 <span>Çoklu dosya</span>
               </div>
             </div>
+            )
           ) : (
             <AnimatePresence mode="popLayout">
               {fileStatuses.map((file, index) => (
@@ -369,13 +408,20 @@ export function SimpleDocumentList({
                     
                     {/* Dosya Bilgileri */}
                     <div className="flex items-center gap-2 text-xs text-slate-500">
+                      {/* 🆕 Dosya Formatı - Her zaman göster */}
+                      <span className="px-2 py-0.5 bg-slate-700/50 text-slate-300 rounded font-medium">
+                        {getFileFormat(file.fileMetadata.name)}
+                      </span>
+
+                      <span>•</span>
+
                       <span>
-                        {file.fileMetadata.size < 1024 * 1024 
+                        {file.fileMetadata.size < 1024 * 1024
                           ? `${(file.fileMetadata.size / 1024).toFixed(1)} KB`
                           : `${(file.fileMetadata.size / 1024 / 1024).toFixed(2)} MB`
                         }
                       </span>
-                      
+
                       {file.status === 'completed' && file.wordCount && (
                         <>
                           <span>•</span>
@@ -595,6 +641,48 @@ export function SimpleDocumentList({
             <div className="text-sm text-slate-500 font-medium">Tamamlandı</div>
           </div>
         </div>
+      )}
+
+      {/* 🚀 AI Analiz Başlat Butonu - Tüm dosyalar tamamlandığında göster */}
+      {onStartAnalysis && 
+       fileStatuses.length > 0 && 
+       fileStatuses.every(f => f.status === 'completed') && 
+       fileStatuses.some(f => f.extractedText && f.extractedText.trim().length > 0) && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="mt-6 p-6 bg-gradient-to-br from-purple-900/30 to-blue-900/30 border-2 border-purple-600/50 rounded-xl shadow-xl"
+        >
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-gradient-to-br from-purple-500/20 to-blue-500/20 rounded-lg">
+                <svg className="w-8 h-8 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  🎯 Dosyalar Hazır!
+                  <span className="px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded-full">
+                    {fileStatuses.length} dosya
+                  </span>
+                </h3>
+                <p className="text-sm text-slate-400 mt-1">
+                  {fileStatuses.reduce((sum, f) => sum + (f.wordCount || 0), 0).toLocaleString('tr-TR')} kelime • AI analizi için hazır
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={onStartAnalysis}
+              className="px-6 py-3 bg-gradient-to-r from-purple-600 via-purple-500 to-blue-600 hover:from-purple-700 hover:via-purple-600 hover:to-blue-700 text-white rounded-xl font-bold transition-all flex items-center gap-3 shadow-lg hover:shadow-purple-500/50 transform hover:scale-105"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              <span>AI ile Analiz Et</span>
+            </button>
+          </div>
+        </motion.div>
       )}
 
       {/* 🆕 Önizleme Modal */}

@@ -2,14 +2,21 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
-  reactCompiler: true,
+  
+  // ❌ React Compiler KAPALI
+  // reactCompiler: true,
 
-  // Configure API body size limit for file uploads
-  experimental: {
-    serverActions: {
-      bodySizeLimit: '30mb',
+  // ❌ STRICT MODE KAPALI
+  reactStrictMode: false,
+  
+  // ❌ FAST REFRESH TAMAMEN KAPALI - Development experience kötü ama stable
+  ...(process.env.NODE_ENV === 'development' && {
+    experimental: {
+      serverActions: {
+        bodySizeLimit: '30mb',
+      },
     },
-  },
+  }),
 };
 
 export default nextConfig;

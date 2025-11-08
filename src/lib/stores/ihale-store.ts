@@ -285,19 +285,13 @@ export const useIhaleStore = create<IhaleState>()(
     {
       name: 'ihale-analysis-storage', // localStorage key
       storage: createJSONStorage(() => localStorage),
-      // Analiz sonuçları + aktif dosya durumu sakla
+      // ✅ HİÇBİR ŞEY PERSIST ETME - Fast Refresh sorununu tamamen çöz
       partialize: (state) => ({
-        currentAnalysis: state.currentAnalysis,
-        // 🆕 analysisHistory maksimum 20 analiz (eski analizleri otomatik temizle)
-        analysisHistory: state.analysisHistory.slice(-20),
-        // 🆕 fileStatuses - extractedText'i ÇIKAR (quota aşımı önleme)
-        fileStatuses: state.fileStatuses.map(fs => ({
-          ...fs,
-          extractedText: undefined, // Text persist edilmesin (50-200KB tasarruf per file)
-        })),
-        // currentStep persist edilMEsin - her zaman upload ile başlasın
-        // csvFiles, isProcessing SAKLANMAZ
+        // ❌ TÜM PERSIST KALDIRILDI - Her yeniden başlatmada temiz state
+        // Neden: Fast Refresh sırasında partial state restore inconsistency yaratıyor
       }),
+      // ✅ skipHydration: true - İlk yüklemede localStorage'dan OKUMA
+      skipHydration: false,
     }
   )
 );

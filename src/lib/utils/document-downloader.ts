@@ -99,18 +99,33 @@ export async function downloadDocument(
       console.log(`📦 ZIP extract: ${data.files.length} dosya (${elapsed}s)`);
       
       return data.files.map((file: any) => {
+        // 🎯 MIME TYPE FIX: ZIP'ten çıkan dosyalarda da düzelt
+        let mimeType = file.type || 'application/octet-stream';
+        
+        if (mimeType === "" || mimeType === "application/octet-stream") {
+          const ext = (file.name || '').toLowerCase().split('.').pop();
+          if (ext === "pdf") mimeType = "application/pdf";
+          else if (ext === "docx") mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+          else if (ext === "txt") mimeType = "text/plain";
+          else if (ext === "json") mimeType = "text/plain";
+          else if (ext === "csv") mimeType = "text/csv";
+          else if (ext === "html" || ext === "htm") mimeType = "text/html";
+          
+          console.log(`🔧 ZIP dosya MIME düzeltildi: ${file.name} → "${mimeType}"`);
+        }
+        
         const blob = new Blob(
           [Uint8Array.from(atob(file.content), c => c.charCodeAt(0))],
-          { type: file.type || 'application/octet-stream' }
+          { type: mimeType }
         );
 
         return {
           title: file.name,
           url: url,
-          mimeType: file.type || 'application/octet-stream',
+          mimeType: mimeType,
           blob,
           size: file.size || blob.size,
-          type: file.type || 'application/octet-stream',
+          type: mimeType,
           isFromZip: true,
           originalFilename: file.name
         };
@@ -121,18 +136,33 @@ export async function downloadDocument(
     if (data.data) {
       console.log(`✅ İndirildi: ${data.filename} (${elapsed}s)`);
       
+      // 🎯 MIME TYPE FIX: Tek dosyada da düzelt
+      let mimeType = data.mimeType || 'application/octet-stream';
+      
+      if (mimeType === "" || mimeType === "application/octet-stream") {
+        const ext = (data.filename || '').toLowerCase().split('.').pop();
+        if (ext === "pdf") mimeType = "application/pdf";
+        else if (ext === "docx") mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        else if (ext === "txt") mimeType = "text/plain";
+        else if (ext === "json") mimeType = "text/plain";
+        else if (ext === "csv") mimeType = "text/csv";
+        else if (ext === "html" || ext === "htm") mimeType = "text/html";
+        
+        console.log(`🔧 Download MIME düzeltildi: ${data.filename} → "${mimeType}"`);
+      }
+      
       const blob = new Blob(
         [Uint8Array.from(atob(data.data), c => c.charCodeAt(0))],
-        { type: data.mimeType || 'application/octet-stream' }
+        { type: mimeType }
       );
 
       return [{
         title: data.filename,
         url: url,
-        mimeType: data.mimeType || 'application/octet-stream',
+        mimeType: mimeType,
         blob,
         size: blob.size,
-        type: data.mimeType || 'application/octet-stream',
+        type: mimeType,
         isFromZip: false,
         originalFilename: data.filename
       }];

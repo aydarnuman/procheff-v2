@@ -56,10 +56,30 @@ SADECE JSON formatında yanıt ver:
 
     console.log(`📝 [QUICK-DETECT] Gemini yanıtı:`, responseText);
 
-    // JSON parse et
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    // ✅ FIX: Daha tolerant JSON parsing - eksik kapanış parantezi durumu
+    let jsonMatch = responseText.match(/\{[\s\S]*?\}/); // Non-greedy
+    
     if (!jsonMatch) {
-      throw new Error('Gemini JSON döndürmedi');
+      // Fallback: JSON başlangıcı var ama kapanış yok - eksik response
+      const partialMatch = responseText.match(/\{[\s\S]*/);
+      if (partialMatch) {
+        console.warn('⚠️ [QUICK-DETECT] Gemini eksik JSON döndürdü, tamamlanıyor...');
+        // Eksik JSON'u tamamla
+        const incomplete = partialMatch[0].trim();
+        const fixed = incomplete.endsWith('}') ? incomplete : incomplete + '"}'; // Eksik string ve obje kapat
+        try {
+          const parsed = JSON.parse(fixed);
+          if (parsed.belge_turu) {
+            jsonMatch = [fixed]; // Düzeltilmiş JSON'u kullan
+          }
+        } catch (e) {
+          console.error('❌ [QUICK-DETECT] JSON tamamlama başarısız:', e);
+        }
+      }
+      
+      if (!jsonMatch) {
+        throw new Error('Gemini JSON döndürmedi');
+      }
     }
 
     const parsed = JSON.parse(jsonMatch[0]);

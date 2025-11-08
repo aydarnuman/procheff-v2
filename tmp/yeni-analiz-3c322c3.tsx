@@ -28,11 +28,8 @@ import {
   detectDocumentTypeFromFileName,
   getConfidenceScore,
 } from "@/lib/utils/quick-document-detector";
-import { downloadDocument } from "@/lib/utils/document-downloader";
-import { getFromIndexedDB, deleteFromIndexedDB } from '@/lib/utils/indexed-db-storage';
 
 import { Toast } from "@/components/ui/Toast";
-import { ErrorBoundary } from "@/components/providers/ErrorBoundary";
 
 // Types
 interface FileStatus {
@@ -107,7 +104,7 @@ interface DetailedAnalysis {
 }
 
 
-const SSE_HEARTBEAT_MS = 120000; // 2 dakika (OCR gibi uzun işlemler için)
+const SSE_HEARTBEAT_MS = 20000;
 
 const getStageText = (stage: string) => stage;
 const handleDownloadPage = (pageNumber: number) => console.log("download", pageNumber);
@@ -116,18 +113,16 @@ const handleDeletePage = (pageNumber: number) => console.log("delete", pageNumbe
 // === Zustand Store Destructure ===
 export default function Page() {
   return (
-    <ErrorBoundary>
-      <Suspense fallback={
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-center">
-            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-            <p>Yükleniyor...</p>
-          </div>
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+          <p>Yükleniyor...</p>
         </div>
-      }>
-        <PageInner />
-      </Suspense>
-    </ErrorBoundary>
+      </div>
+    }>
+      <PageInner />
+    </Suspense>
   );
 }
 
@@ -164,10 +159,6 @@ function PageInner() {
   const [retryCount, setRetryCount] = useState(0); // 🆕 Retry count for error recovery
   const [useOCR, setUseOCR] = useState(true); // Default to true for OCR
   const [sessionLoadProgress, setSessionLoadProgress] = useState(0); // 🆕 Session data loading progress
-  
-  // ✅ FIX: File Queue State (sıralı işleme için)
-  const [fileQueue, setFileQueue] = useState<File[]>([]); // Bekleyen dosyalar
-  const [currentlyProcessing, setCurrentlyProcessing] = useState<File | null>(null); // Şu anda işlenen
 
   // Refs
   const processingQueueRef = useRef<Set<string>>(new Set());
@@ -175,16 +166,15 @@ function PageInner() {
   const uploadedFilesRef = useRef<File[]>([]);
   const sseHeartbeatRef = useRef<NodeJS.Timeout | null>(null);
   const sseAbortRef = useRef<AbortController | null>(null);
-  const indexedDBProcessedRef = useRef<boolean>(false); // 🆕 IndexedDB işlendi mi?
 
-  // Steps configuration - useMemo for performance
-  const steps = React.useMemo(() => [
+  // Steps configuration
+  const steps = [
     { id: "upload", label: "Yükle", icon: Upload },
-    { id: "processing", label: "İşle", icon: FileText },
+    { id: "processing", label: "Sayfalara Böl", icon: FileText },
     { id: "view", label: "Görüntüle", icon: Eye },
-    { id: "analyze", label: "Analiz", icon: Brain },
+    { id: "analyze", label: "AI Analizi", icon: Brain },
     { id: "results", label: "Sonuç", icon: CheckCircle },
-  ], []);
+  ];
 
   // Toast function (assuming it's from a context or hook)
   const setToast = useCallback((toast: { message: string; type: "success" | "error" | "info" }) => {
@@ -193,12 +183,7 @@ function PageInner() {
   }, []);
 
   // 🆕 İlerleme mesajlarını iyileştir
-  const getProgressMessage = useCallback((stage?: string, details?: string, elapsed?: string) => {
-    // Defensive: stage undefined olabilir
-    if (!stage) {
-      return details ? `⏳ ${details}` : '⏳ İşleniyor...';
-    }
-
+  const getProgressMessage = useCallback((stage: string, details?: string, elapsed?: string) => {
     const baseMessages: Record<string, string> = {
       'extracting': '📄 Döküman metni çıkarılıyor',
       'analyzing': '🧠 AI analizi yapılıyor',
@@ -217,171 +202,105 @@ function PageInner() {
     return `${friendlyStage}${detailInfo}${timeInfo}`;
   }, []);
 
-  // 🆕 Sayfa direkt açıldığında (from parametresi yoksa) eski analizi temizle
+  // 🆕 İhale robotundan gelen sessionStorage verilerini işle
   useEffect(() => {
-    if (!from && currentAnalysis) {
-      console.log('🧹 Sayfa manuel açıldı, eski analiz temizleniyor...');
-      setCurrentAnalysis(null);
-      // currentStep zaten 'upload' olarak başlıyor, tekrar set etmeye gerek yok
-    }
-  }, [from, currentAnalysis, setCurrentAnalysis]); // Dependencies ekledik
+    if (from && from.startsWith('ihale_docs_') && currentStep === 'upload') {
+      console.log('🎯 İhale robotundan gelen veri tespit edildi, sessionStorage\'dan yükleniyor...');
 
-  // 🆕 İhale robotundan gelen IndexedDB verilerini işle
-  useEffect(() => {
-    console.log('🔍 useEffect çalıştı - from parametresi:', from);
-    console.log('🔍 currentStep:', currentStep);
-    console.log('🔍 indexedDBProcessedRef:', indexedDBProcessedRef.current);
-    
-    // ⚠️ Bir kez çalışmalı, tekrar tetiklenmemeli
-    if (from && from.startsWith('ihale_docs_') && currentStep === 'upload' && !indexedDBProcessedRef.current) {
-      console.log('🎯 İhale robotundan gelen veri tespit edildi, IndexedDB\'den yükleniyor...');
+      try {
+        const sessionData = sessionStorage.getItem(from);
+        if (sessionData) {
+          const payload = JSON.parse(sessionData);
+          console.log('📦 Session data bulundu:', {
+            hasDocuments: !!payload.documents,
+            hasText: !!payload.text,
+            documentCount: payload.documents?.length || 0
+          });
 
-      // 🔒 İşlem başlatıldı, tekrar çalışmasın
-      indexedDBProcessedRef.current = true;
+          // Dökümanları işle
+          if (payload.documents && payload.documents.length > 0) {
+            console.log('📄 Dökümanlar yükleniyor...');
+            setSessionLoadProgress(10); // Başlangıç progress
 
-      // 🧹 Önce mevcut state'i temizle (yeni analiz için)
-      console.log('🧹 Eski state temizleniyor...');
-      clearFileStatuses();
-      uploadedFilesRef.current = [];
-      fileObjectsMapRef.current.clear();
-      setSessionLoadProgress(1); // 🆕 Loading indicator'ı göster (0 yerine 1)
+            // Her döküman için file status oluştur
+            payload.documents.forEach((doc: any, index: number) => {
+              if (doc.blob) {
+                // Base64 blob varsa File objesi oluştur
+                const byteCharacters = atob(doc.blob.split(',')[1]);
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                  byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                const file = new File([byteArray], doc.title || `document_${index}.pdf`, {
+                  type: doc.mimeType || 'application/pdf'
+                });
 
-      // async işlem - IndexedDB'den veri al
-      (async () => {
-        try {
-          const payload = await getFromIndexedDB<{
-            title: string;
-            text: string;
-            documents: any[];
-            size: number;
-            timestamp: number;
-          }>(from);
-          
-          console.log('📦 IndexedDB\'den okunan data:', payload ? 'VAR' : 'YOK');
-        
-          if (payload) {
-            console.log('📦 IndexedDB data bulundu:', {
-              hasDocuments: !!payload.documents,
-              hasText: !!payload.text,
-              documentCount: payload.documents?.length || 0,
-              size: `${(payload.size / (1024 * 1024)).toFixed(2)} MB`
+                // File status ekle
+                addFileStatus({
+                  fileMetadata: {
+                    name: file.name,
+                    size: file.size,
+                    type: file.type,
+                    lastModified: Date.now(),
+                  },
+                  status: 'completed',
+                  extractedText: '', // Şimdilik boş, sonra doldurulacak
+                  wordCount: 0,
+                  detectedType: doc.type || 'ihale_dokuman',
+                  detectedTypeConfidence: 1.0,
+                  progress: '✅ Hazır'
+                });
+
+                // File'ı uploadedFilesRef'e ekle
+                uploadedFilesRef.current.push(file);
+
+                // Progress güncelle
+                const progress = Math.round(((index + 1) / payload.documents.length) * 80) + 10;
+                setSessionLoadProgress(progress);
+                console.log(`📄 [${index + 1}/${payload.documents.length}] ${file.name} yüklendi (${progress}%)`);
+              }
             });
 
-            // Dökümanları işle
-            if (payload.documents && payload.documents.length > 0) {
-              const totalDocs = payload.documents.length;
-              const totalSize = payload.documents.reduce((sum, doc) => sum + (doc.size || 0), 0);
-              
-              console.log(`📄 ${totalDocs} döküman yükleniyor... (Toplam: ${(totalSize / (1024 * 1024)).toFixed(2)} MB)`);
-              setSessionLoadProgress(5); // Başlangıç progress
-
-              // Her döküman için file oluştur ve İŞLE
-              for (let index = 0; index < totalDocs; index++) {
-                const doc = payload.documents[index];
-                const docNumber = index + 1;
-                
-                console.log(`📦 [${docNumber}/${totalDocs}] ${doc.title} işleniyor... (${(doc.size / 1024).toFixed(1)} KB)`);
-                
-                if (doc.blob) {
-                  // Blob debug - Blob gerçekten var mı?
-                  console.log(`📦 Blob debug: ${doc.title}`, {
-                    blobSize: doc.blob.size,
-                    blobType: doc.blob.type,
-                    docSize: doc.size,
-                    docMimeType: doc.mimeType
-                  });
-                  
-                  // Blob nesnesi direkt kullanılabilir (IndexedDB Blob'u korur)
-                  const file = new File([doc.blob], doc.title || `document_${index}.pdf`, {
-                    type: doc.mimeType || 'application/pdf'
-                  });
-                  
-                  // File debug - File oluşturuldu mu?
-                  console.log(`✅ File oluşturuldu: ${file.name}`, {
-                    fileSize: file.size,
-                    fileType: file.type,
-                    fileName: file.name
-                  });
-
-                  // 🆕 File status'u PENDING olarak ekle
-                  addFileStatus({
-                    fileMetadata: {
-                      name: file.name,
-                      size: file.size,
-                      type: file.type,
-                      lastModified: Date.now(),
-                    },
-                    status: 'pending',
-                    progress: `⏳ Sırada bekliyor... (${docNumber}/${totalDocs})`,
-                    detectedType: doc.type || 'ihale_dokuman',
-                    detectedTypeConfidence: 1.0,
-                  });
-
-                  // File'ı Map'e ekle (processSingleFile için gerekli)
-                  fileObjectsMapRef.current.set(file.name, file);
-                  
-                  // File'ı uploadedFilesRef'e ekle
-                  uploadedFilesRef.current.push(file);
-
-                  // Progress güncelle
-                  const progress = Math.round(((docNumber) / totalDocs) * 15) + 5; // 5-20% arası
-                  setSessionLoadProgress(progress);
-                  
-                  const sizeInMB = (file.size / (1024 * 1024)).toFixed(2);
-                  console.log(`📋 [${docNumber}/${totalDocs}] ${file.name} kuyruğa eklendi (${sizeInMB} MB) - Progress: ${progress}%`);
-                } else {
-                  console.warn(`⚠️ [${docNumber}/${totalDocs}] ${doc.title} - Blob bulunamadı, atlanıyor...`);
-                }
-              }
-
-              setSessionLoadProgress(90); // Dosyalar hazırlandı
-              console.log(`✅ ${totalDocs} döküman kuyruğa eklendi (PENDING durumunda)`);
-              console.log(`� Kullanıcı "İşle" butonuna basarak dosyaları işleyebilir`);
-              
-              // ⚠️ OTOMATİK PROCESSING KALDIRILDI - Kullanıcı manuel başlatacak
-              // Dosyalar artık "pending" durumunda ve kullanıcı her dosya için "İşle" butonuna basacak
-              
-              // Progress'i tamamla
-              setSessionLoadProgress(100);
-              setTimeout(() => {
-                setSessionLoadProgress(0);
-                console.log('🧹 Session loading progress temizlendi - Dosyalar hazır!');
-              }, 1000);
-            }
-
-            // Metin varsa localStorage'a kaydet (eski sistem uyumluluğu için)
-            if (payload.text) {
-              localStorage.setItem('ihale_document_text', payload.text);
-              console.log('📝 Metin localStorage\'a kaydedildi');
-            }
-
-            // Tender başlığını sakla
-            if (payload.title) {
-              console.log('🏷️ Tender başlığı:', payload.title);
-              // TODO: Tender title state'i eklenebilir
-            }
-
-            // IndexedDB data'yı temizle (bir kez kullanıldı)
-            await deleteFromIndexedDB(from);
-
-            // ✅ URL temizleme YAPMA - router karışıyor
-            // window.history.replaceState çağırmıyoruz artık
-            
-            console.log('✅ İhale robotu verileri başarıyla yüklendi, otomatik processing yapıldı');
-
-          } else {
-            console.warn('⚠️ IndexedDB data bulunamadı:', from);
-            setSessionLoadProgress(0);
+            setSessionLoadProgress(90); // Döküman yükleme tamamlandı
           }
 
-        } catch (error) {
-          console.error('❌ IndexedDB data işlenirken hata:', error);
-          // Hata durumunda normal upload'a dön
+          // Metin varsa localStorage'a kaydet (eski sistem uyumluluğu için)
+          if (payload.text) {
+            localStorage.setItem('ihale_document_text', payload.text);
+            console.log('📝 Metin localStorage\'a kaydedildi');
+            setSessionLoadProgress(95);
+          }
+
+          // Tender başlığını sakla
+          if (payload.tenderTitle) {
+            console.log('🏷️ Tender başlığı:', payload.tenderTitle);
+            // TODO: Tender title state'i eklenebilir
+          }
+
+          // Session data'yı temizle (bir kez kullanıldı)
+          sessionStorage.removeItem(from);
+
+          // View adımına geç
+          setCurrentStep('view');
+          setSessionLoadProgress(100); // Tamamlandı
+          console.log('✅ İhale robotu verileri başarıyla yüklendi, view adımına geçiliyor');
+
+        } else {
+          console.warn('⚠️ Session data bulunamadı:', from);
+          // Fallback: normal upload adımına dön
+          setCurrentStep('upload');
           setSessionLoadProgress(0);
         }
-      })();
+
+      } catch (error) {
+        console.error('❌ Session data işlenirken hata:', error);
+        // Hata durumunda normal upload'a dön
+        setCurrentStep('upload');
+        setSessionLoadProgress(0);
+      }
     }
-  }, [from, currentStep]); // ✅ Sadece from ve currentStep - store fonksiyonları stable
+  }, [from, currentStep, addFileStatus, setCurrentStep]);
 
   // 🆕 Klavye kısayolları
   useEffect(() => {
@@ -496,21 +415,22 @@ function PageInner() {
           updateFileStatus(filename, { status: 'processing', progress: '📥 İndiriliyor...' });
 
           try {
-            // 🔐 Merkezi download utility kullan (auth otomatiği)
-            const downloadedFiles = await downloadDocument(url);
-            
-            if (downloadedFiles.length === 0) {
-              throw new Error('Dosya indirilemedi');
+            // Dosyayı proxy API ile indir (CORS bypass)
+            const downloadUrl = `/api/ihale-scraper/download-document?url=${encodeURIComponent(url)}`;
+            const response = await fetch(downloadUrl);
+
+            if (!response.ok) {
+              const errorText = await response.text();
+              throw new Error(`HTTP ${response.status}: ${errorText}`);
             }
 
-            // İlk dosyayı al (ZIP ise zaten extract edilmiş olacak)
-            const firstFile = downloadedFiles[0];
-            const file = new File([firstFile.blob], firstFile.title, { type: firstFile.mimeType });
+            const blob = await response.blob();
+            const file = new File([blob], filename, { type: fileStatus.fileMetadata.type || blob.type });
 
             // File objesini Map'e ekle
             fileObjectsMapRef.current.set(filename, file);
 
-            console.log(`✅ ${filename} indirildi (${(firstFile.size / 1024).toFixed(2)} KB)`);
+            console.log(`✅ ${filename} indirildi (${(blob.size / 1024).toFixed(2)} KB)`);
 
             // Şimdi bu dosyayı normal şekilde işle
             await processSingleFile(file);
@@ -524,23 +444,23 @@ function PageInner() {
     }
   }, [fileStatuses, currentStep]);
 
-  // ❌ OTOMATİK ANALİZ KALDIRILDI - Kullanıcı "AI ile Analiz Et" butonuna basacak
-  // useEffect(() => {
-  //   // Sadece upload adımındayken çalışsın
-  //   if (currentStep !== 'upload') return;
+  // 🆕 Otomatik önizleme geçişi: Tüm dosyalar işlendiğinde
+  useEffect(() => {
+    // Sadece upload adımındayken çalışsın
+    if (currentStep !== 'upload') return;
 
-  //   const allCompleted = fileStatuses.every(fs => fs.status === 'completed' || fs.status === 'error');
-  //   const hasCompletedFiles = fileStatuses.some(fs => fs.status === 'completed');
-  //   const noMoreProcessing = processingQueueRef.current.size === 0;
+    const allCompleted = fileStatuses.every(fs => fs.status === 'completed' || fs.status === 'error');
+    const hasCompletedFiles = fileStatuses.some(fs => fs.status === 'completed');
+    const noMoreProcessing = processingQueueRef.current.size === 0;
 
-  //   if (allCompleted && hasCompletedFiles && noMoreProcessing && fileStatuses.length > 0) {
-  //     console.log('✨ Tüm dosyalar işlendi, otomatik önizlemeye geçiliyor...');
-  //     // Kısa bir gecikme ile, böylece UI güncellemeleri tamamlanır
-  //     setTimeout(() => {
-  //       handleProcessAllFiles();
-  //     }, 800);
-  //   }
-  // }, [fileStatuses, currentStep]); // fileStatuses her değiştiğinde kontrol et
+    if (allCompleted && hasCompletedFiles && noMoreProcessing && fileStatuses.length > 0) {
+      console.log('✨ Tüm dosyalar işlendi, otomatik önizlemeye geçiliyor...');
+      // Kısa bir gecikme ile, böylece UI güncellemeleri tamamlanır
+      setTimeout(() => {
+        handleProcessAllFiles();
+      }, 800);
+    }
+  }, [fileStatuses, currentStep]); // fileStatuses her değiştiğinde kontrol et
 
   // 🆕 Büyük dosyalar için chunk'lı yükleme
   const loadFileChunked = useCallback(async (file: File, chunkSize: number = 1024 * 1024): Promise<string> => {
@@ -579,10 +499,8 @@ function PageInner() {
     return fullContent;
   }, []);
 
-  // ✅ FIX: processSingleFile'ı useCallback ile wrap et (dependency olarak kullanılacak)
-  const processSingleFile = useCallback(async (file: File) => {
-    console.log(`🔍 [PROCESS DEBUG] processSingleFile başlatıldı: ${file.name}`);
-    
+  // Functions
+  const processSingleFile = async (file: File) => {
     // Zaten işleniyorsa atla
     if (processingQueueRef.current.has(file.name)) {
       console.warn(`⚠️ ${file.name} zaten işleniyor, atlanıyor...`);
@@ -595,58 +513,59 @@ function PageInner() {
     console.log(`İşleniyor: ${file.name}`);
     const startTime = Date.now();
 
-      // 1️⃣ Yükleme başladı
-    const fileSizeInMB = (file.size / (1024 * 1024)).toFixed(2);
+    // 1️⃣ Yükleme başladı
     updateFileStatus(file.name, {
       status: 'processing',
-      progress: `📤 Dosya yükleniyor... (${fileSizeInMB} MB)`
+      progress: '📤 Dosya yükleniyor...'
     });
-    console.log(`📤 ${file.name} yüklemeye başlandı (${fileSizeInMB} MB)`);    try {
-      // 🆕 TXT/JSON/CSV dosyaları için özel işlem
+
+    try {
+      // 🆕 TXT/JSON/CSV dosyaları için özel işlem (her biri farklı format)
       const fileName = file.name.toLowerCase();
       const isTxtFile = fileName.endsWith('.txt');
       const isJsonFile = fileName.endsWith('.json');
       const isCsvFile = fileName.endsWith('.csv') || fileName.endsWith('.xls') || fileName.endsWith('.xlsx');
 
-      // ✅ FIX: TXT ve JSON dosyalarını da API'ye gönder (AI analizi için)
-      // CSV hariç - CSV zaten ayrı CSV parser'dan geçiyor
-      if (isCsvFile) {
-        // CSV için eski akış devam ediyor (chunk'lı okuma)
+      if (isTxtFile || isJsonFile || isCsvFile) {
         // 🆕 Büyük dosyalar için chunk'lı yükleme kullan
         const rawContent = await loadFileChunked(file);
-        let fileType = 'CSV/Excel';
-        let extractedText = rawContent; // Default olarak ham içerik
+        let fileType = '';
 
-        // 📊 CSV/Excel - Tablo verisi (olduğu gibi sakla)
-        // ProCheff CSV export formatını kontrol et
-        if (rawContent.includes('İHALE DETAY RAPORU') || rawContent.includes('Alan,Değer')) {
-          console.log('📊 ProCheff CSV export formatı algılandı');
-          fileType = 'CSV (ProCheff Export)';
+        // 📄 TXT - Düz metin
+        if (isTxtFile) {
+          fileType = 'TXT';
         }
 
-        const wordCount = extractedText.split(/\s+/).filter(w => w.length > 0).length;
+        // 📋 JSON - Yapılandırılmış veri (olduğu gibi sakla)
+        else if (isJsonFile) {
+          fileType = 'JSON';
+        }
+
+        // 📊 CSV/Excel - Tablo verisi (olduğu gibi sakla)
+        else if (isCsvFile) {
+          fileType = 'CSV/Excel';
+        }
+
+        const wordCount = rawContent.split(/\s+/).filter(w => w.length > 0).length;
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
-        // Parsed içeriği sakla
+        // Ham içeriği olduğu gibi sakla - format dönüşümü yok!
         updateFileStatus(file.name, {
           status: 'completed',
           progress: `✅ Tamamlandı - ${fileType} (${wordCount} kelime, ${elapsed}s)`,
           progressPercentage: 100,
           wordCount: wordCount,
-          extractedText: extractedText  // Parsed veya ham içerik
+          extractedText: rawContent  // Ham içerik, format korunuyor
         });
 
         console.log(`✅ ${file.name} tamamlandı - Format: ${fileType} (${wordCount} kelime)`);
-        console.log(`📄 ${file.name} Önizleme (ilk 500 karakter):`, extractedText.slice(0, 500));
+        console.log(`📄 ${file.name} Önizleme (ilk 500 karakter):`, rawContent.slice(0, 500));
 
         processingQueueRef.current.delete(file.name);
         return;
       }
 
-      // TXT ve JSON dosyaları artık API'ye gönderiliyor (AI analizi için)
-      console.log(`📤 ${file.name} API'ye gönderiliyor (format: ${isTxtFile ? 'TXT' : isJsonFile ? 'JSON' : 'UNKNOWN'})`);
-
-      // PDF/DOC/TXT/JSON dosyaları için normal API akışı
+      // PDF/DOC dosyaları için normal OCR akışı
       const formData = new FormData();
       formData.append("file0", file);
       formData.append("fileCount", "1");
@@ -654,26 +573,13 @@ function PageInner() {
 
       // 2️⃣ Server'a gönderiliyor
       updateFileStatus(file.name, {
-        progress: `🚀 Server'a gönderiliyor... (${fileSizeInMB} MB)`,
-        progressPercentage: 5
+        progress: '🚀 Server\'a gönderiliyor...'
       });
-      console.log(`🚀 ${file.name} API'ye POST ediliyor...`);
-      console.log(`📊 FormData hazırlandı: file=${file.name}, size=${file.size}, useOCR=${useOCR}`);
 
-      let response: Response;
-      try {
-        console.log(`🌐 fetch() başlatılıyor: /api/upload`);
-        response = await fetch("/api/upload", {
-          method: "POST",
-          body: formData,
-        });
-        console.log(`✅ fetch() tamamlandı: ${response.status} ${response.statusText}`);
-      } catch (fetchError) {
-        console.error(`❌ fetch() HATASI:`, fetchError);
-        throw new Error(`Network hatası: ${fetchError instanceof Error ? fetchError.message : 'Bilinmeyen hata'}`);
-      }
-
-      console.log(`📡 ${file.name} - Server response: ${response.status} ${response.statusText}`);
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
@@ -727,34 +633,16 @@ function PageInner() {
           if (data.type === 'progress') {
             const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
             const pct = Math.max(0, Math.min(100, Number(data.progress) || 0));
-            const friendlyMessage = getProgressMessage(data.stage, data.details, elapsed);
-            
-            // 🆕 File status'u güncelle (streaming progress)
-            updateFileStatus(file.name, {
-              status: 'processing',
-              progress: `${friendlyMessage} - %${pct}`,
-              progressPercentage: pct
-            });
-            
             throttleProgressUpdate(() => {
               setAnalysisProgress(pct);
-              setAnalysisStage(friendlyMessage);
+              setAnalysisStage(getProgressMessage(data.stage, data.details, elapsed));
             });
-            
-            // 🆕 Detaylı progress toast - Her %10'da güncelle
-            if (pct % 10 === 0 || pct === 0 || pct === 25 || pct === 50 || pct === 75 || pct === 100) {
-              const emoji = pct < 30 ? '📄' : pct < 60 ? '🔍' : pct < 90 ? '🧠' : '✅';
-              setToast({ 
-                message: `${emoji} ${friendlyMessage} - %${pct}`, 
-                type: pct >= 100 ? "success" : "info" 
-              });
+            // İsteğe bağlı: ana eşiklerde spam yapmadan bilgi verme
+            if (pct === 0 || pct === 50 || pct === 80) {
+              setToast({ message: `⏳ ${data.stage}${data.details ? ` • ${data.details}` : ''}`, type: "info" });
             }
-            
-            // Console log her progress update'de
-            console.log(`📊 Progress: ${pct}% - ${data.stage} ${data.details || ''} (${elapsed}s)`);
-          } else if (data.type === 'complete' || data.type === 'success') {
-            console.log('🎉 SUCCESS/COMPLETE event alındı:', data);
-            result = data.result || data;
+          } else if (data.type === 'complete') {
+            result = data.result;
             setAnalysisProgress(100);
             const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
             const metadata = data.metadata || {};
@@ -772,23 +660,6 @@ function PageInner() {
             } else {
               setAnalysisStage(`✅ Analiz tamamlandı! (${totalTime}s)`);
             }
-            
-            // 🎉 SUCCESS TOAST
-            setToast({ 
-              message: `✅ ${file.name} başarıyla işlendi! (${totalTime}s)`, 
-              type: "success" 
-            });
-            
-            // 🆕 File status'u "completed" yap
-            const extractedText = result?.extracted_text || result?.text || '';
-            const wordCount = extractedText.split(/\s+/).filter((w: string) => w.length > 0).length || 0;
-            updateFileStatus(file.name, {
-              status: 'completed',
-              progress: `✅ Tamamlandı (${totalTime}s)`,
-              progressPercentage: 100,
-              wordCount: wordCount,
-              extractedText: extractedText
-            });
           } else if (data.type === 'error') {
             throw new Error(data.error || 'Bilinmeyen streaming hatası');
           }
@@ -824,10 +695,9 @@ function PageInner() {
           ...result
         };
       }
-      // ❌ OTOMATİK ANALİZ KALDIRILDI - Sadece metin çıkarma yapılıyor
-      // setCurrentAnalysis(result);
-      // setCurrentStep("results");
-      console.log("=== DOSYA İŞLEME TAMAMLANDI (Analiz için butona bas) ===");
+      setCurrentAnalysis(result);
+      setCurrentStep("results");
+      console.log("=== ANALİZ TAMAMLANDI ===");
     } catch (error) {
       // Handle aborted streaming (manual or heartbeat)
       if ((error as any)?.name === 'AbortError') {
@@ -911,23 +781,8 @@ function PageInner() {
           : "Hata kaydedildi");
 
       setToast({ message: userMessage, type: "error" });
-      
-      // 🆕 Dosya durumunu ERROR olarak güncelle
-      updateFileStatus(file.name, {
-        status: 'error',
-        progress: `❌ Hata: ${errorMessage}`,
-        progressPercentage: 0
-      });
-      
       setCurrentStep("view");
-      
-      // ❌ Hata durumunda progress'i sıfırla
-      setAnalysisProgress(0);
-      setAnalysisStage("");
     } finally {
-      // 🧹 Dosyayı kuyruktan çıkar (hata olsa bile)
-      processingQueueRef.current.delete(file.name);
-      
       if (sseHeartbeatRef.current) {
         clearTimeout(sseHeartbeatRef.current);
         sseHeartbeatRef.current = null;
@@ -936,80 +791,12 @@ function PageInner() {
         sseAbortRef.current = null;
       }
       setIsProcessing(false);
-      // ⚠️ Progress'i sıfırlama - başarılı olduğunda %100'de kalmalı
+      setAnalysisProgress(0);
+      setAnalysisStage("");
     }
-  }, [setCurrentStep, setCurrentAnalysis, setAnalysisProgress, setAnalysisStage, setIsProcessing, setToast, updateFileStatus]);
-  // ☝️ processSingleFile dependencies - tüm state setters ve store actions
+  };
 
-  // ✅ FIX: Queue İşleme Fonksiyonu (sıralı dosya işleme)
-  const processFileQueue = useCallback(async () => {
-    console.log('🔍 [QUEUE DEBUG] processFileQueue çağrıldı');
-    console.log('🔍 [QUEUE DEBUG] currentlyProcessing:', currentlyProcessing?.name);
-    console.log('🔍 [QUEUE DEBUG] fileQueue.length:', fileQueue.length);
-    
-    // Zaten bir dosya işleniyorsa bekle
-    if (currentlyProcessing) {
-      console.log('⏳ Bir dosya zaten işleniyor, sıra bekleniyor...');
-      return;
-    }
-
-    // Kuyrukta dosya yoksa bitir
-    if (fileQueue.length === 0) {
-      console.log('✅ Kuyruk boş, tüm dosyalar işlendi');
-      return;
-    }
-
-    // Kuyruktan ilk dosyayı al
-    const nextFile = fileQueue[0];
-    console.log(`🚀 Kuyruktan alınıyor: ${nextFile.name}`);
-    
-    setCurrentlyProcessing(nextFile);
-    setFileQueue(prev => {
-      console.log('🔍 [QUEUE DEBUG] Kuyruktan çıkarılıyor:', nextFile.name);
-      console.log('🔍 [QUEUE DEBUG] Kalan dosya sayısı:', prev.length - 1);
-      return prev.slice(1);
-    });
-
-    console.log(`🚀 İşleniyor: ${nextFile.name} (Kuyrukta ${fileQueue.length - 1} dosya kaldı)`);
-
-    try {
-      // ✅ Mevcut processSingleFile() fonksiyonunu kullan
-      console.log(`📝 processSingleFile başlatılıyor: ${nextFile.name}`);
-      await processSingleFile(nextFile);
-      
-      console.log(`✅ ${nextFile.name} başarıyla tamamlandı!`);
-    } catch (error) {
-      console.error(`❌ ${nextFile.name} işlenirken hata:`, error);
-      setToast({ 
-        message: `❌ ${nextFile.name} işlenemedi: ${error instanceof Error ? error.message : 'Bilinmeyen hata'}`, 
-        type: "error" 
-      });
-    } finally {
-      console.log(`🧹 ${nextFile.name} için cleanup yapılıyor`);
-      setCurrentlyProcessing(null);
-      
-      // ⚠️ ÖNEMLİ: Sonraki dosyayı işle ama state update'i bekle
-      // setTimeout kullanmak yerine setCurrentlyProcessing(null) sonrası
-      // useEffect otomatik tetiklenecek
-    }
-  }, [fileQueue, currentlyProcessing, processSingleFile, setToast]);
-
-  // ✅ FIX: Queue değiştiğinde otomatik işleme başlat
-  useEffect(() => {
-    console.log('🔍 [QUEUE EFFECT] Triggered - fileQueue.length:', fileQueue.length, 'currentlyProcessing:', currentlyProcessing?.name);
-    
-    if (fileQueue.length > 0 && !currentlyProcessing) {
-      console.log('🎯 [QUEUE EFFECT] Şartlar sağlandı, processFileQueue çağrılıyor');
-      // 500ms delay - API rate limit koruması
-      const timer = setTimeout(() => {
-        processFileQueue();
-      }, 500);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [fileQueue, currentlyProcessing, processFileQueue]);
-
-  const resetProcess = useCallback(() => {
+  const resetProcess = () => {
     // Abort any ongoing streaming and clear heartbeat
     if (sseAbortRef.current) {
       try { sseAbortRef.current.abort(); } catch {}
@@ -1029,10 +816,6 @@ function PageInner() {
     setAutoDeepAnalysisTriggered(false); // Otomatik derin analiz sıfırla
     resetAutoAnalysisPreview(); // 🆕 Auto-analysis preview'ı sıfırla
 
-    // ✅ FIX: Queue temizliği
-    setFileQueue([]);
-    setCurrentlyProcessing(null);
-
     // 🧹 File Map temizliği (memory leak önleme)
     fileObjectsMapRef.current.clear();
 
@@ -1041,7 +824,7 @@ function PageInner() {
       localStorage.removeItem('ihale_document_text');
       console.log('🧹 localStorage temizlendi - yeni analiz için hazır');
     }
-  }, [setCurrentStep, clearFileStatuses, setCurrentAnalysis, setIsProcessing, setAutoDeepAnalysisTriggered, resetAutoAnalysisPreview]);
+  };
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
@@ -1052,16 +835,6 @@ function PageInner() {
     const newFiles: File[] = [];
 
     for (const file of files) {
-      // ⚠️ Dosya boyutu kontrolü
-      if (file.size > maxSize) {
-        setToast({
-          message: `❌ ${file.name} çok büyük! Maksimum dosya boyutu: 50MB`,
-          type: "error"
-        });
-        console.error(`File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
-        continue; // Bu dosyayı atla, diğerlerine devam et
-      }
-
       // Dosya tipi kontrolü - TXT, JSON eklendi
       const isValidType =
         file.type.includes("pdf") ||
@@ -1152,165 +925,44 @@ function PageInner() {
       });
 
       console.log(`✅ ${newFiles.length} dosya pending olarak eklendi (duplikasyon kontrolü ile)`);
-      
-      // ✅ FIX: Dosyaları kuyruğa ekle (otomatik işleme için)
-      setFileQueue(prev => [...prev, ...newFiles]);
-      
-      setToast({ 
-        message: `📋 ${newFiles.length} dosya kuyruğa eklendi. Sırayla işlenecek...`, 
-        type: "info" 
-      });
-      
-      console.log(`📋 Kuyruk güncellendi: ${newFiles.length} yeni dosya (Toplam: ${fileQueue.length + newFiles.length})`);
+      // NOT: Dosyalar PENDING durumunda - kullanıcı "Dosyaları İşle" butonuna basınca işlenecek
     }
 
     // Input'u temizle
     event.target.value = '';
   };
 
-  const handleProcessAllFiles = useCallback(async () => {
-    console.log('🚀 Toplu dosya işleme başlatılıyor...');
-    
-    // Pending durumundaki tüm dosyaları bul
-    const pendingFiles = fileStatuses.filter(fs => fs.status === 'pending');
-    
-    if (pendingFiles.length === 0) {
-      console.log('✅ İşlenecek dosya yok, view adımına geçiliyor...');
-      setCurrentStep('view');
-      return;
-    }
-
-    console.log(`📦 ${pendingFiles.length} dosya işlenecek...`);
-
-    // ✅ FIX: Dosyaları kuyruğa ekle (sıralı işleme için - PARALEL ÇAKIŞMA YOK!)
-    const filesToQueue: File[] = [];
-    
-    // Her dosya için File objesini Map'ten al
-    for (const fileStatus of pendingFiles) {
-      const fileName = fileStatus.fileMetadata.name;
-      const fileObj = fileObjectsMapRef.current.get(fileName);
-      
-      if (!fileObj) {
-        console.error(`❌ File objesi bulunamadı: ${fileName}`);
-        updateFileStatus(fileName, {
-          status: 'error',
-          progress: '❌ Dosya yüklenemedi (File objesi yok)'
-        });
-        continue;
-      }
-
-      filesToQueue.push(fileObj);
-    }
-
-    // Kuyruğa ekle - processFileQueue otomatik başlatacak (useEffect)
-    setFileQueue(prev => [...prev, ...filesToQueue]);
-    
-    setToast({ 
-      message: `📋 ${filesToQueue.length} dosya kuyruğa eklendi. Sırayla işlenecek...`, 
-      type: "info" 
-    });
-    
-    console.log(`📋 ${filesToQueue.length} dosya kuyruğa eklendi (otomatik sıralı işleme başlayacak)`);
-    
-    // View adımına geç - dosyalar işlenirken kullanıcı görebilsin
+  const handleProcessAllFiles = () => {
+    console.log('🔄 Tüm dosyalar işlendi, view adımına geçiliyor...');
     setCurrentStep('view');
-  }, [fileStatuses, setCurrentStep]);
+  };
 
   return (
-<div className="min-h-screen bg-slate-950 p-4">
-  <div className="max-w-7xl mx-auto space-y-4">
-    {/* Header - Modern Dark Compact */}
+<div className="min-h-screen bg-platinum-900 p-6">
+  <div className="max-w-6xl mx-auto space-y-8">
+    {/* Header - Sadece results dışında göster */}
     {currentStep !== "results" && (
-      <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800">
-        {/* Dot Pattern Background */}
-        <div className="absolute inset-0 opacity-20" style={{
-          backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(148, 163, 184, 0.15) 1px, transparent 0)',
-          backgroundSize: '24px 24px'
-        }}></div>
-        
-        <div className="relative px-6 py-4">
-          <div className="flex items-center justify-between">
-            {/* Left: Title */}
-            <div className="flex items-center gap-4">
-              <div className="relative">
-                <div className="absolute inset-0 bg-blue-600/20 rounded-lg blur-lg"></div>
-                <div className="relative p-2.5 bg-gradient-to-br from-slate-800 to-slate-900 rounded-lg border border-slate-700">
-                  <Brain className="w-5 h-5 text-blue-400" />
-                </div>
-              </div>
-              <div>
-                <h1 className="text-lg font-black text-white tracking-tight">İhale Şartname Analizi</h1>
-                <p className="text-xs text-slate-500 mt-0.5">PDF • Word • TXT • JSON • Görsel • AI Destekli</p>
-              </div>
-            </div>
-            
-            {/* Right: AI Status */}
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 border border-slate-700 rounded-full">
-              <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></div>
-              <span className="text-xs text-slate-400 font-medium">Claude AI</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    )}
+      <div className="text-center space-y-3">
+        <h1 className="text-3xl font-bold text-surface-primary">
+          İhale Şartname Analizi
+        </h1>
+        <p className="text-surface-secondary">
+          PDF, Word, TXT, JSON, PNG, JPG dosyaları yükleyip AI ile analiz edin
+        </p>
 
-    {/* Progress Steps - Compact Horizontal Only */}
-    {currentStep !== "results" && (
-      <div className="w-full">
-        <div className="flex items-center justify-center gap-3 px-4 py-3 bg-slate-900/50 border border-slate-800 rounded-xl">
-          {steps.map((step, index) => {
-            const StepIcon = step.icon;
-            const isActive = currentStep === step.id;
-            const isCompleted =
-              steps.findIndex((s) => s.id === currentStep) > index;
-
-            return (
-              <React.Fragment key={step.id}>
-                <div
-                  className={`relative flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all duration-300 ${
-                    isActive
-                      ? "border-blue-600 bg-blue-600/10 shadow-lg shadow-blue-600/20"
-                      : isCompleted
-                      ? "border-green-600 bg-green-600/10"
-                      : "border-slate-700 bg-slate-800/50"
-                  }`}
-                >
-                  <StepIcon
-                    className={`w-4 h-4 ${
-                      isActive
-                        ? "text-blue-400"
-                        : isCompleted
-                        ? "text-green-400"
-                        : "text-slate-500"
-                    }`}
-                  />
-                  <span className={`text-xs font-medium ${
-                    isActive
-                      ? "text-white"
-                      : isCompleted
-                      ? "text-green-300"
-                      : "text-slate-500"
-                  }`}>
-                    {step.label}
-                  </span>
-                </div>
-                
-                {/* Separator Line */}
-                {index < steps.length - 1 && (
-                  <div className={`h-px w-8 ${
-                    isCompleted ? "bg-green-600" : "bg-slate-700"
-                  }`}></div>
-                )}
-              </React.Fragment>
-            );
-          })}
+        {/* AI Status */}
+        <div className="flex items-center justify-center space-x-2 mt-4">
+          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+          <span className="text-surface-secondary text-sm">
+            Claude AI Aktif
+          </span>
         </div>
       </div>
     )}
 
     {/* Progress Steps - Sadece results dışında göster */}
     {currentStep !== "results" && (
-      <div className="w-full max-w-4xl mx-auto px-4 hidden">
+      <div className="w-full max-w-4xl mx-auto px-4">
         {/* Desktop: Horizontal steps */}
         <div className="hidden md:flex items-center justify-center space-x-8">
           {steps.map((step, index) => {
@@ -1428,160 +1080,10 @@ function PageInner() {
           })}
         </div>
       </div>
-    )}
-
-    {/* Content Area */}
-    <AnimatePresence mode="sync">
-      {/* BASİT LİSTE - MODAL YOK! - Her zaman görünür */}
-      <SimpleDocumentList
-        key="document-list"
-        fileStatuses={fileStatuses}
-        csvFiles={csvFiles}
-        readOnly={currentStep !== 'upload'}
-        onStartAnalysis={() => {
-          // 🚀 AI Analiz başlat
-          console.log('🚀 AI Analiz başlatılıyor...');
-          handleProcessAllFiles(); // ✅ Direkt analizi başlat
-        }}
-        onFileSelect={async (files) => {
-          // Dosyaları pending olarak ekle + HIZLI TESPİT!
-          for (const file of files) {
-            // Duplicate check
-            if (fileStatuses.some(fs => fs.fileMetadata.name === file.name)) {
-              console.warn(`⚠️ ${file.name} zaten listede!`);
-              continue;
-            }
-
-            // File objesini Map'e ekle
-            fileObjectsMapRef.current.set(file.name, file);
-
-            // 1) Önce dosya isminden hızlı tahmin
-            const quickGuess = detectDocumentTypeFromFileName(file.name);
-            const quickConfidence = getConfidenceScore(quickGuess, file.name);
-
-            // 🆕 2a) TXT/JSON/CSV dosyaları için hemen preview oku
-            let textPreview = '';
-            const isTextBased = file.name.toLowerCase().endsWith('.txt') || 
-                               file.name.toLowerCase().endsWith('.json') || 
-                               file.name.toLowerCase().endsWith('.csv');
-            
-            if (isTextBased && file.size < 100 * 1024) { // 100KB'dan küçükse
-              try {
-                const content = await file.text();
-                textPreview = content.slice(0, 500); // İlk 500 karakter
-              } catch (error) {
-                console.warn(`Preview okunamadı ${file.name}:`, error);
-              }
-            }
-
-            // 2) Store'a ekle
-            addFileStatus({
-              fileMetadata: {
-                name: file.name,
-                size: file.size,
-                type: file.type,
-                lastModified: file.lastModified,
-              },
-              detectedType: quickGuess,
-              detectedTypeConfidence: quickConfidence,
-              status: 'pending',
-              progress: 'Dosya eklendi',
-              wordCount: textPreview ? textPreview.split(/\s+/).length : undefined,
-            });
-
-            console.log(`✅ ${file.name} eklendi - Hızlı tahmin: ${quickGuess} (${Math.round(quickConfidence * 100)}%)`);
-          }
-        }}
-        onFileRemove={(fileName) => {
-          removeFileStatus(fileName);
-        }}
-        onFileProcess={async (fileName) => {
-          // İŞLE butonuna basınca işle
-          const fileObject = fileObjectsMapRef.current.get(fileName);
-
-          if (!fileObject) {
-            console.error(`❌ ${fileName} bulunamadı!`);
-            updateFileStatus(fileName, {
-              status: 'error',
-              progress: '❌ Dosya bulunamadı (File objesi yok)'
-            });
-            return;
-          }
-
-          await processSingleFile(fileObject);
-        }}
-        onCSVSelect={async (files) => {
-          // CSV dosyalarını pending olarak ekle
-          for (const file of files) {
-            if (!file.name.toLowerCase().endsWith('.csv') && 
-                !file.name.toLowerCase().endsWith('.xls') && 
-                !file.name.toLowerCase().endsWith('.xlsx')) {
-              console.warn(`⚠️ ${file.name} CSV/Excel dosyası değil!`);
-              continue;
-            }
-
-            // Duplicate check
-            if (csvFiles.some(csv => csv.fileMetadata.name === file.name)) {
-              console.warn(`⚠️ ${file.name} zaten CSV listesinde!`);
-              continue;
-            }
-
-            // File objesini Map'e ekle
-            fileObjectsMapRef.current.set(file.name, file);
-
-            // Store'a ekle
-            addCSVFile({
-              fileMetadata: {
-                name: file.name,
-                size: file.size,
-                type: file.type,
-                lastModified: file.lastModified,
-              },
-              status: 'pending',
-            });
-
-            console.log(`✅ ${file.name} CSV olarak eklendi`);
-          }
-        }}
-        onCSVRemove={(fileName) => {
-          removeCSVFile(fileName);
-        }}
-        onCSVProcess={async (fileName) => {
-          // CSV İŞLE butonuna basınca işle
-          const fileObject = fileObjectsMapRef.current.get(fileName);
-
-          if (!fileObject) {
-            console.error(`❌ ${fileName} CSV dosyası bulunamadı!`);
-            return;
-          }
-
-          // CSV işleme
-          try {
-            updateCSVFile(fileName, { status: 'processing' });
-            console.log(`📊 CSV dosyası işleniyor: ${fileName}`);
-
-            const analysis = await CSVParser.parseFile(fileObject);
-
-            console.log(`✅ CSV analizi tamamlandı:`, {
-              items: analysis.summary.total_items,
-              total: analysis.summary.total_cost,
-              confidence: analysis.confidence
-            });
-
-            updateCSVFile(fileName, { status: 'completed', analysis });
-          } catch (error) {
-            console.error(`❌ CSV işleme hatası (${fileName}):`, error);
-            updateCSVFile(fileName, {
-              status: 'error',
-              error: error instanceof Error ? error.message : 'Bilinmeyen hata'
-            });
-          }
-        }}
-      />
-
+    )}    {/* Content Area */}
+    <AnimatePresence mode="wait">
       {currentStep === "upload" && (
         <motion.div
-          key="upload-step"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -20 }}
@@ -1616,84 +1118,448 @@ function PageInner() {
             </motion.div>
           )}
 
-          {/* Eğer önceki analiz varsa, bilgilendirme banner'ı göster */}
-          {currentAnalysis && (
-            <motion.div
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 mb-6"
-            >
-              <div className="flex items-start gap-3">
-                <div className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5">ℹ️</div>
-                <div className="flex-1">
-                  <p className="text-sm text-blue-300">
-                    Daha önce tamamlanmış bir analiz var. Yeni bir analiz başlatmak için aşağıdan dosyalarınızı yükleyin.
-                  </p>
-                  <button
-                    onClick={() => setCurrentStep("results")}
-                    className="mt-2 text-xs text-blue-400 hover:text-blue-300 underline"
-                  >
-                    Önceki analiz sonuçlarını görüntüle →
-                  </button>
+          {/* Eğer analiz tamamlanmışsa sadece özet göster */}
+          {currentAnalysis ? (
+            <div className="bg-gradient-to-r from-green-500/20 to-blue-500/20 rounded-2xl p-8 border border-green-500/30">
+              <div className="flex items-start justify-between mb-6">
+                <div className="flex items-center space-x-3">
+                  <CheckCircle className="w-8 h-8 text-green-400" />
+                  <div>
+                    <h3 className="text-xl font-bold text-surface-primary">
+                      Analiz Tamamlandı!
+                    </h3>
+                    <p className="text-surface-secondary text-sm">
+                      İhale analizi başarıyla tamamlandı
+                    </p>
+                  </div>
                 </div>
               </div>
-            </motion.div>
-          )}
 
-              {/* ❌ DUPLICATE REMOVED - Bu component yukarıda zaten render ediliyor (satır 1414) */}
+              {/* Hızlı Özet - Modern Animated Stats */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                {[
+                  { label: "Kurum", value: currentAnalysis.extracted_data.kurum || "Belirtilmemiş", icon: FileText },
+                  { label: "İhale Türü", value: currentAnalysis.extracted_data.ihale_turu || "Belirtilmemiş", icon: Brain },
+                  { label: "Tahmini Bütçe", value: currentAnalysis.extracted_data.tahmini_butce ? `${currentAnalysis.extracted_data.tahmini_butce.toLocaleString()} TL` : "Belirtilmemiş", icon: TrendingUp }
+                ].map((stat, idx) => (
+                  <motion.div
+                    key={stat.label}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.1 }}
+                    className="relative group p-6 rounded-xl bg-gradient-to-br from-gray-800/60 to-gray-900/60 border border-gray-700 hover:border-accent-500/50 overflow-hidden"
+                  >
+                    {/* Glow effect */}
+                    <div className="absolute inset-0 bg-gradient-to-br from-accent-500/0 to-purple-500/0 group-hover:from-accent-500/10 group-hover:to-purple-500/10 transition-all duration-500" />
 
-              {/* ✅ FIX: File Queue Display (Sıralı işleme görünürlüğü) */}
-              {(fileQueue.length > 0 || currentlyProcessing) && (
-                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-xl p-4 mb-6">
-                  <div className="flex items-center gap-3">
-                    <div className="animate-spin text-blue-600 dark:text-blue-400">
-                      <Loader2 className="w-6 h-6" />
+                    {/* Icon */}
+                    <div className="relative mb-3 flex items-center justify-between">
+                      <stat.icon className="w-6 h-6 text-accent-400" />
                     </div>
-                    <div className="flex-1">
-                      <p className="font-semibold text-blue-900 dark:text-blue-100">
-                        📋 Dosya İşleme Kuyruğu
-                      </p>
-                      <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                        {currentlyProcessing ? (
-                          <>
-                            🔄 İşleniyor: <strong>{currentlyProcessing.name}</strong> ({(currentlyProcessing.size / 1024 / 1024).toFixed(1)} MB)
-                          </>
-                        ) : (
-                          'Hazırlanıyor...'
-                        )}
-                      </p>
-                      <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                        Kuyrukta bekleyen: {fileQueue.length} dosya
-                      </p>
+
+                    {/* Label */}
+                    <div className="relative text-xs text-gray-400 uppercase tracking-wider mb-2">{stat.label}</div>
+
+                    {/* Value */}
+                    <div className="relative text-lg font-bold text-white truncate">
+                      {stat.value}
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+
+              {/* Aksiyon Butonları */}
+              <div className="flex space-x-4">
+                <button
+                  onClick={() => setCurrentStep("results")}
+                  className="flex-1 flex items-center justify-center px-6 py-4 bg-accent-500 text-white rounded-xl hover:bg-accent-600 transition-colors font-semibold"
+                >
+                  <Eye className="w-5 h-5 mr-2" />
+                  Detaylı Sonuçları Gör
+                </button>
+                <button
+                  onClick={resetProcess}
+                  className="flex items-center justify-center px-6 py-4 bg-platinum-700 text-surface-primary rounded-xl hover:bg-platinum-600 transition-colors font-semibold"
+                >
+                  <Upload className="w-5 h-5 mr-2" />
+                  Yeni Analiz Başlat
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* 🆕 Auto-Analysis Preview Card */}
+              {(autoAnalysisPreview.isProcessing || autoAnalysisPreview.stage === 'completed') && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-gradient-to-r from-emerald-500/20 to-blue-500/20 rounded-2xl p-6 border border-emerald-500/30 mb-6"
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center space-x-3">
+                      {autoAnalysisPreview.isProcessing ? (
+                        <Loader2 className="w-8 h-8 animate-spin text-emerald-400" />
+                      ) : null}
                     </div>
                   </div>
-                  
-                  {/* Queue list - Sonraki 3 dosya */}
-                  {fileQueue.length > 0 && (
-                    <div className="mt-4 space-y-1">
-                      <p className="text-xs font-medium text-blue-800 dark:text-blue-300 mb-2">
-                        Sıradaki Dosyalar:
-                      </p>
-                      {fileQueue.slice(0, 3).map((file, idx) => (
-                        <div key={file.name} className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-2 pl-2">
-                          <span className="font-mono bg-blue-100 dark:bg-blue-800/30 px-1.5 py-0.5 rounded">
-                            {idx + 1}.
-                          </span>
-                          <span className="flex-1 truncate">{file.name}</span>
-                          <span className="text-blue-400 dark:text-blue-500 whitespace-nowrap">
-                            {(file.size / 1024 / 1024).toFixed(1)} MB
-                          </span>
-                        </div>
-                      ))}
-                      {fileQueue.length > 3 && (
-                        <div className="text-xs text-blue-500 dark:text-blue-400 pl-2 pt-1">
-                          ... ve {fileQueue.length - 3} dosya daha
-                        </div>
-                      )}
+
+                  {/* Progress Bar */}
+                  {autoAnalysisPreview.isProcessing && (
+                    <div className="w-full bg-gray-800 rounded-full h-2 mb-4">
+                      <motion.div
+                        className="h-full bg-gradient-to-r from-emerald-500 to-blue-500 rounded-full"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${autoAnalysisPreview.progress}%` }}
+                        transition={{ duration: 0.3 }}
+                      />
                     </div>
                   )}
-                </div>
+
+                  {/* Summary (CSV işlendiyse) */}
+                  {autoAnalysisPreview.summary && (
+                    <div className="grid grid-cols-3 gap-4 mt-4">
+                      <div className="bg-gray-800/40 rounded-xl p-4">
+                        <div className="text-xs text-gray-400 mb-1">Kalem Sayısı</div>
+                        <div className="text-2xl font-bold text-emerald-400">
+                          {autoAnalysisPreview.summary.csvItemCount || 0}
+                        </div>
+                      </div>
+                      <div className="bg-gray-800/40 rounded-xl p-4">
+                        <div className="text-xs text-gray-400 mb-1">Toplam Maliyet</div>
+                        <div className="text-2xl font-bold text-blue-400">
+                          {(autoAnalysisPreview.summary.totalCost || 0).toLocaleString()} ₺
+                        </div>
+                      </div>
+                      <div className="bg-gray-800/40 rounded-xl p-4">
+                        <div className="text-xs text-gray-400 mb-1">Güven</div>
+                        <div className="text-2xl font-bold text-purple-400">
+                          {Math.round((autoAnalysisPreview.summary.confidence || 0) * 100)}%
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Smart Action Button */}
+                  {autoAnalysisPreview.stage === 'completed' && fileStatuses.some((fs: any) => fs.status === 'completed') && (
+                    <button
+                      onClick={handleProcessAllFiles}
+                      className="mt-4 w-full px-6 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all font-semibold flex items-center justify-center gap-2 shadow-lg hover:shadow-emerald-500/25"
+                    >
+                      <Brain className="w-5 h-5" />
+                      <span>Analiz Başlat</span>
+                    </button>
+                  )}
+                </motion.div>
               )}
+
+              {/* BASİT LİSTE - MODAL YOK! */}
+              <SimpleDocumentList
+                fileStatuses={fileStatuses}
+                csvFiles={csvFiles}
+                onFileSelect={async (files) => {
+                  // Dosyaları pending olarak ekle + HIZLI TESPİT!
+                  for (const file of files) {
+                    // Duplicate check
+                    if (fileStatuses.some(fs => fs.fileMetadata.name === file.name)) {
+                      console.warn(`⚠️ ${file.name} zaten listede!`);
+                      continue;
+                    }
+
+                    // File objesini Map'e ekle
+                    fileObjectsMapRef.current.set(file.name, file);
+
+                    // 1) Önce dosya isminden hızlı tahmin
+                    const quickGuess = detectDocumentTypeFromFileName(file.name);
+                    const quickConfidence = getConfidenceScore(quickGuess, file.name);
+
+                    // 2) Store'a ekle (başlangıç tahmini ile)
+                    addFileStatus({
+                      fileMetadata: {
+                        name: file.name,
+                        size: file.size,
+                        type: file.type,
+                        lastModified: file.lastModified,
+                      },
+                      status: 'pending',
+                      progress: quickGuess !== 'belirsiz'
+                        ? `📋 ${quickGuess} (dosya isminden tahmin)`
+                        : 'İşlenmeyi bekliyor...',
+                      detectedType: quickGuess,
+                      detectedTypeConfidence: quickConfidence
+                    });
+
+                    console.log(`✅ ${file.name} eklendi - Hızlı tahmin: ${quickGuess} (${Math.round(quickConfidence * 100)}%)`);
+
+                    // 3) HER DOSYA İÇİN Gemini ile background tespit yap
+                    if (quickGuess === 'belirsiz' || quickConfidence < 0.9) {
+                      // Background'da Gemini ile daha iyi tahmin yap
+                      (async () => {
+                        try {
+                          let textPreview = '';
+
+                          // Dosya tipine göre preview oluştur
+                          if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+                            // PDF: İlk 500KB oku
+                            const arrayBuffer = await file.slice(0, Math.min(file.size, 500000)).arrayBuffer();
+                            textPreview = new TextDecoder().decode(arrayBuffer);
+                          } else if (file.name.toLowerCase().endsWith('.csv')) {
+                            // CSV: İlk 10 satırı oku
+                            const text = await file.text();
+                            textPreview = text.split('\n').slice(0, 10).join('\n');
+                          } else if (file.type.includes('text') || file.name.toLowerCase().endsWith('.txt')) {
+                            // Text: İlk 1000 karakter
+                            const text = await file.text();
+                            textPreview = text.slice(0, 1000);
+                          }
+
+                          const response = await fetch('/api/ai/quick-detect-type', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              fileName: file.name,
+                              textPreview: textPreview
+                            })
+                          });
+
+                          if (response.ok) {
+                            const result = await response.json();
+                            if (result.success) {
+                              updateFileStatus(file.name, {
+                                detectedType: result.data.belge_turu,
+                                detectedTypeConfidence: result.data.guven,
+                                progress: `📋 ${result.data.belge_turu} (${result.data.sebep})`
+                              });
+                              console.log(`🤖 Gemini tespit: ${result.data.belge_turu} (${Math.round(result.data.guven * 100)}%)`);
+                            }
+                          }
+                        } catch (err) {
+                          console.warn('Gemini hızlı tespit başarısız:', err);
+                        }
+                      })();
+                    }
+                  }
+                }}
+                onFileRemove={(fileName) => {
+                  removeFileStatus(fileName);
+                  fileObjectsMapRef.current.delete(fileName);
+                }}
+                onFileProcess={async (fileName) => {
+                  // İŞLE butonuna basınca işle
+                  let fileObject = fileObjectsMapRef.current.get(fileName);
+
+                  // File object yoksa, metadata'dan URL'i kontrol et ve indir
+                  if (!fileObject) {
+                    const fileStatus = fileStatuses.find(f => f.fileMetadata.name === fileName);
+                    const fileUrl = fileStatus?.fileMetadata.url;
+
+                    if (fileUrl) {
+                      try {
+                        console.log(`📥 Dosya indiriliyor (Puppeteer + Auth): ${fileName} (${fileUrl})`);
+
+                        // Puppeteer ile authenticated download (server-side)
+                        const response = await fetch('/api/ihale-scraper/download-with-auth', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ url: fileUrl }),
+                        });
+
+                        if (!response.ok) {
+                          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+
+                        const result = await response.json();
+
+                        if (!result.success) {
+                          throw new Error(result.error || 'Download failed');
+                        }
+
+                        // ZIP dosyası mı?
+                        if (result.isZip && result.files) {
+                          console.log(`📦 ZIP extract edildi: ${result.files.length} dosya`);
+
+                          // 1️⃣ Önce ZIP dosyasının kendi statusunu sil
+                          removeFileStatus(fileName);
+
+                          // 2️⃣ Her dosyayı File objesine çevir, yeni status ekle ve işle
+                          for (const file of result.files) {
+                            const binary = atob(file.content);
+                            const bytes = new Uint8Array(binary.length);
+                            for (let i = 0; i < binary.length; i++) {
+                              bytes[i] = binary.charCodeAt(i);
+                            }
+
+                            const extractedFile = new File([bytes], file.name, {
+                              type: file.type,
+                              lastModified: Date.now()
+                            });
+
+                            // File objesini map'e kaydet
+                            fileObjectsMapRef.current.set(file.name, extractedFile);
+
+                            // Bu dosya için yeni status oluştur
+                            const detectedType = file.name.toLowerCase().includes('idari') ? 'idari_sartname'
+                              : file.name.toLowerCase().includes('teknik') ? 'teknik_sartname'
+                              : 'diger';
+
+                            addFileStatus({
+                              fileMetadata: {
+                                name: file.name,
+                                size: bytes.length,
+                                type: file.type,
+                                lastModified: Date.now(),
+                              },
+                              status: 'processing',
+                              detectedType: detectedType,
+                            });
+
+                            // Bu dosyayı işle
+                            console.log(`🔄 ZIP'ten çıkan dosya işleniyor: ${file.name}`);
+                            await processSingleFile(extractedFile);
+                          }
+
+                          console.log(`✅ ZIP işleme tamamlandı: ${fileName} (${result.files.length} dosya)`);
+                          return; // ZIP işlemi bitti, fonksiyondan çık
+                        }
+
+                        // Normal dosya (ZIP değil)
+                        if (result.file) {
+                          const binary = atob(result.file.content);
+                          const bytes = new Uint8Array(binary.length);
+                          for (let i = 0; i < binary.length; i++) {
+                            bytes[i] = binary.charCodeAt(i);
+                          }
+
+                          fileObject = new File([bytes], result.file.name, {
+                            type: result.file.type,
+                            lastModified: Date.now()
+                          });
+
+                          // File objesini map'e kaydet
+                          fileObjectsMapRef.current.set(fileName, fileObject);
+
+                          console.log(`✅ Dosya indirildi: ${fileName} (${(bytes.length / 1024).toFixed(2)} KB)`);
+                        }
+
+                      } catch (error: any) {
+                        console.error(`❌ Dosya indirme hatası (${fileName}):`, error);
+                        updateFileStatus(fileName, {
+                          status: 'error',
+                          progress: `❌ İndirme hatası: ${error.message}`
+                        });
+                        setToast({ message: `❌ Dosya indirilemedi: ${fileName}\n${error.message}`, type: "error" });
+                        return;
+                      }
+                    } else {
+                      console.error(`File object not found: ${fileName}`);
+                      updateFileStatus(fileName, {
+                        status: 'error',
+                        progress: '❌ Dosya bulunamadı'
+                      });
+                      setToast({ message: `❌ Dosya bulunamadı: ${fileName}`, type: "error" });
+                      return;
+                    }
+                  }
+
+                  // Dosyayı işle
+                  if (fileObject) {
+                    await processSingleFile(fileObject);
+                  }
+                }}
+                onCSVSelect={async (files) => {
+                  // CSV dosyalarını pending olarak ekle
+                  for (const file of files) {
+                    if (!file.name.toLowerCase().endsWith('.csv')) {
+                      setToast({ message: `❌ ${file.name} CSV dosyası değil!`, type: "error" });
+                      continue;
+                    }
+
+                    // Duplicate check
+                    if (csvFiles.some(csv => csv.fileMetadata.name === file.name)) {
+                      setToast({ message: `⚠️ ${file.name} zaten listede!`, type: "info" });
+                      continue;
+                    }
+
+                    // File objesini Map'e ekle
+                    fileObjectsMapRef.current.set(file.name, file);
+
+                    // 1) Önce dosya isminden hızlı tahmin
+                    const quickGuess = detectDocumentTypeFromFileName(file.name);
+                    const quickConfidence = getConfidenceScore(quickGuess, file.name);
+
+                    addCSVFile({
+                      fileMetadata: {
+                        name: file.name,
+                        size: file.size,
+                        type: file.type,
+                        lastModified: file.lastModified,
+                      },
+                      status: 'pending'
+                    });
+
+                    console.log(`✅ CSV dosyası pending olarak eklendi: ${file.name}`);
+
+                    // 2) Gemini ile background tespit (CSV için ilk 10 satır)
+                    (async () => {
+                      try {
+                        const text = await file.text();
+                        const previewLines = text.split('\n').slice(0, 10).join('\n');
+
+                        const response = await fetch('/api/ai/quick-detect-type', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            fileName: file.name,
+                            textPreview: previewLines
+                          })
+                        });
+
+                        if (response.ok) {
+                          const result = await response.json();
+                          if (result.success) {
+                            // CSV için detected type bilgisi yok, sadece log
+                            console.log(`🤖 Gemini CSV tespit: ${result.data.belge_turu} (${Math.round(result.data.guven * 100)}%)`);
+                          }
+                        }
+                      } catch (err) {
+                        console.warn('Gemini CSV tespit başarısız:', err);
+                      }
+                    })();
+                  }
+                }}
+                onCSVProcess={async (fileName) => {
+                  // İŞLE butonuna basınca CSV'yi işle
+                  const fileObject = fileObjectsMapRef.current.get(fileName);
+                  if (!fileObject) {
+                    console.error(`File object not found: ${fileName}`);
+                    return;
+                  }
+
+                  try {
+                    updateCSVFile(fileName, { status: 'processing' });
+                    console.log(`📊 CSV dosyası işleniyor: ${fileName}`);
+
+                    const analysis = await CSVParser.parseFile(fileObject);
+
+                    console.log(`✅ CSV analizi tamamlandı:`, {
+                      items: analysis.summary.total_items,
+                      total: analysis.summary.total_cost,
+                      confidence: analysis.confidence
+                    });
+
+                    updateCSVFile(fileName, { status: 'completed', analysis });
+                  } catch (error) {
+                    console.error(`❌ CSV işleme hatası (${fileName}):`, error);
+                    updateCSVFile(fileName, {
+                      status: 'error',
+                      error: error instanceof Error ? error.message : 'Bilinmeyen hata'
+                    });
+                    setToast({ message: `❌ ${fileName} işlenirken hata oluştu: ${error instanceof Error ? error.message : 'Bilinmeyen hata'}`, type: "error" });
+                  }
+                }}
+                onCSVRemove={(fileName) => {
+                  removeCSVFile(fileName);
+                }}
+              />
 
               {/* İşlem Sırası Rehberi */}
               {(fileStatuses.length > 0 || csvFiles.length > 0) && (
@@ -1766,12 +1632,13 @@ function PageInner() {
                   )}
                 </div>
               )}
+            </>
+          )}
         </motion.div>
       )}
 
       {currentStep === "processing" && (
         <motion.div
-          key="processing-step"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -20 }}
@@ -1792,76 +1659,9 @@ function PageInner() {
       )}
 
       {currentStep === "view" && (
-        <motion.div
-          key="view-step"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="space-y-6"
-        >
-          {/* 🆕 Boş Dosya Uyarısı - Dosyalar işlenmiş ama içerik boş */}
-          {fileStatuses.length > 0 && fileStatuses.every(fs => fs.status === 'completed' && (!fs.extractedText || fs.extractedText.trim().length === 0)) && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-6"
-            >
-              <div className="bg-gradient-to-r from-yellow-900/40 to-orange-900/40 rounded-2xl p-8 border border-yellow-700/50">
-                <div className="flex items-start space-x-4">
-                  <div className="flex-shrink-0">
-                    <svg className="w-12 h-12 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-xl font-semibold text-yellow-300 mb-2">
-                      📄 Dosyalar Boş
-                    </h3>
-                    <p className="text-gray-300 mb-4">
-                      Yüklenen dosyaların içeriği okunamadı veya dosyalar boş. Bu durum şu nedenlerden kaynaklanabilir:
-                    </p>
-                    <ul className="list-disc list-inside text-gray-400 space-y-2 mb-6">
-                      <li>Dosya şifreli veya korumalı olabilir</li>
-                      <li>PDF taranmış görüntü içeriyor olabilir (OCR gerekli)</li>
-                      <li>Dosya formatı desteklenmeyebilir</li>
-                      <li>Dosya bozuk veya hasarlı olabilir</li>
-                    </ul>
-                    <div className="flex items-center space-x-3">
-                      <button
-                        onClick={() => {
-                          setUseOCR(true);
-                          setCurrentStep('upload');
-                          clearFileStatuses();
-                        }}
-                        className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors flex items-center space-x-2"
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                        <span>OCR ile Tekrar Dene</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setCurrentStep('upload');
-                          clearFileStatuses();
-                        }}
-                        className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-colors flex items-center space-x-2"
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                        </svg>
-                        <span>Farklı Dosya Yükle</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          )}
-
+        <>
           {/* 🆕 Skeleton Loading - Dökümanlar yüklenirken */}
-          {(!documentPages.length || !documentStats) && fileStatuses.some(fs => fs.status === 'processing' || fs.status === 'pending') && (
+          {(!documentPages.length || !documentStats) && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1900,42 +1700,10 @@ function PageInner() {
                   <div className="h-4 bg-gray-700 rounded w-5/6 animate-pulse"></div>
                 </div>
 
-                <div className="mt-6">
-                  {/* Progress bar */}
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm text-gray-400">Dökümanlar hazırlanıyor...</span>
-                      <span className="text-sm font-semibold text-blue-400">{sessionLoadProgress}%</span>
-                    </div>
-                    <div className="w-full h-2 bg-gray-700/50 rounded-full overflow-hidden">
-                      <motion.div
-                        className="h-full bg-gradient-to-r from-blue-500 to-purple-500"
-                        initial={{ width: 0 }}
-                        animate={{ width: `${sessionLoadProgress}%` }}
-                        transition={{ duration: 0.3, ease: "easeOut" }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Status mesajları */}
-                  <div className="text-center space-y-2">
-                    <div className="inline-flex items-center space-x-2 text-gray-400">
-                      <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
-                      <span className="text-sm">
-                        {sessionLoadProgress < 20 && '📦 Dökümanlar IndexedDB\'den okunuyor...'}
-                        {sessionLoadProgress >= 20 && sessionLoadProgress < 50 && `📄 Dosyalar işleniyor... (${Math.floor(sessionLoadProgress / 10)}/10)`}
-                        {sessionLoadProgress >= 50 && sessionLoadProgress < 90 && '🔍 Metadata çıkarılıyor...'}
-                        {sessionLoadProgress >= 90 && sessionLoadProgress < 100 && '✅ Son kontroller yapılıyor...'}
-                        {sessionLoadProgress >= 100 && '🎉 Tamamlandı!'}
-                      </span>
-                    </div>
-                    
-                    {/* Dosya sayısı bilgisi */}
-                    {fileStatuses.length > 0 && (
-                      <div className="text-xs text-gray-500">
-                        {fileStatuses.filter(fs => fs.status === 'completed').length} / {fileStatuses.length} dosya hazır
-                      </div>
-                    )}
+                <div className="mt-6 text-center">
+                  <div className="inline-flex items-center space-x-2 text-gray-400">
+                    <div className="w-4 h-4 border-2 border-gray-600 border-t-gray-400 rounded-full animate-spin"></div>
+                    <span>Dökümanlar yükleniyor...</span>
                   </div>
                 </div>
               </div>
@@ -1943,18 +1711,19 @@ function PageInner() {
           )}
 
           {/* Normal view content */}
-          {documentPages.length > 0 && documentStats && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-6"
-            >
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-surface-primary">
-                  Döküman Önizlemesi
-                </h3>
-                <div className="flex items-center space-x-2">
+          {documentPages.length > 0 &&
+            documentStats && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y:  0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="space-y-6"
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-semibold text-surface-primary">
+                Döküman Önizlemesi
+              </h3>
+                                        <div className="flex items-center space-x-2">
                 <button
                 
                  
@@ -2000,8 +1769,8 @@ function PageInner() {
               </div>
             </div>
 
-              {/* Sayfa Önizleme Kartları */}
-              <div className="grid grid-cols-1 gap-4">
+            {/* Sayfa Önizleme Kartları */}
+            <div className="grid grid-cols-1 gap-4">
               {documentPages.map((page, index) => (
                 <motion.div
                   key={page.pageNumber}
@@ -2012,7 +1781,7 @@ function PageInner() {
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="text-sm text-gray-400">
-                      Sayfa {page.pageNumber} / {documentStats?.totalPages || documentPages.length}
+                      Sayfa {page.pageNumber} / {documentStats.totalPages}
                     </div>
                     <div className="flex items-center space-x-2">
                       <button
@@ -2032,28 +1801,17 @@ function PageInner() {
                     </div>
                   </div>
                   <div className="text-sm text-surface-secondary mb-4">
-                    {page.wordCount || 0} kelime • {page.processingTime || '0'} sn
+                    {page.wordCount} kelime • {page.processingTime} sn
                   </div>
                   <div className="text-sm text-surface-primary whitespace-pre-wrap break-words">
-                    {page.content && page.content.trim() ? (
-                      page.content
-                    ) : (
-                      <div className="text-center py-8">
-                        <div className="inline-flex items-center space-x-2 text-gray-500">
-                          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
-                          <span className="text-sm italic">Bu sayfa boş veya okunamadı</span>
-                        </div>
-                      </div>
-                    )}
+                    {page.content}
                   </div>
                 </motion.div>
               ))}
-              </div>
+            </div>
 
-              {/* Detaylı İstatistikler - Modern Card */}
-              <motion.div
+            {/* Detaylı İstatistikler - Modern Card */}
+            <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
@@ -2068,7 +1826,7 @@ function PageInner() {
                     Toplam Sayfa
                   </div>
                   <div className="text-2xl font-bold text-white">
-                    {documentStats?.totalPages || 0}
+                    {documentStats.totalPages}
                   </div>
                 </div>
                 <div className="p-4 rounded-lg bg-gray-800 border border-gray-700">
@@ -2076,7 +1834,7 @@ function PageInner() {
                     Boş Sayfa
                   </div>
                   <div className="text-2xl font-bold text-white">
-                    {documentStats?.emptyPages || 0}
+                    {documentStats.emptyPages}
                   </div>
                 </div>
                 <div className="p-4 rounded-lg bg-gray-800 border border-gray-700">
@@ -2084,7 +1842,7 @@ function PageInner() {
                     Düşük Kalite Sayfa
                   </div>
                   <div className="text-2xl font-bold text-white">
-                    {documentStats?.lowQualityPages || 0}
+                    {documentStats.lowQualityPages}
                   </div>
                 </div>
                 <div className="p-4 rounded-lg bg-gray-800 border border-gray-700">
@@ -2092,7 +1850,7 @@ function PageInner() {
                     Toplam Kelime
                   </div>
                   <div className="text-2xl font-bold text-white">
-                    {documentStats?.totalWords || 0}
+                    {documentStats.totalWords}
                   </div>
                 </div>
                 <div className="p-4 rounded-lg bg-gray-800 border border-gray-700">
@@ -2100,7 +1858,7 @@ function PageInner() {
                     Ortalama Kalite
                   </div>
                   <div className="text-2xl font-bold text-white">
-                    {documentStats?.averageQuality?.toFixed(1) || '0.0'} / 10
+                    {documentStats.averageQuality.toFixed(1)} / 10
                   </div>
                 </div>
                 <div className="p-4 rounded-lg bg-gray-800 border border-gray-700">
@@ -2108,7 +1866,7 @@ function PageInner() {
                     OCR ile İşlenen Sayfalar
                   </div>
                   <div className="text-2xl font-bold text-white">
-                    {documentStats?.ocrPagesProcessed || 0}
+                    {documentStats.ocrPagesProcessed}
                   </div>
                 </div>
                 <div className="p-4 rounded-lg bg-gray-800 border border-gray-700">
@@ -2116,7 +1874,7 @@ function PageInner() {
                     İşlem Süresi (toplam)
                   </div>
                   <div className="text-2xl font-bold text-white">
-                    {documentStats?.processingTime ? (documentStats.processingTime / 1000).toFixed(1) : '0.0'} sn
+                    {(documentStats.processingTime / 1000).toFixed(1)} sn
                   </div>
                 </div>
                 <div className="p-4 rounded-lg bg-gray-800 border border-gray-700">
@@ -2124,34 +1882,14 @@ function PageInner() {
                     Dosya Türü
                   </div>
                   <div className="text-2xl font-bold text-white">
-                    {documentStats?.fileType || 'Bilinmiyor'}
+                    {documentStats.fileType}
                   </div>
                 </div>
               </div>
-              </motion.div>
             </motion.div>
-          )}
-        </motion.div>
-      )}
-
-      {/* Results Step - AI Analysis Results */}
-      {currentStep === "results" && currentAnalysis && (
-        <motion.div
-          key="results-step"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -20 }}
-          className="space-y-6"
-        >
-          <EnhancedAnalysisResults
-            analysis={currentAnalysis}
-            onReturnToView={() => setCurrentStep("view")}
-            onNewAnalysis={() => {
-              resetProcess();
-              setCurrentStep("upload");
-            }}
-          />
-        </motion.div>
+          </motion.div>
+        )}
+        </>
       )}
     </AnimatePresence>
   </div>

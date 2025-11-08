@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { useIhaleStore } from '@/lib/stores/ihale-store';
 import { TokenCostCard } from '@/components/analytics/TokenCostCard';
 import { downloadDocuments } from '@/lib/utils/document-downloader';
-import { saveToIndexedDB, deleteFromIndexedDB, listIndexedDBKeys } from '@/lib/utils/indexed-db-storage';
+import { saveToIndexedDB, getFromIndexedDB, deleteFromIndexedDB, listIndexedDBKeys } from '@/lib/utils/indexed-db-storage';
 
 interface Tender {
   id: string;
@@ -1092,6 +1092,17 @@ function IhaleTakipPageInner() {
       await saveToIndexedDB(tempId, payload);
 
       console.log('✅ IndexedDB kaydı tamamlandı');
+      
+      // 🛡️ IndexedDB transaction flush için micro-delay (browser optimization)
+      await new Promise(resolve => setTimeout(resolve, 50));
+      console.log('🔄 IndexedDB transaction flushed');
+      
+      // 🔍 Doğrulama: Veri gerçekten yazıldı mı?
+      const verification = await getFromIndexedDB(tempId);
+      if (!verification) {
+        throw new Error('IndexedDB yazma doğrulaması başarısız - veri bulunamadı!');
+      }
+      console.log('✅ IndexedDB yazma doğrulandı');
 
       // 3️⃣ Router prefetch
       await router.prefetch('/ihale/yeni-analiz');

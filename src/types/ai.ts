@@ -107,7 +107,7 @@ export const BELGE_TURU_LABELS: Record<BelgeTuru, string> = {
   idari_sartname: "📋 İdari Şartname",
   fiyat_teklif_mektubu: "💰 Fiyat Teklif Mektubu",
   diger: "📎 Diğer Belge",
-  belirsiz: "❓ Belirsiz"
+  belirsiz: "" // Boş göster
 };
 
 // YENİ: Veri Havuzu - Metinsel extraction

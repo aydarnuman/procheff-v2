@@ -409,10 +409,6 @@ export function EnhancedAnalysisResults({
             >
               {(() => {
                 const confidenceValue = Math.round(analysis.processing_metadata.confidence_score * 100);
-                console.log('🔍 [ENHANCED UI DEBUG] analysis.processing_metadata.confidence_score:', analysis.processing_metadata.confidence_score);
-                console.log('🔍 [ENHANCED UI DEBUG] analysis.extracted_data.guven_skoru:', analysis.extracted_data.guven_skoru);
-                console.log('🔍 [ENHANCED UI DEBUG] Calculated percentage:', confidenceValue);
-                console.log('🔍 [ENHANCED UI DEBUG] isNaN check:', isNaN(confidenceValue));
                 return isNaN(confidenceValue) ? '70' : confidenceValue;
               })()}%
               güven

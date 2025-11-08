@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧪 File Crash Test Simülatörü</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 2rem;
+            color: #fff;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 2rem;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+        
+        .scenario {
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .scenario h2 {
+            font-size: 1.3rem;
+            margin-bottom: 0.5rem;
+            color: #ffd700;
+        }
+        
+        .scenario p {
+            margin-bottom: 1rem;
+            line-height: 1.6;
+        }
+        
+        .steps {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+        
+        .steps ol {
+            padding-left: 1.5rem;
+        }
+        
+        .steps li {
+            margin: 0.5rem 0;
+            line-height: 1.6;
+        }
+        
+        .result {
+            margin-top: 1rem;
+            padding: 1rem;
+            border-radius: 8px;
+        }
+        
+        .result.before {
+            background: rgba(220, 38, 38, 0.2);
+            border-left: 4px solid #dc2626;
+        }
+        
+        .result.after {
+            background: rgba(34, 197, 94, 0.2);
+            border-left: 4px solid #22c55e;
+        }
+        
+        .result h3 {
+            font-size: 1.1rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .result ul {
+            padding-left: 1.5rem;
+        }
+        
+        .result li {
+            margin: 0.3rem 0;
+        }
+        
+        .btn {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+        }
+        
+        .console-tip {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 1rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            margin-top: 1rem;
+        }
+        
+        .console-tip strong {
+            color: #ffd700;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-right: 0.5rem;
+        }
+        
+        .badge.critical {
+            background: #dc2626;
+        }
+        
+        .badge.fixed {
+            background: #22c55e;
+        }
+        
+        .nav-buttons {
+            text-align: center;
+            margin-top: 2rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 File Crash Test Simülatörü</h1>
+        <p style="text-align: center; margin-bottom: 2rem; opacity: 0.9;">
+            IndexedDB dosya yükleme crash senaryolarını test et
+        </p>
+
+        <!-- SENARYO 1 -->
+        <div class="scenario">
+            <h2>
+                <span class="badge critical">CRITICAL</span>
+                Senaryo 1: Hızlı "İşle" Tıklama
+            </h2>
+            <p>
+                <strong>Simülasyon:</strong> İhale Robotu → Yeni Analiz Oluştur → Dosyalar yüklenirken İşle butonuna basma
+            </p>
+            
+            <div class="steps">
+                <strong>📝 Test Adımları:</strong>
+                <ol>
+                    <li>Console'u aç (⌘+Option+J veya F12)</li>
+                    <li><a href="/ihale-robotu" style="color: #ffd700;">/ihale-robotu</a> sayfasına git</li>
+                    <li>Herhangi bir ihale seç</li>
+                    <li>"Yeni Analiz Oluştur" butonuna tıkla</li>
+                    <li><strong>HEMEN</strong> ilk dosyanın "İşle" butonuna bas (yükleme tamamlanmadan!)</li>
+                </ol>
+            </div>
+
+            <div class="result before">
+                <h3>❌ Önceki Davranış (Crash)</h3>
+                <ul>
+                    <li>TypeError: Cannot read property of undefined</li>
+                    <li>White screen of death</li>
+                    <li>Error boundary tetikleniyor</li>
+                    <li>Kullanıcı sayfayı kaybediyor</li>
+                </ul>
+            </div>
+
+            <div class="result after">
+                <h3>✅ Yeni Davranış (Güvenli)</h3>
+                <ul>
+                    <li>Toast: "❌ Dosya yüklenemedi - file objesi bulunamadı"</li>
+                    <li>Console: "🛡️ SERT GÜVENLİK KONTROLÜ"</li>
+                    <li>Console: "📦 MAP KEYS BEFORE PROCESS: []"</li>
+                    <li>File status → error</li>
+                    <li>Sayfa açık kalıyor, kullanıcı yeniden deneyebilir</li>
+                </ul>
+            </div>
+
+            <div class="console-tip">
+                <strong>Console Filtreleri:</strong><br>
+                • <code>filter: "SERT GÜVENLİK"</code> - Güvenlik kontrollerini gör<br>
+                • <code>filter: "MAP KEYS"</code> - fileObjectsMapRef içeriğini izle<br>
+                • <code>filter: "CRITICAL"</code> - Kritik hataları yakala
+            </div>
+        </div>
+
+        <!-- SENARYO 2 -->
+        <div class="scenario">
+            <h2>
+                <span class="badge critical">CRITICAL</span>
+                Senaryo 2: Component Unmount
+            </h2>
+            <p>
+                <strong>Simülasyon:</strong> IndexedDB yüklenirken geri butonu ile sayfadan çıkma
+            </p>
+            
+            <div class="steps">
+                <strong>📝 Test Adımları:</strong>
+                <ol>
+                    <li>Console Network tab'ını aç</li>
+                    <li>/ihale-robotu → İhale seç → "Yeni Analiz Oluştur"</li>
+                    <li>URL'de <code>?from=ihale_docs_xxxxx</code> parametresini gör</li>
+                    <li>Dosyalar "PENDING" durumuna gelirken <strong>HEMEN</strong> geri butonuna bas</li>
+                    <li>Console'da cleanup logunu kontrol et</li>
+                </ol>
+            </div>
+
+            <div class="result before">
+                <h3>❌ Önceki Davranış (Memory Leak)</h3>
+                <ul>
+                    <li>Warning: Can't perform state update on unmounted component</li>
+                    <li>fileObjectsMapRef.current sıfırlanıyor</li>
+                    <li>Async işlem devam ediyor ama state güncellenmiyor</li>
+                    <li>Memory leak</li>
+                </ul>
+            </div>
+
+            <div class="result after">
+                <h3>✅ Yeni Davranış (Temiz Cleanup)</h3>
+                <ul>
+                    <li>Console: "🧹 IndexedDB useEffect cleanup - component unmounting"</li>
+                    <li><code>isMounted = false</code> → state güncellemeleri durur</li>
+                    <li>fileObjectsMapRef korunur</li>
+                    <li>Memory leak yok</li>
+                    <li>Unmounted component uyarısı yok</li>
+                </ul>
+            </div>
+
+            <div class="console-tip">
+                <strong>Console Filtreleri:</strong><br>
+                • <code>filter: "cleanup"</code> - Cleanup işlemlerini gör<br>
+                • <code>filter: "unmounting"</code> - Component lifecycle'ı izle<br>
+                • <code>filter: "isMounted"</code> - Mount durumunu kontrol et
+            </div>
+        </div>
+
+        <!-- SENARYO 3 -->
+        <div class="scenario">
+            <h2>
+                <span class="badge fixed">FIXED</span>
+                Senaryo 3: File Objesi Kaybı
+            </h2>
+            <p>
+                <strong>Simülasyon:</strong> Dosya ekleniyor → Map'ten siliniyor → İşle butonuna basılıyor
+            </p>
+            
+            <div class="steps">
+                <strong>📝 Test Adımları (Manuel Manipülasyon):</strong>
+                <ol>
+                    <li>/ihale/yeni-analiz sayfasına git</li>
+                    <li>Bir dosya yükle (PDF/DOCX)</li>
+                    <li>Console'da şunu çalıştır:</li>
+                    <code style="display: block; background: rgba(0,0,0,0.3); padding: 0.5rem; margin: 0.5rem 0; border-radius: 4px;">
+                        // fileObjectsMapRef'i temizle (simülasyon)<br>
+                        window.debugClearFileMap = true;
+                    </code>
+                    <li>"İşle" butonuna bas</li>
+                </ol>
+            </div>
+
+            <div class="result before">
+                <h3>❌ Önceki Davranış</h3>
+                <ul>
+                    <li>processSingleFile(undefined) çağrılır</li>
+                    <li>TypeError: Cannot read property 'name' of undefined</li>
+                    <li>Generic error boundary mesajı</li>
+                </ul>
+            </div>
+
+            <div class="result after">
+                <h3>✅ Yeni Davranış</h3>
+                <ul>
+                    <li>Console: "⚠️ File object Map'te bulunamadı: dosya.pdf"</li>
+                    <li>Console: "📋 Mevcut Map keys: []"</li>
+                    <li>Toast: "❌ File objesi bulunamadı ve URL'den de indirilemedi"</li>
+                    <li>Kullanıcıya net talimat: "Dosyayı yeniden yükleyin"</li>
+                    <li>File status → error</li>
+                </ul>
+            </div>
+
+            <div class="console-tip">
+                <strong>Debug Helper:</strong><br>
+                Console'da çalıştır: <code>Array.from(fileObjectsMapRef.current.keys())</code><br>
+                Bu komut mevcut file objelerini listeler.
+            </div>
+        </div>
+
+        <!-- NAVİGASYON -->
+        <div class="nav-buttons">
+            <a href="/ihale-robotu" class="btn">🚀 İhale Robotu'na Git</a>
+            <a href="/ihale/yeni-analiz" class="btn">📄 Yeni Analiz Sayfası</a>
+            <a href="/" class="btn">🏠 Ana Sayfa</a>
+        </div>
+
+        <div style="margin-top: 2rem; padding: 1rem; background: rgba(0,0,0,0.3); border-radius: 8px; font-size: 0.9rem;">
+            <strong>💡 Pro Tips:</strong>
+            <ul style="padding-left: 1.5rem; margin-top: 0.5rem;">
+                <li>Chrome DevTools → Console → "Preserve log" aktif et (refresh sonrası logları kaybet)</li>
+                <li>Network tab'ında "Disable cache" işaretle (IndexedDB refresh'lerini test et)</li>
+                <li>React DevTools ile component lifecycle'ı izle</li>
+                <li>Application tab → IndexedDB → ihale_docs veritabanını incele</li>
+            </ul>
+        </div>
+
+        <div style="text-align: center; margin-top: 2rem; opacity: 0.7; font-size: 0.9rem;">
+            <p>🔧 Test Ortamı: Next.js 16 + React 19 + TypeScript</p>
+            <p>📅 Test Tarihi: 7 Kasım 2025</p>
+        </div>
+    </div>
+
+    <script>
+        // Debug helper - global scope'a ekle
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('%c🧪 File Crash Test Simülatörü Yüklendi', 'font-size: 16px; font-weight: bold; color: #667eea;');
+            console.log('%cTest senaryolarını başlatmak için yukarıdaki talimatları takip edin.', 'color: #888;');
+            console.log('%c\n📊 Kullanılabilir Console Filtreleri:', 'font-weight: bold;');
+            console.log('  • filter: "SERT GÜVENLİK"');
+            console.log('  • filter: "MAP KEYS"');
+            console.log('  • filter: "cleanup"');
+            console.log('  • filter: "CRITICAL"');
+        });
+    </script>
+</body>
+</html>

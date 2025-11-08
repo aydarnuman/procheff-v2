@@ -54,19 +54,28 @@ export function detectDocumentTypeFromFileName(fileName: string): BelgeTuru {
     return 'ihale_ilani';
   }
 
-  // Teknik Şartname
+  // Teknik Şartname - GENİŞLETİLMİŞ
   if (
-    nameLower.includes('teknik') && nameLower.includes('şartname') ||
-    nameLower.includes('teknik') && nameLower.includes('sartname') ||
-    nameLower.includes('technical') && nameLower.includes('spec')
+    (nameLower.includes('teknik') && nameLower.includes('şartname')) ||
+    (nameLower.includes('teknik') && nameLower.includes('sartname')) ||
+    (nameLower.includes('teknik') && nameLower.includes('istek')) ||
+    (nameLower.includes('teknik') && nameLower.includes('ozellik')) ||
+    (nameLower.includes('teknik') && nameLower.includes('dokuman')) ||
+    (nameLower.includes('personel') && nameLower.includes('hizmet')) ||
+    (nameLower.includes('technical') && nameLower.includes('spec'))
   ) {
     return 'teknik_sartname';
   }
 
-  // İdari Şartname
+  // İdari Şartname - GENİŞLETİLMİŞ
   if (
-    nameLower.includes('idari') && nameLower.includes('şartname') ||
-    nameLower.includes('idari') && nameLower.includes('sartname') ||
+    (nameLower.includes('idari') && nameLower.includes('şartname')) ||
+    (nameLower.includes('idari') && nameLower.includes('sartname')) ||
+    nameLower.includes('kvk') ||
+    nameLower.includes('taahhut') ||
+    nameLower.includes('gizlilik') ||
+    (nameLower.includes('kisisel') && nameLower.includes('veri')) ||
+    (nameLower.includes('kişisel') && nameLower.includes('veri')) ||
     nameLower.includes('administrative')
   ) {
     return 'idari_sartname';

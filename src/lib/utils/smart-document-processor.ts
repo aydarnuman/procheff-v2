@@ -52,10 +52,18 @@ export class SmartDocumentProcessor {
     const fileName = file.name.toLowerCase();
     const extension = fileName.substring(fileName.lastIndexOf("."));
 
-    return (
-      this.SUPPORTED_FORMATS.includes(mimeType) ||
-      this.SUPPORTED_EXTENSIONS.includes(extension)
-    );
+    // 1️⃣ Extension kontrolü (öncelikli - MIME type bazen boş gelir)
+    if (this.SUPPORTED_EXTENSIONS.includes(extension)) {
+      return true;
+    }
+
+    // 2️⃣ MIME type kontrolü (fallback)
+    // Boş veya generic MIME type'ları ignore et
+    if (!mimeType || mimeType === 'application/octet-stream') {
+      return false; // Extension kontrolü zaten geçti, MIME type boşsa desteklenmiyor
+    }
+
+    return this.SUPPORTED_FORMATS.includes(mimeType);
   }
 
   /**
@@ -285,13 +293,74 @@ export class SmartDocumentProcessor {
         }
       }
 
-      // 4️⃣ Metin Dosyaları (TXT, RTF, HTML)
-      if (mimeType.includes("text") || fileName.match(/\.(txt|rtf|html)$/)) {
+      // 4️⃣ Metin Dosyaları (TXT, RTF, HTML, JSON)
+      if (mimeType.includes("text") ||
+          fileName.endsWith(".txt") ||
+          fileName.endsWith(".rtf") ||
+          fileName.endsWith(".html") ||
+          fileName.endsWith(".json") ||
+          fileName.match(/\.(txt|rtf|html|json)$/)) {
         try {
           console.log("Metin dosyası işleme başladı...");
           const text = await file.text();
 
+          // ⚠️ Boş dosya kontrolü
+          if (!text || text.trim().length === 0) {
+            console.warn(`⚠️ ${fileName} dosyası boş!`);
+            return {
+              success: false,
+              text: "",
+              error: `"${fileName}" dosyası boş. Lütfen içerik içeren bir dosya yükleyin.`,
+              method: "text-empty-check",
+              fileType: "text",
+              processingTime: Date.now() - startTime,
+              warnings: ["Dosya boş veya sadece boşluk karakterleri içeriyor"],
+            };
+          }
+
           if (text?.trim()) {
+            // 🔍 HTML içerik kontrolü
+            const isHTMLContent = text.trim().startsWith('<!DOCTYPE') || 
+                                  text.trim().startsWith('<html') ||
+                                  text.includes('<head>') ||
+                                  text.includes('<body>');
+            
+            if (isHTMLContent) {
+              console.log("⚠️ HTML içerik tespit edildi, HTML parser kullanılıyor...");
+              
+              try {
+                // HTML'den metin çıkar (basit regex ile)
+                let cleanText = text
+                  .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '') // Script'leri kaldır
+                  .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')   // Style'ları kaldır
+                  .replace(/<[^>]+>/g, ' ')                          // HTML tag'lerini kaldır
+                  .replace(/&nbsp;/g, ' ')                           // &nbsp; -> boşluk
+                  .replace(/&[a-z]+;/gi, ' ')                        // Diğer entities
+                  .replace(/\s+/g, ' ')                              // Çoklu boşlukları tek yap
+                  .trim();
+                
+                if (cleanText.length > 100) {
+                  const normalizedText = TurkishNormalizer.normalize(cleanText);
+                  console.log(`HTML dosyası başarılı: ${normalizedText.length} karakter (HTML cleaned)`);
+                  
+                  return {
+                    success: true,
+                    text: normalizedText,
+                    method: "html-text-extraction",
+                    fileType: "html",
+                    processingTime: Date.now() - startTime,
+                    warnings: [...warnings, "HTML içerik tespit edildi ve temizlendi"],
+                  };
+                } else {
+                  warnings.push("HTML içerik çok kısa, orijinal metin kullanılıyor");
+                }
+              } catch (htmlError) {
+                console.error("HTML parsing hatası:", htmlError);
+                warnings.push("HTML parsing başarısız, orijinal metin kullanılıyor");
+              }
+            }
+            
+            // Normal metin işleme
             const normalizedText = TurkishNormalizer.normalize(text);
             console.log(
               `Metin dosyası başarılı: ${normalizedText.length} karakter`

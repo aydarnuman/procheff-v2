@@ -1,0 +1,27 @@
+[2025-11-07T20:28:12.200Z] ℹ️ [orchestrator] Logger initialized
+   Data: {
+     "sessionId": "scraper_1762547292200"
+   }
+[2025-11-07T20:28:12.200Z] ℹ️ [orchestrator] Initializing ScraperOrchestrator
+[2025-11-07T20:28:12.202Z] ℹ️ [runAll] Starting scraping orchestration
+   Data: {
+     "testMode": true,
+     "mode": "full",
+     "sourceFilter": "all",
+     "logPath": "/Users/numanaydar/Desktop/procheff-v2/logs/orchestrator/scraper_1762547292200_2025-11-07T20-28-12-200Z.log"
+   }
+[2025-11-07T20:28:12.202Z] ℹ️ [runAll] Processing 3 scraper(s)
+   Data: {
+     "scrapers": [
+       "ihalebul",
+       "ilan_gov",
+       "ihale_takip"
+     ]
+   }
+[2025-11-07T20:28:12.202Z] ℹ️ [ihalebul] Starting scraper: İhalebul.com
+[2025-11-07T20:31:06.769Z] ℹ️ [ihalebul] Scraping completed (174567ms)
+   Data: {
+     "success": true,
+     "totalScraped": 296,
+     "errors": 0
+   }
