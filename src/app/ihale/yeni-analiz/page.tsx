@@ -29,7 +29,8 @@ import {
   getConfidenceScore,
 } from "@/lib/utils/quick-document-detector";
 import { downloadDocument } from "@/lib/utils/document-downloader";
-import { getFromIndexedDB, deleteFromIndexedDB } from '@/lib/utils/indexed-db-storage';
+import { getFromIndexedDB, deleteFromIndexedDB, listIndexedDBKeys } from '@/lib/utils/indexed-db-storage';
+import { toast } from 'sonner';
 
 import { Toast } from "@/components/ui/Toast";
 import { ErrorBoundary } from "@/components/providers/ErrorBoundary";
@@ -371,11 +372,21 @@ function PageInner() {
 
           } else {
             console.warn('⚠️ IndexedDB data bulunamadı:', from);
+            toast.error(`❌ Veri bulunamadı: ${from}\n\nLütfen ihale robotundan tekrar gönderin.`, {
+              duration: 8000
+            });
             setSessionLoadProgress(0);
+            
+            // 🔍 Debug: Mevcut tüm IndexedDB anahtarlarını göster
+            (async () => {
+              const allKeys = await listIndexedDBKeys();
+              console.log('🔍 Mevcut IndexedDB anahtarları:', allKeys);
+            })();
           }
 
         } catch (error) {
           console.error('❌ IndexedDB data işlenirken hata:', error);
+          toast.error('❌ Veri yüklenemedi: ' + (error as Error).message);
           // Hata durumunda normal upload'a dön
           setSessionLoadProgress(0);
         }

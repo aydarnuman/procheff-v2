@@ -65,8 +65,21 @@ export async function saveToIndexedDB<T>(key: string, data: T): Promise<void> {
       const store = transaction.objectStore(STORE_NAME);
       const request = store.put(data, key);
 
-      request.onsuccess = () => {
-        console.log(`✅ IndexedDB'ye kaydedildi: ${key} (${JSON.stringify(data).length} byte)`);
+      // ✅ Transaction tamamlandığında resolve et (request.onsuccess yerine)
+      transaction.oncomplete = () => {
+        // Veri boyutu hesaplama (Blob'lar için güvenli)
+        let sizeInfo = 'unknown size';
+        try {
+          if (typeof data === 'object' && data !== null) {
+            const dataObj = data as any;
+            if ('size' in dataObj) {
+              sizeInfo = `${(dataObj.size / (1024 * 1024)).toFixed(2)} MB`;
+            }
+          }
+        } catch (e) {
+          // Size hesaplama hatası, devam et
+        }
+        console.log(`✅ IndexedDB transaction complete: ${key} (${sizeInfo})`);
         resolve();
       };
 
@@ -78,6 +91,11 @@ export async function saveToIndexedDB<T>(key: string, data: T): Promise<void> {
       transaction.onerror = () => {
         console.error('❌ Transaction hatası:', transaction.error);
         reject(transaction.error);
+      };
+      
+      transaction.onabort = () => {
+        console.error('❌ Transaction iptal edildi');
+        reject(new Error('Transaction aborted'));
       };
     });
   } catch (error) {

@@ -9,6 +9,11 @@ import { TokenCostCard } from '@/components/analytics/TokenCostCard';
 import { downloadDocuments } from '@/lib/utils/document-downloader';
 import { saveToIndexedDB, getFromIndexedDB, deleteFromIndexedDB, listIndexedDBKeys } from '@/lib/utils/indexed-db-storage';
 
+// 🚦 SAFE MIGRATION: Feature flag ile kontrollü geçiş
+// Mevcut kod bozulmaz, yeni store test edilebilir
+import { MIGRATION_CONFIG } from '@/lib/migration/safe-migration';
+import { useIhaleRobotuState } from '@/lib/migration/use-safe-migration';
+
 interface Tender {
   id: string;
   source: string;
@@ -1064,8 +1069,22 @@ function IhaleTakipPageInner() {
     try {
       toast.loading('Analize gönderiliyor...', { id: 'send-analysis' });
 
+      // 🔍 Debug: preparedDocuments durumu
+      console.log('🔍 preparedDocuments:', {
+        length: preparedDocuments.length,
+        sample: preparedDocuments.slice(0, 2),
+        hasBlobs: preparedDocuments.some(doc => doc.blob || doc.file)
+      });
+
+      // ⚠️ preparedDocuments boşsa uyar (opsiyonel - analiz sadece text ile de yapılabilir)
+      if (preparedDocuments.length === 0) {
+        console.warn('⚠️ preparedDocuments boş - sadece ihale metni gönderilecek');
+        toast.warning('⚠️ Döküman yok - sadece ihale metni gönderiliyor', { duration: 3000 });
+      }
+
       // 1️⃣ Benzersiz ID üret
       const tempId = `ihale_docs_${Date.now()}`;
+      console.log('🆔 Oluşturulan ID:', tempId);
       
       // 🧹 Eski IndexedDB verilerini temizle (önceki gönderimlerden kalmış olabilir)
       const oldKeys = await listIndexedDBKeys();
@@ -1079,30 +1098,95 @@ function IhaleTakipPageInner() {
         toast.info(`🧹 ${oldIhaleKeys.length} eski veri temizlendi`);
       }
       
+      // 📦 Payload oluştur
       const payload = {
         title: selectedTender.title,
         text: fullContent.fullText,
-        documents: preparedDocuments, // Blob nesneleri dahil
-        size: fullContent.fullText.length + preparedDocuments.reduce((acc, doc) => acc + doc.size, 0),
+        documents: preparedDocuments, // Blob nesneleri dahil (boş olabilir)
+        size: fullContent.fullText.length + preparedDocuments.reduce((acc, doc) => acc + (doc.size || 0), 0),
         timestamp: Date.now(),
       };
 
+      // 🔍 Debug: Payload detayları (KAYIT ÖNCESI)
+      console.group('� PAYLOAD DETAYLARI (Kayıt Öncesi)');
+      console.log('🆔 Key:', tempId);
+      console.log('📋 Title:', payload.title);
+      console.log('📄 Text length:', payload.text.length, 'chars');
+      console.log('📊 Document count:', preparedDocuments.length);
+      console.log('📦 Total size:', `${(payload.size / (1024 * 1024)).toFixed(2)} MB`);
+      console.log('📄 Documents:', preparedDocuments.map(doc => ({
+        name: doc.name || doc.title || 'Unknown',
+        type: doc.type,
+        size: doc.size ? `${(doc.size / 1024).toFixed(2)} KB` : 'N/A',
+        hasBlob: !!(doc.blob || doc.file)
+      })));
+      console.groupEnd();
+
+      // ⚠️ CRITICAL CHECK: Payload geçerli mi?
+      if (!payload.title) {
+        throw new Error('Payload title eksik!');
+      }
+      if (!payload.text || payload.text.length === 0) {
+        throw new Error('Payload text eksik veya boş!');
+      }
+      console.log('✅ Payload validasyon geçti');
+
       // 2️⃣ IndexedDB'ye kaydet (sessionStorage yerine - 100MB+ dosyalar için)
-      console.log(`💾 IndexedDB'ye kaydediliyor: ${tempId} (${(payload.size / (1024 * 1024)).toFixed(2)} MB, ${preparedDocuments.length} döküman)`);
+      console.log(`💾 IndexedDB'ye KAYDEDILIYOR: ${tempId}`);
+      console.log(`   - Size: ${(payload.size / (1024 * 1024)).toFixed(2)} MB`);
+      console.log(`   - Documents: ${preparedDocuments.length}`);
+      
       await saveToIndexedDB(tempId, payload);
+      console.log('✅ saveToIndexedDB() tamamlandı');
 
       console.log('✅ IndexedDB kaydı tamamlandı');
       
       // 🛡️ IndexedDB transaction flush için micro-delay (browser optimization)
-      await new Promise(resolve => setTimeout(resolve, 50));
-      console.log('🔄 IndexedDB transaction flushed');
+      // ⚠️ 50ms → 200ms (büyük dosyalar için disk yazma süresi)
+      await new Promise(resolve => setTimeout(resolve, 200));
+      console.log('🔄 IndexedDB transaction flushed (200ms waited)');
       
-      // 🔍 Doğrulama: Veri gerçekten yazıldı mı?
-      const verification = await getFromIndexedDB(tempId);
-      if (!verification) {
-        throw new Error('IndexedDB yazma doğrulaması başarısız - veri bulunamadı!');
+      // 🔍 Doğrulama: Veri gerçekten yazıldı mı? (3 deneme)
+      let verification = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        console.log(`🔍 Doğrulama denemesi ${attempt}/3...`);
+        verification = await getFromIndexedDB(tempId);
+        if (verification) {
+          console.log(`✅ IndexedDB yazma doğrulandı (deneme ${attempt})`);
+          break;
+        }
+        if (attempt < 3) {
+          console.warn(`⚠️ Veri bulunamadı, ${100 * attempt}ms bekleniyor...`);
+          await new Promise(resolve => setTimeout(resolve, 100 * attempt));
+        }
       }
-      console.log('✅ IndexedDB yazma doğrulandı');
+      
+      if (!verification) {
+        const errorMsg = `❌ IndexedDB yazma doğrulaması başarısız!
+        
+3 denemede veri bulunamadı.
+Key: ${tempId}
+
+Lütfen tarayıcı konsolunu kontrol edin ve geliştiriciyle iletişime geçin.`;
+        
+        toast.error(errorMsg, { duration: 10000 });
+        throw new Error('IndexedDB yazma doğrulaması başarısız - 3 denemede veri bulunamadı!');
+      }
+      
+      // Veri içeriğini doğrula
+      const verifiedData = verification as any;
+      
+      // ✅ documents array BOŞ olabilir (sadece text ile analiz mümkün)
+      if (!verifiedData.title || !verifiedData.text) {
+        console.error('❌ Doğrulama hatası: title veya text eksik!', verifiedData);
+        throw new Error('IndexedDB verisi bozuk - title/text eksik!');
+      }
+      
+      console.log(`✅ Veri doğrulandı:`, {
+        title: verifiedData.title,
+        textLength: verifiedData.text.length,
+        documentCount: verifiedData.documents?.length || 0
+      });
 
       // 3️⃣ Router prefetch
       await router.prefetch('/ihale/yeni-analiz');
