@@ -1,4 +1,6 @@
 import { AnalysisStore, updateAnalysis, getAnalysis } from "./records";
+import { extractText } from "./extraction-helpers";
+import { analyzeWithAI } from "./ai-analysis-helper";
 import fs from "fs";
 
 function sleep(ms = 500) {
@@ -84,13 +86,13 @@ async function processAnalysis(analysisId: string) {
     console.log(`  📄 File: ${analysis.filename} (${(analysis.size / 1024).toFixed(1)}KB)`);
 
     // Step 1: OCR/Text Extraction (10-40%)
-    await performOCR(analysisId, analysis.storagePath);
+    const extractedText = await performOCR(analysisId, analysis.storagePath);
     
     // Step 2: Document Parsing (40-60%)
-    await parseDocument(analysisId, analysis.storagePath);
+    await parseDocument(analysisId, extractedText);
     
     // Step 3: AI Analysis (60-95%)
-    await performAIAnalysis(analysisId, analysis.storagePath);
+    const aiResult = await performAIAnalysis(analysisId, extractedText, analysis.filename);
     
     // Step 4: Finalize (95-100%)
     updateAnalysis(analysisId, { progress: 95 });
@@ -100,8 +102,9 @@ async function processAnalysis(analysisId: string) {
     updateAnalysis(analysisId, { 
       progress: 100, 
       status: "completed", 
-      result: { 
-        text: "Analysis completed successfully",
+      result: {
+        ...aiResult,
+        text: extractedText.substring(0, 500), // First 500 chars
         duration,
         processedAt: new Date().toISOString()
       } 
@@ -122,42 +125,69 @@ async function processAnalysis(analysisId: string) {
   }
 }
 
-// TODO: Replace with real Tesseract OCR
-async function performOCR(analysisId: string, filePath: string) {
+// Extract text using real OCR/parsers
+async function performOCR(analysisId: string, filePath: string): Promise<string> {
   console.log(`  🔍 OCR: Extracting text...`);
   updateAnalysis(analysisId, { progress: 10 });
-  await sleep(800);
-  updateAnalysis(analysisId, { progress: 25 });
-  await sleep(600);
-  updateAnalysis(analysisId, { progress: 40 });
-  // Future: const text = await extractTextWithTesseract(filePath);
+  
+  try {
+    const analysis = getAnalysis(analysisId);
+    if (!analysis) throw new Error("Analysis not found");
+    
+    const result = await extractText(filePath, analysis.filename);
+    
+    updateAnalysis(analysisId, { progress: 40 });
+    console.log(`    ✅ Extracted: ${result.wordCount} words via ${result.method}`);
+    
+    return result.text;
+  } catch (error) {
+    console.error(`    ❌ OCR failed:`, error);
+    throw error;
+  }
 }
 
-// TODO: Replace with real document parser
-async function parseDocument(analysisId: string, filePath: string) {
+// Parse document structure (basic for now)
+async function parseDocument(analysisId: string, text: string) {
   console.log(`  📋 Parsing: Analyzing structure...`);
   updateAnalysis(analysisId, { progress: 45 });
-  await sleep(500);
+  
+  // Basic structure analysis
+  const sections = text.split(/\n\n+/).length;
+  const hasNumbers = /\d+/.test(text);
+  const hasDates = /\d{1,2}[./-]\d{1,2}[./-]\d{2,4}/.test(text);
+  
   updateAnalysis(analysisId, { progress: 55 });
-  await sleep(400);
+  console.log(`    📊 Structure: ${sections} sections, numbers: ${hasNumbers}, dates: ${hasDates}`);
+  
+  await sleep(300);
   updateAnalysis(analysisId, { progress: 60 });
-  // Future: const parsed = await parseDocumentStructure(text);
 }
 
-// TODO: Replace with real Claude AI analysis
-async function performAIAnalysis(analysisId: string, filePath: string) {
+// Perform real AI analysis with Claude
+async function performAIAnalysis(analysisId: string, text: string, filename: string): Promise<any> {
   console.log(`  🤖 AI: Analyzing content...`);
+  updateAnalysis(analysisId, { progress: 65 });
   
-  // Simulate streaming progress
-  for (let p = 65; p <= 90; p += 5) {
-    updateAnalysis(analysisId, { progress: p });
-    await sleep(400);
+  try {
+    const aiResult = await analyzeWithAI(text, filename);
+    
+    updateAnalysis(analysisId, { progress: 75 });
+    console.log(`    🎯 AI Result: ${aiResult.summary.substring(0, 50)}...`);
+    console.log(`    📊 Confidence: ${(aiResult.confidence * 100).toFixed(0)}%`);
+    
+    updateAnalysis(analysisId, { progress: 85 });
+    await sleep(500);
+    updateAnalysis(analysisId, { progress: 90 });
+    
+    return aiResult;
+  } catch (error) {
+    console.error(`    ❌ AI analysis failed:`, error);
+    // Return minimal result on error
+    return {
+      summary: "AI analysis failed",
+      keyPoints: [],
+      entities: {},
+      confidence: 0,
+    };
   }
-  
-  // Future: 
-  // const aiResult = await analyzeWithClaude({
-  //   text: extractedText,
-  //   documentType: parsed.type,
-  //   extractionPrompt: getExtractionPrompt()
-  // });
 }
