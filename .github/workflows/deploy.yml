@@ -1,0 +1,53 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Manuel tetikleme için
+
+jobs:
+  deploy:
+    name: Deploy to DigitalOcean
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            echo "🚀 Starting deployment..."
+
+            cd /opt/procheff-v2
+
+            echo "📦 Pulling latest code..."
+            git pull origin main
+
+            echo "🔄 Restarting Docker container..."
+            docker compose restart
+
+            echo "⏳ Waiting for container to be ready..."
+            sleep 5
+
+            echo "🏥 Health check..."
+            curl -f http://localhost:3000/api/health || exit 1
+
+            echo "✅ Deployment successful!"
+
+      - name: Notify on success
+        if: success()
+        run: |
+          echo "✅ Deployment başarılı!"
+          echo "🌐 URL: http://100.88.13.45:3000"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "❌ Deployment başarısız!"
+          echo "Loglara bak: docker compose logs -f"
