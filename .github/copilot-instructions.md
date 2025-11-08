@@ -775,6 +775,234 @@ rm -rf "$PROJECT_DIR/.next"
 
 ---
 
-**Last Updated**: November 7, 2025 21:30 TST
-**Version**: 0.2.1 (UI/UX Enhanced)
-**Major Changes**: Toast notifications, AI logging, API key validator, enhanced error handling, developer workflow improvements
+---
+
+## 🚀 Production Deployment (November 8, 2025)
+
+### Platform: DigitalOcean + Tailscale + Docker
+
+**Status**: ✅ Live in Production
+**Deployment Date**: November 8, 2025, 10:58 UTC
+
+### Infrastructure
+
+**Server Details**:
+- **Provider**: DigitalOcean Droplet
+- **Location**: Frankfurt, Germany (FRA1)
+- **IP**: 161.35.217.113
+- **Tailscale IP**: 100.88.13.45
+- **OS**: Ubuntu 24.04 LTS
+- **CPU**: 2 vCPU Premium Intel
+- **RAM**: 4GB
+- **Disk**: 120GB NVMe SSD
+- **Cost**: $33.60/month (vs Vercel $79/mo - 57% cheaper)
+
+**Network**:
+- **Tailscale VPN**: Secure peer-to-peer access
+- **Network**: yedek-arsiv.com
+- **Free tier**: Up to 100 devices
+
+### Deployment Architecture
+
+```
+GitHub Repo (source code)
+    ↓ git clone/pull
+Server (/opt/procheff-v2)
+    ↓ docker compose build
+Docker Container (isolated runtime)
+    ↓ runs on
+DigitalOcean Droplet
+    ↓ accessible via
+Tailscale VPN (http://100.88.13.45:3000)
+```
+
+### Access URLs
+
+**Primary (Recommended)**:
+```
+http://100.88.13.45:3000
+```
+
+**Health Check**:
+```
+http://100.88.13.45:3000/api/health
+```
+
+### Docker Configuration
+
+**Files**:
+- `Dockerfile` - Multi-stage build with Tesseract, Chromium
+- `docker-compose.yml` - Production orchestration
+- `docker-setup.sh` - Automated server setup script
+- `.dockerignore` - Build optimization
+
+**Container Features**:
+- ✅ Node.js 20 (Bookworm)
+- ✅ Tesseract OCR (Turkish + English)
+- ✅ Chromium for Puppeteer
+- ✅ All fonts and dependencies
+- ✅ Health check endpoint
+- ✅ Volume persistence (data, logs, tmp)
+- ✅ Auto-restart policy
+
+**Build Command**:
+```bash
+docker compose build
+docker compose up -d
+```
+
+### Development Workflow (UPDATED)
+
+**Local Development** (Mac):
+```bash
+# 1. Write code
+cd /Users/numanaydar/Desktop/procheff-v2
+code .  # VS Code
+
+# 2. Test locally (optional)
+npm run dev
+# http://localhost:3000
+
+# 3. Commit and push
+git add .
+git commit -m "Feature: New feature"
+git push origin main
+```
+
+**Server Deployment**:
+```bash
+# SSH to server
+ssh root@161.35.217.113
+
+# Navigate to project
+cd /opt/procheff-v2
+
+# Pull latest code
+git pull
+
+# Rebuild (if Dockerfile/dependencies changed)
+docker compose build
+
+# Restart
+docker compose up -d
+
+# Check logs
+docker compose logs -f
+```
+
+**Quick Update Script** (one-liner):
+```bash
+ssh root@161.35.217.113 "cd /opt/procheff-v2 && git pull && docker compose restart"
+```
+
+### Management Commands
+
+**Container Operations**:
+```bash
+docker ps                      # Status
+docker compose logs -f         # Live logs
+docker compose logs --tail=100 # Last 100 lines
+docker compose restart         # Restart
+docker compose down            # Stop
+docker compose up -d           # Start
+docker stats procheff-app      # Resource usage
+```
+
+**Database Backup**:
+```bash
+# Export from container
+docker cp procheff-app:/app/data/ihale-scraper.db ./backup-$(date +%Y%m%d).db
+
+# Download to local
+scp root@161.35.217.113:/opt/procheff-v2/backup-*.db ~/Desktop/
+```
+
+**Full System Backup**:
+```bash
+cd /opt
+tar -czf procheff-backup-$(date +%Y%m%d).tar.gz procheff-v2
+```
+
+### User Access (Tailscale)
+
+**Setup for New Users**:
+1. Install Tailscale: https://tailscale.com/download
+2. Login with Gmail
+3. Admin approves via: https://login.tailscale.com/admin/machines
+4. Access URL: http://100.88.13.45:3000
+
+### Monitoring & Security
+
+**Active Security**:
+- ✅ Firewall (UFW) - Only Tailscale port open
+- ✅ Tailscale end-to-end encryption
+- ✅ Docker container isolation
+- ✅ Daily automated backups (7-day retention)
+- ✅ Environment variables encrypted (.env file)
+
+**Resource Monitoring**:
+```bash
+free -m              # Memory
+df -h                # Disk
+docker stats         # Container resources
+tailscale status     # VPN status
+```
+
+### Troubleshooting
+
+**Container won't start**:
+```bash
+docker compose logs procheff
+docker compose restart
+```
+
+**Port conflict**:
+```bash
+lsof -i :3000
+kill -9 PID
+```
+
+**Disk full**:
+```bash
+docker system prune -a -f
+docker volume prune -f
+```
+
+### Key Differences from Vercel
+
+| Feature | DigitalOcean + Docker | Vercel |
+|---------|----------------------|--------|
+| **Timeout** | Unlimited | 60s (Pro) |
+| **File Size** | Unlimited | 50MB |
+| **OCR** | Tesseract (free) | Not supported |
+| **Puppeteer** | Full support | Not supported |
+| **Cost** | $33.60/mo | $79/mo |
+| **Control** | Full root access | Limited |
+
+### Performance
+
+**Benchmarks**:
+- NVMe SSD: 3-4x faster than regular SSD
+- Premium Intel CPUs: Optimized for AI workloads
+- Frankfurt datacenter: Low latency to Turkey
+- Tailscale P2P: Direct connection (no relay overhead)
+
+### Documentation
+
+**Deployment Guides**:
+- `DEPLOYMENT_SUCCESS.md` - Complete production guide
+- `DOCKER_DEPLOYMENT.md` - Docker setup details
+- `QUICK_START.md` - Fast setup guide
+- `TROUBLESHOOTING.md` - Common issues & solutions
+
+**Important Notes**:
+- ⚠️ Mac no longer runs the application (zero CPU load)
+- ⚠️ All processing happens on DigitalOcean server
+- ⚠️ Vercel deployment is now redundant (can be deleted)
+- ✅ GitHub remains essential for code management
+
+---
+
+**Last Updated**: November 8, 2025 11:30 TST
+**Version**: 0.2.1 (Production Deployed)
+**Major Changes**: DigitalOcean + Tailscale deployment, Docker containerization, full feature support (OCR, Puppeteer), 57% cost reduction
