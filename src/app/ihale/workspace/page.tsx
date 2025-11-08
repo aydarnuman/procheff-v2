@@ -1,14 +1,15 @@
 'use client';
 
 // ============================================================================
-// TENDER WORKSPACE - Dual Mode
-// Mode 1: Upload files and create session (no sessionId)
-// Mode 2: Track progress and show results (with sessionId)
+// TENDER WORKSPACE - Proper File Processing Integration
+// Uses SimpleDocumentList component for file processing workflow
 // ============================================================================
 
-import { useState, useEffect, useCallback, Suspense, useRef } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Loader2, CheckCircle, XCircle, FileText, Download, ArrowLeft, Upload, X } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, FileText, Download, ArrowLeft } from 'lucide-react';
+import { SimpleDocumentList } from '@/components/ihale/SimpleDocumentList';
+import { useIhaleStore, FileMetadata } from '@/lib/stores/ihale-store';
 import { toast } from 'sonner';
 
 interface TenderFile {
@@ -58,51 +59,161 @@ function TenderWorkspacePageInner() {
   const searchParams = useSearchParams();
   const sessionId = searchParams.get('sessionId');
 
-  // DUAL MODE: sessionId varsa tracking, yoksa upload
+  // DUAL MODE: sessionId varsa tracking, yoksa processing
   if (!sessionId) {
-    return <UploadMode />;
+    return <ProcessingMode />;
   }
 
   return <TrackingMode sessionId={sessionId} />;
 }
 
 // ============================================================================
-// MODE 1: UPLOAD MODE (sessionId yok)
+// MODE 1: PROCESSING MODE (dosya işleme)
 // ============================================================================
-function UploadMode() {
+function ProcessingMode() {
   const router = useRouter();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [uploading, setUploading] = useState(false);
+  const { fileStatuses, addFileStatus, updateFileStatus, removeFileStatus } = useIhaleStore();
+  const [processing, setProcessing] = useState(false);
+  const [fileObjects, setFileObjects] = useState<Map<string, File>>(new Map()); // File objelerini ayrı sakla
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    setSelectedFiles(prev => [...prev, ...files]);
+  // Dosya seçme
+  const handleFileSelect = async (files: File[]) => {
+    for (const file of files) {
+      // File metadata oluştur
+      const metadata: FileMetadata = {
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        lastModified: file.lastModified
+      };
+
+      // Store'a ekle
+      addFileStatus({
+        fileMetadata: metadata,
+        status: 'pending',
+        progress: 'Bekliyor...'
+      });
+
+      // File objesini ayrı sakla
+      setFileObjects(prev => new Map(prev).set(file.name, file));
+    }
+    toast.success(`${files.length} dosya eklendi`);
   };
 
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const files = Array.from(e.dataTransfer.files);
-    setSelectedFiles(prev => [...prev, ...files]);
+  // Dosya silme
+  const handleFileRemove = (fileName: string) => {
+    removeFileStatus(fileName);
+    setFileObjects(prev => {
+      const next = new Map(prev);
+      next.delete(fileName);
+      return next;
+    });
+    toast.success(`${fileName} silindi`);
   };
 
-  const removeFile = (index: number) => {
-    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
-  };
+  // Tek dosyayı işle
+  const handleFileProcess = async (fileName: string) => {
+    const fileStatus = fileStatuses.find(f => f.fileMetadata.name === fileName);
+    const fileObject = fileObjects.get(fileName);
 
-  const handleUpload = async () => {
-    if (selectedFiles.length === 0) {
-      toast.error('Lütfen en az bir dosya seçin');
+    if (!fileStatus || !fileObject) {
+      toast.error('Dosya bulunamadı');
       return;
     }
 
-    setUploading(true);
+    // Status'u processing'e çek
+    updateFileStatus(fileName, { status: 'processing', progress: 'Başlatılıyor...' });
+
+    try {
+      // FormData oluştur
+      const formData = new FormData();
+      formData.append('file0', fileObject);
+      formData.append('fileCount', '1');
+      // PDF ise OCR kullan
+      const useOCR = fileObject.type === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf');
+      formData.append('useOCR', useOCR ? 'true' : 'false');
+
+      // SSE ile stream al
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) throw new Error('Upload failed');
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n\n');
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+
+                if (data.type === 'progress') {
+                  updateFileStatus(fileName, {
+                    status: 'processing',
+                    progress: data.message
+                  });
+                } else if (data.type === 'success') {
+                  const extractedText = data.result?.extracted_text || data.result?.text || '';
+                  const wordCount = extractedText.split(/\s+/).filter((w: string) => w.length > 0).length;
+
+                  updateFileStatus(fileName, {
+                    status: 'completed',
+                    progress: 'Tamamlandı',
+                    extractedText,
+                    wordCount
+                  });
+                  toast.success(`${fileName} işlendi (${wordCount.toLocaleString('tr-TR')} kelime)`);
+                } else if (data.type === 'error') {
+                  throw new Error(data.error || 'İşleme hatası');
+                }
+              } catch (parseError) {
+                console.error('Parse error:', parseError);
+              }
+            }
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('Process error:', error);
+      updateFileStatus(fileName, {
+        status: 'error',
+        progress: 'Hata',
+        error: error.message || 'Bilinmeyen hata'
+      });
+      toast.error(`${fileName} işlenemedi`);
+    }
+  };
+
+  // Analiz başlat
+  const handleStartAnalysis = async () => {
+    // Tüm dosyalar işlendi mi kontrol et
+    const allCompleted = fileStatuses.every(f => f.status === 'completed');
+    if (!allCompleted) {
+      toast.error('Önce tüm dosyaları işleyin!');
+      return;
+    }
+
+    setProcessing(true);
 
     try {
       // 1. Create session
-      const createRes = await fetch('/api/tender/session', {
+      const createRes = await fetch('/api/tender/session/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'manual',
+          userId: 'workspace-user'
+        })
       });
 
       const createData = await createRes.json();
@@ -110,15 +221,18 @@ function UploadMode() {
         throw new Error(createData.error || 'Session oluşturulamadı');
       }
 
-      const sessionId = createData.session.id;
+      const sessionId = createData.sessionId;
       toast.success('Session oluşturuldu');
 
-      // 2. Upload files
+      // 2. Upload processed files
       const formData = new FormData();
-      selectedFiles.forEach((file, index) => {
-        formData.append(`file${index}`, file);
+      fileStatuses.forEach((fileStatus, index) => {
+        const fileObject = fileObjects.get(fileStatus.fileMetadata.name);
+        if (fileObject) {
+          formData.append(`file${index}`, fileObject);
+        }
       });
-      formData.append('fileCount', selectedFiles.length.toString());
+      formData.append('fileCount', fileStatuses.length.toString());
       formData.append('sessionId', sessionId);
 
       const uploadRes = await fetch('/api/tender/session/upload', {
@@ -148,110 +262,58 @@ function UploadMode() {
       // 4. Redirect to tracking mode
       router.push(`/ihale/workspace?sessionId=${sessionId}`);
     } catch (error: any) {
-      console.error('Upload error:', error);
-      toast.error(error.message || 'Yükleme başarısız');
-      setUploading(false);
+      console.error('Analysis start error:', error);
+      toast.error(error.message || 'Analiz başlatılamadı');
+      setProcessing(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen bg-slate-950 p-6">
+      <div className="max-w-6xl mx-auto space-y-6">
         {/* Header */}
         <div className="mb-6">
           <button
             onClick={() => router.push('/ihale')}
-            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-4"
+            className="flex items-center gap-2 text-gray-400 hover:text-white mb-4 transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
             İhale Dashboard'a Dön
           </button>
-          <h1 className="text-3xl font-bold text-gray-900">Yeni İhale Analizi</h1>
-          <p className="text-gray-600 mt-1">Dosyalarınızı yükleyin ve AI ile analiz edin</p>
+          <h1 className="text-3xl font-bold text-white">Yeni İhale Analizi</h1>
+          <p className="text-gray-400 mt-1">Dosyalarınızı işleyin ve AI ile analiz edin</p>
         </div>
 
-        {/* Upload Area */}
-        <div
-          onDrop={handleDrop}
-          onDragOver={(e) => e.preventDefault()}
-          onClick={() => !uploading && fileInputRef.current?.click()}
-          className={`border-2 border-dashed rounded-xl p-12 text-center transition-colors ${
-            uploading
-              ? 'border-gray-300 bg-gray-50 cursor-not-allowed'
-              : 'border-gray-300 hover:border-blue-500 bg-white cursor-pointer'
-          }`}
-        >
-          <Upload className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <p className="text-lg text-gray-700 font-medium mb-2">
-            Dosyaları sürükleyin veya tıklayın
-          </p>
-          <p className="text-sm text-gray-500">
-            PDF, DOCX, DOC, ZIP, TXT, CSV desteklenir
-          </p>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept=".pdf,.docx,.doc,.zip,.txt,.csv"
-            onChange={handleFileSelect}
-            disabled={uploading}
-            className="hidden"
-          />
-        </div>
+        {/* SimpleDocumentList Component */}
+        <SimpleDocumentList
+          fileStatuses={fileStatuses}
+          onFileSelect={handleFileSelect}
+          onFileRemove={handleFileRemove}
+          onFileProcess={handleFileProcess}
+          onStartAnalysis={fileStatuses.every(f => f.status === 'completed') ? handleStartAnalysis : undefined}
+        />
 
-        {/* Selected Files */}
-        {selectedFiles.length > 0 && (
-          <div className="mt-6 bg-white rounded-xl shadow-sm p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Seçilen Dosyalar ({selectedFiles.length})
-            </h3>
-            <div className="space-y-2">
-              {selectedFiles.map((file, index) => (
-                <div
-                  key={index}
-                  className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg"
-                >
-                  <FileText className="w-5 h-5 text-gray-400 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {file.name}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {(file.size / 1024).toFixed(1)} KB
-                    </p>
-                  </div>
-                  {!uploading && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeFile(index);
-                      }}
-                      className="p-1 hover:bg-gray-200 rounded transition-colors"
-                    >
-                      <X className="w-4 h-4 text-gray-500" />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {/* Upload Button */}
+        {/* Start Analysis Button - Sadece tüm dosyalar işlendiyse */}
+        {fileStatuses.length > 0 && fileStatuses.every(f => f.status === 'completed') && (
+          <div className="sticky bottom-6 z-10">
             <button
-              onClick={handleUpload}
-              disabled={uploading || selectedFiles.length === 0}
-              className={`w-full mt-6 py-3 rounded-lg font-semibold transition-all ${
-                uploading || selectedFiles.length === 0
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white'
-              }`}
+              onClick={handleStartAnalysis}
+              disabled={processing}
+              className={`
+                w-full py-4 rounded-xl font-bold text-lg transition-all duration-300
+                ${processing
+                  ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white shadow-lg hover:shadow-xl transform hover:scale-[1.02]'
+                }
+              `}
             >
-              {uploading ? (
+              {processing ? (
                 <div className="flex items-center justify-center gap-2">
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>Yükleniyor ve Analiz Başlatılıyor...</span>
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                  <span>Analiz Başlatılıyor...</span>
                 </div>
               ) : (
-                'Yükle ve Analiz Et'
+                '🚀 AI ile Analiz Et'
               )}
             </button>
           </div>
