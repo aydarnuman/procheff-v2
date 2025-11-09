@@ -308,6 +308,16 @@ ${text}
 
 🎯 ÇIKARACAĞIN BİLGİLER:
 
+0️⃣ **BELGE TÜRÜ TESPİTİ** (ÖNCELİKLİ):
+   - Belgenin türünü belirle: teknik_sartname | ihale_ilani | sozlesme_tasarisi | idari_sartname | fiyat_teklif_mektubu | diger | belirsiz
+   - İçerikte şunları ara:
+     * Teknik Şartname: menü, gramaj, ürün özellikleri, hijyen standartları, HACCP, ISO 22000
+     * İhale İlanı: ihale kayıt numarası, son teklif verme tarihi, EKAP, açık ihale, yaklaşık maliyet
+     * Sözleşme Tasarısı: madde 1-10, taraflar, yüklenici, işveren, ceza şartları, fesih
+     * İdari Şartname: genel/özel şartlar, isteklilerde aranan şartlar, geçici/kesin teminat
+     * Fiyat Teklif Mektubu: birim fiyat, toplam tutar, KDV, indirim
+   - Belge türü tespitinde 0-1 arası güven skoru (belge_turu_guven) ver
+
 1️⃣ **KURUM VE İHALE**: Kurum adı, ihale türü, konu
 2️⃣ **TARİHLER**: İhale, teklif, başlama tarihleri
 3️⃣ **HİZMET KAPSAMI**: Kişi, öğün, süre (metinsel)
@@ -318,9 +328,16 @@ ${text}
 
 \`\`\`json
 {
+  "belge_turu": "teknik_sartname",
+  "belge_turu_guven": 0.95,
   "veri_havuzu": {
-    "ham_metin": "KURUM: [ad]\\n\\nİHALE TÜRÜ: [tür]\\n\\nTARİHLER:\\n• [tarihler]\\n\\nHİZMET:\\n• [hizmet detayları]\\n\\nÖZEL ŞARTLAR:\\n1. [şart]\\n2. [şart]\\n...\\n\\nRİSKLER:\\n1. [risk]\\n...",
+    "ham_metin": "BELGE TÜRÜ: Teknik Şartname\\n\\nKURUM: [ad]\\n\\nİHALE TÜRÜ: [tür]\\n\\nTARİHLER:\\n• [tarihler]\\n\\nHİZMET:\\n• [hizmet detayları]\\n\\nÖZEL ŞARTLAR:\\n1. [şart]\\n2. [şart]\\n...\\n\\nRİSKLER:\\n1. [risk]\\n...",
     "kaynaklar": {
+      "belge_turu": {
+        "deger": "Teknik Şartname - Menü ve gramaj bilgileri içeriyor",
+        "kaynak": "[İçerikten belge türünü gösteren 200+ karakter proof]",
+        "dosya": "[Dosya adı]"
+      },
       "kisi_sayisi": {
         "deger": "[metinsel değer]",
         "kaynak": "[200+ karakter proof]",

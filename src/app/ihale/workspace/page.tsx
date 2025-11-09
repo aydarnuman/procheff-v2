@@ -26,6 +26,8 @@ type SupportedMimeType =
   | 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
   | 'text/plain'
   | 'text/csv'
+  | 'application/csv'
+  | 'application/json'
   | 'image/png'
   | 'image/jpeg'
   | 'image/jpg'
@@ -180,6 +182,8 @@ const ALLOWED_MIME_TYPES: SupportedMimeType[] = [
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'text/plain',
   'text/csv',
+  'application/csv',
+  'application/json',
   'image/png',
   'image/jpeg',
   'image/jpg',
@@ -212,29 +216,52 @@ const validateFile = (file: File): { valid: boolean; error?: string } => {
     return { valid: false, error: 'Dosya boş' };
   }
 
-  // MIME type check
-  if (!ALLOWED_MIME_TYPES.includes(file.type as SupportedMimeType)) {
-    const error = `Desteklenmeyen dosya formatı: ${file.type}. İzin verilenler: PDF, Word, Excel, Text, Image, ZIP`;
+  // MIME type check with file extension fallback
+  const fileExtension = file.name.toLowerCase().split('.').pop() || '';
+  const isAllowedExtension = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'csv', 'json', 'png', 'jpg', 'jpeg', 'tiff', 'zip'].includes(fileExtension);
+  
+  if (!ALLOWED_MIME_TYPES.includes(file.type as SupportedMimeType) && !isAllowedExtension) {
+    const error = `Desteklenmeyen dosya formatı: ${file.type}. İzin verilenler: PDF, Word, Excel, Text, JSON, CSV, Image, ZIP`;
     workspaceLogger.error('VALIDATION', 'Unsupported MIME type', null, {
       fileName: file.name,
       mimeType: file.type,
+      fileExtension,
       allowedTypes: ALLOWED_MIME_TYPES
     });
     return { valid: false, error };
   }
+  
+  // CSV özel durum - MIME type yanlış olsa bile uzantı .csv ise kabul et
+  if (fileExtension === 'csv' && !ALLOWED_MIME_TYPES.includes(file.type as SupportedMimeType)) {
+    workspaceLogger.warning('VALIDATION', 'CSV file with incorrect MIME type accepted by extension', {
+      fileName: file.name,
+      mimeType: file.type,
+      correctedTo: 'text/csv'
+    });
+  }
 
-  // Filename security check (prevent path traversal)
+  // Filename security check (prevent path traversal only)
   if (/[\/\\]/.test(file.name)) {
     workspaceLogger.error('VALIDATION', 'Path traversal attempt', null, { fileName: file.name });
     return { valid: false, error: 'Dosya adı geçersiz karakter içeriyor (/ veya \\)' };
   }
 
-  // Check for dangerous characters
-  if (!/^[\w\s\-_.()ğüşıöçĞÜŞİÖÇ]+\.[a-zA-Z0-9]+$/i.test(file.name)) {
-    workspaceLogger.error('VALIDATION', 'Invalid filename characters', null, { fileName: file.name });
+  // Check for dangerous characters - daha esnek regex (Türkçe ve özel karakterlere izin ver)
+  // Sadece / \ ve control karakterleri yasaklı
+  if (/[\x00-\x1F\x7F]/.test(file.name)) {
+    workspaceLogger.error('VALIDATION', 'Invalid filename characters (control chars)', null, { fileName: file.name });
     return { 
       valid: false, 
-      error: 'Dosya adı yalnızca harf, rakam, boşluk ve .-_() karakterlerini içerebilir' 
+      error: 'Dosya adı geçersiz kontrol karakterleri içeriyor' 
+    };
+  }
+  
+  // Dosya uzantısı kontrolü (en az bir nokta ve uzantı olmalı)
+  if (!/\.[a-zA-Z0-9]+$/.test(file.name)) {
+    workspaceLogger.error('VALIDATION', 'Invalid filename - no extension', null, { fileName: file.name });
+    return { 
+      valid: false, 
+      error: 'Dosya adı geçerli bir uzantı içermelidir (.pdf, .doc, vb.)' 
     };
   }
 
@@ -770,10 +797,17 @@ function ProcessingMode() {
 
                   const processingTime = Date.now() - startTime;
 
+                  // 🎯 Belge türü bilgisini al (stats.files array'inden)
+                  const fileInfo = data.stats?.files?.find((f: any) => f.name === fileName);
+                  const detectedType = fileInfo?.detectedType;
+                  const detectedTypeConfidence = fileInfo?.detectedTypeConfidence;
+
                   workspaceLogger.success('FILE_PROCESS', `Dosya işlendi: ${fileName}`, {
                     textLength: extractedText.length,
                     wordCount,
                     processingTime: `${(processingTime / 1000).toFixed(2)}s`,
+                    detectedType,
+                    detectedTypeConfidence: detectedTypeConfidence ? Math.round(detectedTypeConfidence * 100) + '%' : undefined,
                     stats: data.stats
                   });
 
@@ -781,7 +815,8 @@ function ProcessingMode() {
                     status: 'completed',
                     progress: 'Tamamlandı',
                     extractedText,
-                    wordCount
+                    wordCount,
+                    detectedType
                   });
                   
                   toast.success(`${fileName} işlendi`, {
@@ -825,11 +860,16 @@ function ProcessingMode() {
                                data.stats?.totalWordCount ||
                                extractedText.split(/\s+/).filter((w: string) => w.length > 0).length;
 
+              // 🎯 Belge türü bilgisini al
+              const fileInfo = data.stats?.files?.find((f: any) => f.name === fileName);
+              const detectedType = fileInfo?.detectedType;
+
               updateFileStatus(fileName, {
                 status: 'completed',
                 progress: 'Tamamlandı',
                 extractedText,
-                wordCount
+                wordCount,
+                detectedType
               });
               toast.success(`${fileName} işlendi (${wordCount.toLocaleString('tr-TR')} kelime)`);
               
@@ -1101,29 +1141,140 @@ function ProcessingMode() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 p-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-6">
       <div className="max-w-6xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between">
+        {/* Premium Header */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-6">
+            {/* Premium Geri Dönüş Butonu */}
             <button
               onClick={() => router.push('/ihale')}
-              className="flex items-center gap-2 text-gray-400 hover:text-white mb-4 transition-colors"
+              className="group flex items-center gap-2 px-4 py-2 bg-slate-800/50 hover:bg-slate-800 text-gray-400 hover:text-white rounded-xl transition-all duration-300 border border-slate-700/50 hover:border-slate-600 hover:shadow-lg hover:shadow-slate-700/30 backdrop-blur-sm"
             >
-              <ArrowLeft className="w-4 h-4" />
-              İhale Dashboard'a Dön
+              <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform duration-300" />
+              <span className="font-medium">İhale Dashboard</span>
             </button>
             
-            {/* Debug Mode Indicator (Development only) */}
+            {/* Debug Mode Badge - Animated */}
             {IS_DEBUG && (
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-500/10 border border-purple-500/30 rounded-lg">
-                <Bug className="w-4 h-4 text-purple-400" />
-                <span className="text-xs text-purple-300 font-medium">Debug Mode</span>
-                <Terminal className="w-3 h-3 text-purple-400 animate-pulse" />
+              <div className="relative overflow-hidden flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500/10 via-pink-500/10 to-orange-500/10 border border-purple-500/30 rounded-xl shadow-lg shadow-purple-500/20 backdrop-blur-sm">
+                <div className="absolute inset-0 bg-gradient-to-r from-purple-500/0 via-purple-500/20 to-purple-500/0 animate-shimmer" />
+                <Bug className="w-4 h-4 text-purple-400 animate-pulse relative z-10" />
+                <span className="text-xs text-purple-300 font-semibold relative z-10">Debug Mode</span>
+                <Terminal className="w-3 h-3 text-purple-400 animate-pulse relative z-10" />
               </div>
             )}
           </div>
+
+          {/* Premium Title with Gradient */}
+          <div className="text-center space-y-3">
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-white via-slate-200 to-white bg-clip-text text-transparent">
+              İhale Workspace
+            </h1>
+            <p className="text-slate-400 text-lg">
+              Dosyalarınızı yükleyin ve AI ile analiz edin
+            </p>
+            
+            {/* Decorative Line */}
+            <div className="flex items-center justify-center gap-2">
+              <div className="h-px w-16 bg-gradient-to-r from-transparent via-slate-600 to-transparent" />
+              <div className="w-2 h-2 rounded-full bg-slate-600" />
+              <div className="h-px w-16 bg-gradient-to-r from-transparent via-slate-600 to-transparent" />
+            </div>
+          </div>
         </div>
+
+        {/* Statistics Cards - Premium Design */}
+        {fileStatuses.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            {/* Toplam Dosya */}
+            <div className="bg-gradient-to-br from-blue-500/10 via-blue-500/5 to-transparent border border-blue-500/20 rounded-xl p-4 backdrop-blur-sm hover:border-blue-500/40 transition-all duration-300 group">
+              <div className="flex items-center justify-between mb-2">
+                <FileText className="w-5 h-5 text-blue-400 group-hover:scale-110 transition-transform duration-300" />
+                <span className="text-xs font-semibold text-blue-400 bg-blue-500/10 px-2 py-1 rounded-full">
+                  DOSYA
+                </span>
+              </div>
+              <p className="text-2xl font-bold text-white mb-1">
+                {fileStatuses.length}
+              </p>
+              <p className="text-xs text-slate-400">
+                {fileStatuses.filter(f => f.status === 'completed').length} işlendi
+              </p>
+            </div>
+
+            {/* Toplam Kelime */}
+            <div className="bg-gradient-to-br from-purple-500/10 via-purple-500/5 to-transparent border border-purple-500/20 rounded-xl p-4 backdrop-blur-sm hover:border-purple-500/40 transition-all duration-300 group">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xl group-hover:scale-110 transition-transform duration-300">📝</span>
+                <span className="text-xs font-semibold text-purple-400 bg-purple-500/10 px-2 py-1 rounded-full">
+                  KELİME
+                </span>
+              </div>
+              <p className="text-2xl font-bold text-white mb-1">
+                {fileStatuses
+                  .filter(f => f.status === 'completed')
+                  .reduce((sum, f) => sum + (f.wordCount || 0), 0)
+                  .toLocaleString('tr-TR')}
+              </p>
+              <p className="text-xs text-slate-400">
+                toplam kelime sayısı
+              </p>
+            </div>
+
+            {/* Token Tahmini */}
+            <div className="bg-gradient-to-br from-pink-500/10 via-pink-500/5 to-transparent border border-pink-500/20 rounded-xl p-4 backdrop-blur-sm hover:border-pink-500/40 transition-all duration-300 group">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xl group-hover:scale-110 transition-transform duration-300">🎯</span>
+                <span className="text-xs font-semibold text-pink-400 bg-pink-500/10 px-2 py-1 rounded-full">
+                  TOKEN
+                </span>
+              </div>
+              <p className="text-2xl font-bold text-white mb-1">
+                {Math.ceil(
+                  fileStatuses
+                    .filter(f => f.status === 'completed')
+                    .reduce((sum, f) => sum + (f.wordCount || 0), 0) * 1.3
+                ).toLocaleString('tr-TR')}
+              </p>
+              <p className="text-xs text-slate-400">
+                ~{((Math.ceil(
+                  fileStatuses
+                    .filter(f => f.status === 'completed')
+                    .reduce((sum, f) => sum + (f.wordCount || 0), 0) * 1.3
+                ) / MAX_TOKENS) * 100).toFixed(1)}% limit
+              </p>
+            </div>
+
+            {/* Durum */}
+            <div className="bg-gradient-to-br from-orange-500/10 via-orange-500/5 to-transparent border border-orange-500/20 rounded-xl p-4 backdrop-blur-sm hover:border-orange-500/40 transition-all duration-300 group">
+              <div className="flex items-center justify-between mb-2">
+                {fileStatuses.every(f => f.status === 'completed') ? (
+                  <CheckCircle className="w-5 h-5 text-green-400 group-hover:scale-110 transition-transform duration-300" />
+                ) : fileStatuses.some(f => f.status === 'processing') ? (
+                  <Loader2 className="w-5 h-5 text-orange-400 animate-spin" />
+                ) : (
+                  <span className="text-xl group-hover:scale-110 transition-transform duration-300">⏳</span>
+                )}
+                <span className="text-xs font-semibold text-orange-400 bg-orange-500/10 px-2 py-1 rounded-full">
+                  DURUM
+                </span>
+              </div>
+              <p className="text-2xl font-bold text-white mb-1">
+                {fileStatuses.every(f => f.status === 'completed')
+                  ? 'Hazır'
+                  : fileStatuses.some(f => f.status === 'processing')
+                  ? 'İşleniyor'
+                  : 'Bekliyor'}
+              </p>
+              <p className="text-xs text-slate-400">
+                {fileStatuses.filter(f => f.status === 'error').length > 0
+                  ? `${fileStatuses.filter(f => f.status === 'error').length} hata`
+                  : 'tüm sistemler aktif'}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* SimpleDocumentList Component */}
         <SimpleDocumentList
@@ -1137,40 +1288,47 @@ function ProcessingMode() {
           onBulkAnalyze={handleBulkAnalyze}
         />
 
-        {/* Start Analysis Button - Sadece tüm dosyalar işlendiyse */}
+        {/* Start Analysis Button - Kompakt Tasarım */}
         {fileStatuses.length > 0 && fileStatuses.every(f => f.status === 'completed') && (
-          <div className="sticky bottom-6 z-10">
-            <button
-              onClick={handleStartAnalysis}
-              disabled={processing}
-              className={`
-                w-full relative overflow-hidden group
-                py-3 px-6 rounded-xl font-semibold text-sm
-                transition-all duration-500 ease-out
-                ${processing
-                  ? 'bg-slate-800/50 text-slate-500 cursor-not-allowed border border-slate-700/50'
-                  : 'bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 hover:from-slate-800 hover:via-slate-700 hover:to-slate-800 text-white border border-slate-600/50 shadow-xl shadow-slate-900/40 hover:shadow-slate-700/50 transform hover:scale-[1.01] hover:-translate-y-0.5'
-                }
-              `}
-            >
-              {/* Premium glow effect */}
+          <div className="flex justify-center">
+            <div className="relative inline-block">
+              {/* Animated Background Glow */}
               {!processing && (
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000" />
+                <div className="absolute -inset-1 bg-slate-700/50 rounded-xl blur-lg opacity-40 animate-pulse" />
               )}
+              
+              <button
+                onClick={handleStartAnalysis}
+                disabled={processing}
+                className={`
+                  relative overflow-hidden group
+                  py-3 px-6 rounded-xl font-bold text-sm
+                  transition-all duration-300 ease-out
+                  ${processing
+                    ? 'bg-slate-800/80 text-slate-400 cursor-not-allowed border border-slate-700/50 backdrop-blur-sm'
+                    : 'bg-slate-800 hover:bg-slate-900 text-white border border-slate-700 shadow-xl shadow-slate-700/50 hover:shadow-slate-600/50 transform hover:scale-105'
+                  }
+                `}
+              >
+                {/* Premium shimmer effect */}
+                {!processing && (
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-slate-600/30 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000" />
+                )}
 
-              {processing ? (
-                <div className="flex items-center justify-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Analiz Başlatılıyor...</span>
-                </div>
-              ) : (
-                <div className="flex items-center justify-center gap-2 relative z-10">
-                  <span className="text-lg">✨</span>
-                  <span>AI ile Analiz Et</span>
-                  <span className="text-lg">✨</span>
-                </div>
-              )}
-            </button>
+                {processing ? (
+                  <div className="flex items-center justify-center gap-2 relative z-10">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Analiz Başlatılıyor...</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center gap-2 relative z-10">
+                    <span className="text-lg">✨</span>
+                    <span>AI ile Analiz Et</span>
+                    <span className="text-lg">✨</span>
+                  </div>
+                )}
+              </button>
+            </div>
           </div>
         )}
       </div>

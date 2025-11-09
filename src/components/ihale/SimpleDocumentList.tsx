@@ -310,10 +310,10 @@ export function SimpleDocumentList({
             ) : (
             <div 
               className={`
-                text-center py-12 px-6 rounded-xl border-2 border-dashed transition-all
+                relative text-center py-16 px-8 rounded-2xl border-2 border-dashed transition-all duration-300 overflow-hidden
                 ${isDragging 
-                  ? 'border-blue-500 bg-blue-500/10 scale-[1.01]' 
-                  : 'border-slate-700 hover:border-blue-500/50 hover:bg-slate-800/30'
+                  ? 'border-purple-500 bg-gradient-to-br from-purple-500/20 via-pink-500/10 to-orange-500/20 scale-[1.02] shadow-2xl shadow-purple-500/30' 
+                  : 'border-slate-700 hover:border-purple-500/50 hover:bg-slate-800/40 hover:shadow-xl hover:shadow-purple-500/10'
                 }
               `}
               onDragEnter={handleDragEnter}
@@ -321,47 +321,74 @@ export function SimpleDocumentList({
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
             >
+              {/* Animated Background Gradient */}
+              {!isDragging && (
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-purple-500/5 to-transparent translate-x-[-200%] animate-[shimmer_3s_ease-in-out_infinite]" />
+              )}
+              
               <motion.div
                 initial={{ scale: 1 }}
-                animate={{ scale: isDragging ? 1.05 : 1 }}
-                transition={{ duration: 0.2 }}
+                animate={{ scale: isDragging ? 1.1 : 1 }}
+                transition={{ duration: 0.2, type: "spring" }}
               >
-                <div className="relative inline-block mb-4">
-                  <div className={`absolute inset-0 blur-xl rounded-full transition-all ${isDragging ? 'bg-blue-500/30' : 'bg-blue-500/10'}`}></div>
-                  <FileText className={`relative w-12 h-12 mx-auto transition-colors ${isDragging ? 'text-blue-400' : 'text-slate-500'}`} />
+                <div className="relative inline-block mb-6">
+                  {/* Glow Effect */}
+                  <div className={`absolute inset-0 blur-2xl rounded-full transition-all duration-300 ${isDragging ? 'bg-gradient-to-r from-purple-500/40 via-pink-500/40 to-orange-500/40 scale-150' : 'bg-gradient-to-r from-purple-500/10 via-pink-500/10 to-orange-500/10'}`}></div>
+                  
+                  {/* Icon with animation */}
+                  <FileText className={`relative w-16 h-16 mx-auto transition-all duration-300 ${isDragging ? 'text-purple-400 animate-bounce' : 'text-slate-500'}`} />
+                  
+                  {/* Sparkle Effect on Drag */}
+                  {isDragging && (
+                    <div className="absolute -top-2 -right-2">
+                      <span className="text-2xl animate-spin">✨</span>
+                    </div>
+                  )}
                 </div>
               </motion.div>
               
-              <h3 className="text-base font-bold text-white mb-1">
-                {isDragging ? '📂 Dosyaları buraya bırakın' : 'Dosya Bekleniyor'}
+              <h3 className="text-xl font-bold bg-gradient-to-r from-white via-purple-200 to-white bg-clip-text text-transparent mb-2">
+                {isDragging ? '📂 Dosyaları Buraya Bırakın' : '✨ Dosya Bekleniyor'}
               </h3>
-              <p className="text-xs text-slate-500 mb-6">
+              <p className="text-sm text-slate-400 mb-8 max-w-md mx-auto">
                 {isDragging 
-                  ? 'Serbest bırakın'
-                  : 'Sürükle-bırak veya butona tıklayın'
+                  ? 'Harika! Serbest bırakın ve analiz başlasın'
+                  : 'Dosyalarınızı sürükleyip bırakın veya yükle butonuna tıklayın'
                 }
               </p>
 
-              {/* Dosya Tipi Örnekleri - Kompakt */}
-              <div className="flex items-center justify-center gap-3 mb-4">
-                <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-800/50 rounded border border-slate-700/50">
-                  <FileText className="w-4 h-4 text-red-400" />
-                  <span className="text-xs text-slate-500">PDF</span>
+              {/* Dosya Tipi Örnekleri - Premium */}
+              <div className="flex items-center justify-center gap-3 mb-6">
+                <div className="group flex items-center gap-2 px-3 py-2 bg-gradient-to-br from-red-500/10 to-red-500/5 rounded-lg border border-red-500/20 hover:border-red-500/40 transition-all duration-300 backdrop-blur-sm">
+                  <FileText className="w-4 h-4 text-red-400 group-hover:scale-110 transition-transform duration-300" />
+                  <span className="text-xs text-slate-400 font-medium">PDF</span>
                 </div>
-                <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-800/50 rounded border border-slate-700/50">
-                  <FileCode className="w-4 h-4 text-blue-400" />
-                  <span className="text-xs text-slate-500">Word</span>
+                <div className="group flex items-center gap-2 px-3 py-2 bg-gradient-to-br from-blue-500/10 to-blue-500/5 rounded-lg border border-blue-500/20 hover:border-blue-500/40 transition-all duration-300 backdrop-blur-sm">
+                  <FileCode className="w-4 h-4 text-blue-400 group-hover:scale-110 transition-transform duration-300" />
+                  <span className="text-xs text-slate-400 font-medium">Word</span>
                 </div>
-                <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-800/50 rounded border border-slate-700/50">
-                  <FileImage className="w-4 h-4 text-purple-400" />
-                  <span className="text-xs text-slate-500">Resim</span>
+                <div className="group flex items-center gap-2 px-3 py-2 bg-gradient-to-br from-purple-500/10 to-purple-500/5 rounded-lg border border-purple-500/20 hover:border-purple-500/40 transition-all duration-300 backdrop-blur-sm">
+                  <FileImage className="w-4 h-4 text-purple-400 group-hover:scale-110 transition-transform duration-300" />
+                  <span className="text-xs text-slate-400 font-medium">Resim</span>
                 </div>
               </div>
 
-              <div className="flex items-center justify-center gap-3 text-xs text-slate-600">
-                <span>Max 50MB</span>
-                <span>•</span>
-                <span>Çoklu dosya</span>
+              {/* Info Badges */}
+              <div className="flex items-center justify-center gap-4 text-xs">
+                <div className="flex items-center gap-1.5 text-slate-500">
+                  <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                  <span className="font-medium">Max 50MB</span>
+                </div>
+                <span className="text-slate-700">•</span>
+                <div className="flex items-center gap-1.5 text-slate-500">
+                  <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse animation-delay-300" />
+                  <span className="font-medium">Çoklu Dosya</span>
+                </div>
+                <span className="text-slate-700">•</span>
+                <div className="flex items-center gap-1.5 text-slate-500">
+                  <div className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse animation-delay-500" />
+                  <span className="font-medium">ZIP Desteği</span>
+                </div>
               </div>
             </div>
             )
@@ -375,7 +402,7 @@ export function SimpleDocumentList({
                   exit={{ opacity: 0, x: -50, scale: 0.95 }}
                   transition={{ duration: 0.2, delay: index * 0.03 }}
                   className={`
-                    group relative flex items-center gap-2 p-2 rounded-lg border backdrop-blur-sm
+                    group relative flex items-center gap-3 p-4 rounded-xl border backdrop-blur-sm
                     transition-all duration-200 hover:scale-[1.005] hover:shadow-lg hover:shadow-purple-500/5
                     bg-gradient-to-br from-slate-900/90 to-slate-800/90
                     ${file.status === 'processing'
@@ -388,35 +415,26 @@ export function SimpleDocumentList({
                     }
                   `}
                 >
-                  {/* 🆕 Checkbox - Sadece completed dosyalar için */}
-                  {onToggleFileSelection && file.status === 'completed' && (
-                    <div className="flex-shrink-0">
-                      <input
-                        type="checkbox"
-                        checked={selectedFiles.has(file.fileMetadata.name)}
-                        onChange={() => onToggleFileSelection(file.fileMetadata.name)}
-                        className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
-                      />
-                    </div>
-                  )}
-
-                  {/* Dosya Tipi İkonu - Compact */}
-                  <div className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-md bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/50 transform group-hover:scale-105 transition-all duration-200">
-                    <div className="scale-75">
+                  {/* Dosya Tipi İkonu - Bigger */}
+                  <div className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-lg bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/50 transform group-hover:scale-105 transition-all duration-200">
+                    <div className="scale-90">
                       {getFileTypeIcon(file.fileMetadata.name)}
                     </div>
                   </div>
 
                   {/* File Info */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <h4 className="font-medium text-white text-xs truncate group-hover:text-blue-400 transition-colors">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <h4 
+                        className="font-semibold text-white text-sm truncate group-hover:text-blue-400 transition-colors cursor-default max-w-[300px]"
+                        title={file.fileMetadata.name}
+                      >
                         {file.fileMetadata.name}
                       </h4>
 
-                      {/* Status Badge - Compact */}
+                      {/* Status Badge - Sadece İkon (Completed için text yok) */}
                       <div className={`
-                        flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium backdrop-blur-sm
+                        flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium backdrop-blur-sm
                         ${file.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
                           file.status === 'processing' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30 animate-pulse' :
                           file.status === 'error' ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
@@ -424,7 +442,7 @@ export function SimpleDocumentList({
                         }
                       `}>
                         {getStatusIcon(file.status)}
-                        <span>{getStatusText(file)}</span>
+                        {file.status !== 'completed' && <span>{getStatusText(file)}</span>}
                       </div>
 
                       {file.detectedType && (
@@ -435,9 +453,9 @@ export function SimpleDocumentList({
                     </div>
                     
                     {/* Dosya Bilgileri - Premium */}
-                    <div className="flex items-center gap-2 text-xs">
+                    <div className="flex items-center gap-2 text-sm flex-wrap">
                       {/* Dosya Formatı */}
-                      <span className="px-2 py-0.5 bg-gradient-to-r from-slate-700/80 to-slate-800/80 text-slate-200 rounded-md font-semibold border border-slate-600/50">
+                      <span className="px-2.5 py-1 bg-gradient-to-r from-slate-700/80 to-slate-800/80 text-slate-200 rounded-md font-semibold border border-slate-600/50">
                         {getFileFormat(file.fileMetadata.name)}
                       </span>
 
@@ -453,11 +471,11 @@ export function SimpleDocumentList({
                       {file.status === 'completed' && file.wordCount && (
                         <>
                           <span className="text-slate-600">•</span>
-                          <div className="flex items-center gap-1 px-2 py-0.5 bg-gradient-to-r from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 rounded-md">
-                            <span className="text-emerald-400 font-bold">
+                          <div className="flex items-center gap-1">
+                            <span className="text-slate-400 font-bold">
                               {file.wordCount.toLocaleString('tr-TR')}
                             </span>
-                            <span className="text-emerald-300/80 text-[10px]">kelime</span>
+                            <span className="text-slate-500 text-xs">kelime</span>
                           </div>
                         </>
                       )}
@@ -473,75 +491,49 @@ export function SimpleDocumentList({
                       </div>
                     )}
 
-                    {/* 🆕 İçerik Önizlemesi (TXT/JSON/CSV için) */}
-                    {file.extractedText && 
-                     (file.fileMetadata.name.toLowerCase().endsWith('.txt') || 
-                      file.fileMetadata.name.toLowerCase().endsWith('.json') ||
-                      file.fileMetadata.name.toLowerCase().endsWith('.csv')) && (
-                      <div className="mt-2 p-2 bg-slate-800/50 rounded-lg border border-slate-700/50">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs text-slate-400">📄 Önizleme</span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-slate-500">
-                              {file.extractedText.length} karakter
-                            </span>
-                            <button
-                              onClick={() => setPreviewModal({ 
-                                fileName: file.fileMetadata.name, 
-                                content: file.extractedText || '' 
-                              })}
-                              className="p-1 hover:bg-slate-700 rounded transition-colors"
-                              title="Tüm içeriği görüntüle"
-                            >
-                              <Eye className="w-3 h-3 text-blue-400" />
-                            </button>
-                          </div>
-                        </div>
-                        <pre className="text-xs text-slate-300 whitespace-pre-wrap line-clamp-3 font-mono">
-                          {file.extractedText.slice(0, 200)}
-                          {file.extractedText.length > 200 && '...'}
-                        </pre>
-                      </div>
-                    )}
 
-                    {/* Progress Bar */}
-                    {file.status === 'processing' && (
-                      <div className="mt-2">
-                        <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-blue-600 transition-all"
-                            style={{ width: `${file.progressPercentage || 0}%` }}
-                          ></div>
-                        </div>
-                        {file.progress && (
-                          <div className="flex items-center justify-between text-xs mt-1">
-                            <span className="text-blue-400">{file.progress}</span>
-                            <span className="text-slate-500">{file.progressPercentage || 0}%</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </div>
 
-                  {/* Actions - Compact */}
-                <div className="flex items-center gap-1 flex-shrink-0">
+                  {/* Actions - Premium Buttons */}
+                <div className="flex items-center gap-3 flex-shrink-0">
                   {file.status === 'pending' && (
                     <button
                       onClick={() => onFileProcess(file.fileMetadata.name)}
-                      className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-medium"
+                      className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white rounded-lg text-sm font-semibold shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 transition-all duration-200 hover:scale-105"
                       aria-label={`${file.fileMetadata.name} dosyasını işle`}
                     >
                       İşle
                     </button>
                   )}
+                  
+                  {/* 🆕 Önizleme Butonu - Sadece göz ikonu */}
+                  {file.status === 'completed' && file.extractedText && 
+                   (file.fileMetadata.name.toLowerCase().endsWith('.txt') || 
+                    file.fileMetadata.name.toLowerCase().endsWith('.json') ||
+                    file.fileMetadata.name.toLowerCase().endsWith('.csv')) && (
+                    <button
+                      onClick={() => {
+                        setPreviewModal({ 
+                          fileName: file.fileMetadata.name, 
+                          content: file.extractedText || '' 
+                        });
+                      }}
+                      className="p-2.5 hover:bg-blue-500/20 rounded-lg transition-all duration-200 hover:scale-110"
+                      title="Önizleme"
+                      aria-label={`${file.fileMetadata.name} dosyasını görüntüle`}
+                    >
+                      <Eye className="w-5 h-5 text-blue-400" />
+                    </button>
+                  )}
+                  
                   {file.status !== 'processing' && (
                     <button
                       onClick={() => onFileRemove(file.fileMetadata.name)}
-                      className="p-1 hover:bg-red-500/20 rounded transition-colors"
+                      className="p-2.5 hover:bg-red-500/20 rounded-lg transition-all duration-200 hover:scale-110"
                       title="Sil"
                       aria-label={`${file.fileMetadata.name} dosyasını sil`}
                     >
-                      <Trash2 className="w-3 h-3 text-red-400" />
+                      <Trash2 className="w-5 h-5 text-red-400" />
                     </button>
                   )}
                 </div>

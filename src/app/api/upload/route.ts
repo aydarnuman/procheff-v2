@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SmartDocumentProcessor } from "@/lib/utils/smart-document-processor";
 import { logger, LogKategori, IslemDurumu } from "@/lib/logger";
+import { guessDocumentType } from "@/lib/utils/document-type-guesser";
+import type { BelgeTuru } from "@/types/ai";
 
 export const runtime = "nodejs";
 export const maxDuration = 420; // 7 dakika timeout (büyük PDF'ler için)
@@ -193,8 +195,14 @@ export async function POST(request: NextRequest) {
             });
           }
 
-          // Dosyayı etiketle ve ekle
-          const label = `=== DOSYA: ${file.name} ===`;
+          // 🎯 BELGE TÜRÜ TESPİTİ (Hibrit: Filename + Content)
+          const documentTypeGuess = guessDocumentType(file.name, result.text);
+          logger.info(LogKategori.PROCESSING, `Belge türü: ${documentTypeGuess.type} (${Math.round(documentTypeGuess.confidence * 100)}%)`, {
+            dosyaAdi: file.name
+          });
+
+          // Dosyayı etiketle ve ekle (belge türü bilgisi ile)
+          const label = `=== DOSYA: ${file.name} [TÜR: ${documentTypeGuess.type}, GÜVEN: ${Math.round(documentTypeGuess.confidence * 100)}%] ===`;
           processedTexts.push(`${label}\n\n${result.text}\n\n`);
 
           logger.adimBitir(adimId, LogKategori.PROCESSING, `${file.name} başarıyla işlendi`, {
@@ -218,13 +226,28 @@ export async function POST(request: NextRequest) {
         const combinedText = processedTexts.join("\n" + "=".repeat(80) + "\n\n");
 
         const processingTime = Date.now() - startTime;
+        
+        // 🎯 Her dosya için belge türü bilgisini hesapla
+        const filesWithTypes = await Promise.all(
+          files.map(async (f, index) => {
+            const fileText = processedTexts[index];
+            const typeGuess = guessDocumentType(f.name, fileText);
+            return {
+              name: f.name,
+              size: f.size,
+              detectedType: typeGuess.type,
+              detectedTypeConfidence: typeGuess.confidence
+            };
+          })
+        );
+
         const stats = {
           fileCount: files.length,
           wordCount: totalWordCount,
           totalWordCount,
           totalCharCount: combinedText.length,
           processingTime,
-          files: files.map(f => ({ name: f.name, size: f.size })),
+          files: filesWithTypes,
         };
 
         // Session'ı bitir

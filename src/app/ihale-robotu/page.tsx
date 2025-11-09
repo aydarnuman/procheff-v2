@@ -199,6 +199,7 @@ function IhaleTakipPageInner() {
   const [docPage, setDocPage] = useState(1); // 🆕 Döküman pagination
   const DOCS_PER_PAGE = 10; // 🆕 Sayfa başına döküman sayısı
   const [zipFileInfo, setZipFileInfo] = useState<{fileName: string; size: number; extractedFiles?: string[]} | null>(null); // 🆕 ZIP bilgisi
+  const [downloadingDocs, setDownloadingDocs] = useState<Set<string>>(new Set()); // 🔒 İndirme kilidi
   
   // ⏱️ Timer sistemi - Her loading için elapsed time
   const [loadingStartTime, setLoadingStartTime] = useState<number | null>(null);
@@ -818,7 +819,16 @@ function IhaleTakipPageInner() {
 
   // 🆕 Döküman direkt bilgisayara indir (ihalebul.com'a gitmeden)
   const downloadDocument = async (url: string, fileName: string) => {
+    // 🔒 Bu döküman zaten indiriliyor mu kontrol et
+    if (downloadingDocs.has(url)) {
+      toast.error('⏳ Bu döküman zaten indiriliyor', { id: 'download-doc' });
+      return;
+    }
+
     try {
+      // Kilitle
+      setDownloadingDocs(prev => new Set(prev).add(url));
+
       console.log('📥 İndirme başlatılıyor:', fileName);
       toast.loading(`İndiriliyor: ${fileName}`, { id: 'download-doc' });
 
@@ -910,6 +920,13 @@ function IhaleTakipPageInner() {
       toast.error('❌ İndirme hatası', {
         id: 'download-doc',
         description: error.message
+      });
+    } finally {
+      // Kilidi aç
+      setDownloadingDocs(prev => {
+        const next = new Set(prev);
+        next.delete(url);
+        return next;
       });
     }
   };
@@ -3142,10 +3159,11 @@ function IhaleTakipPageInner() {
                                           e.preventDefault();
                                           downloadDocument(doc.url, doc.title || `document_${realIdx}.${fileExt.toLowerCase()}`);
                                         }}
-                                        className="flex-shrink-0 p-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-all shadow-sm"
-                                        title="İndir"
+                                        disabled={downloadingDocs.has(doc.url)}
+                                        className="flex-shrink-0 p-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:bg-slate-800/50 disabled:cursor-not-allowed text-slate-300 hover:text-white disabled:text-slate-600 transition-all shadow-sm"
+                                        title={downloadingDocs.has(doc.url) ? "İndiriliyor..." : "İndir"}
                                       >
-                                        <Download className="w-5 h-5" />
+                                        <Download className={`w-5 h-5 ${downloadingDocs.has(doc.url) ? 'animate-pulse' : ''}`} />
                                       </button>
                                     </div>
                                     </div>
