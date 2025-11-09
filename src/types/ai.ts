@@ -195,6 +195,14 @@ export interface ExtractedData {
     gerekce: string | null; // Karar gerekçesi
   };
 
+  // Validation Metadata (Nov 9, 2025 - Content Validator v2.0)
+  _validation_metadata?: {
+    confidence: ValidationConfidence;
+    warnings_count: number;
+    auto_fixed: number;
+    status: 'valid' | 'warning' | 'error';
+  };
+
   // YENİ: Veri Havuzu - Metinsel extraction (Data Pool - Claude)
   veri_havuzu?: DataPoolExtraction;
 
@@ -347,6 +355,12 @@ export interface DeepAnalysisRisk {
   onlem: string;
 }
 
+/**
+ * Derin Analiz Sonucu
+ * Ham veri, tablolar ve bağlamsal analiz sentezinden oluşan stratejik değerlendirme
+ * 
+ * @updated Nov 9, 2025 - Veri kaynağı doğrulama alanları eklendi
+ */
 export interface DeepAnalysisResult {
   firsat_analizi: {
     avantajlar: string[];
@@ -357,12 +371,24 @@ export interface DeepAnalysisResult {
   detayli_risk_analizi: {
     kritik_riskler: DeepAnalysisRisk[];
     kirmizi_bayraklar: string[];
+    /** Bağlamsal analiz doğrulama (Nov 9, 2025) */
+    baglamsal_analiz_dogrulama?: {
+      operasyonel_riskler_dogru_mu: boolean;
+      ek_tespit_edilen_riskler: string[];
+      celiskiler: string[];
+    };
   };
   maliyet_stratejisi: {
     fiyatlandirma_onerisi: string;
     optimizasyon_noktalari: string[];
     kar_marji_hedef: string;
     gizli_maliyetler: string[];
+    /** Bağlamsal maliyet sapma doğrulama (Nov 9, 2025) */
+    baglamsal_maliyet_sapma_dogrulama?: {
+      beklenen_sapma_orani: number | null;
+      tablolarla_uyumlu_mu: boolean;
+      yeni_maliyet_tahminleri: string[];
+    };
   };
   operasyonel_plan: {
     kaynak_ihtiyaclari: {
@@ -373,6 +399,12 @@ export interface DeepAnalysisResult {
     kritik_tarihler: string[];
     tedarik_zinciri: string;
     kalite_kontrol: string;
+    /** Zaman uygunluğu doğrulama (Nov 9, 2025) */
+    zaman_uygunlugu_dogrulama?: {
+      sure: string;
+      baglamsal_analiz_uyumlu_mu: boolean;
+      ek_hazirlik_onerileri: string[];
+    };
   };
   teklif_stratejisi: {
     guclu_yonler: string[];
@@ -383,8 +415,113 @@ export interface DeepAnalysisResult {
   karar_onerisi: {
     tavsiye: "KATIL" | "DİKKATLİ_KATIL" | "KATILMA";
     gerekce: string;
+    /** Veri kaynağı sentezi (Nov 9, 2025) */
+    veri_kaynagi_sentezi?: {
+      ham_veri_bulgulari: string[];
+      tablo_bulgulari: string[];
+      baglamsal_analiz_dogrulamasi: "UYUMLU" | "KISMI_UYUMLU" | "UYUMSUZ";
+      celiskiler: string[];
+    };
     alternatif_senaryolar: string[];
     basari_kriterleri: string[];
   };
   guven_skoru: number;
+  /** Analiz kaynağı özeti (Nov 9, 2025) */
+  analiz_kaynagi_ozeti?: {
+    ham_veri_kullanimi: string;
+    tablo_sayisi: number;
+    baglamsal_analiz_mevcut: boolean;
+    tablo_intelligence_mevcut: boolean;
+    veri_butunlugu: "YÜKSEK" | "ORTA" | "DÜŞÜK";
+  };
 }
+
+/**
+ * Content Validator için genişletilmiş kaynak bilgisi
+ * FieldSource'a ek olarak confidence ve raw_value içerir
+ * 
+ * @since Nov 9, 2025 - Content Validator refactoring
+ */
+export interface ContentValidatorSource extends FieldSource {
+  /** AI güvenilirlik skoru (0-1 arası) */
+  confidence?: number;
+  /** Parse edilmeden önceki ham değer */
+  raw_value?: string;
+}
+
+/**
+ * ContentValidator için ExtractedData type alias
+ * _sources alanını ContentValidatorSource ile extend eder
+ * 
+ * NOT: ExtractedData zaten _sources içeriyor (FieldSource ile)
+ * Bu type sadece ContentValidator içinde kullanılır
+ */
+export type ExtractedDataWithSources = ExtractedData & {
+  _sources?: {
+    kisi_sayisi?: ContentValidatorSource;
+    ogun_sayisi?: ContentValidatorSource;
+    gun_sayisi?: ContentValidatorSource;
+    tahmini_butce?: ContentValidatorSource;
+    [key: string]: ContentValidatorSource | undefined;
+  };
+}
+
+/**
+ * Validasyon güvenilirlik skoru
+ * @since Nov 9, 2025
+ */
+export interface ValidationConfidence {
+  /** Genel skor (0-1) */
+  overall: number;
+  /** Alan bazlı skorlar */
+  fields: {
+    kisi_sayisi: number;
+    ogun_sayisi: number;
+    gun_sayisi: number;
+    tahmini_butce: number;
+  };
+  /** Güvenilirlik seviyesi */
+  level: 'high' | 'medium' | 'low';
+}
+
+/**
+ * Validasyon sonuç özeti
+ * @since Nov 9, 2025
+ */
+export interface ValidationSummary {
+  /** Toplam uyarı sayısı */
+  total_warnings: number;
+  /** Seviye bazlı sayılar */
+  by_severity: {
+    error: number;
+    warning: number;
+    info: number;
+  };
+  /** Otomatik düzeltilen alan sayısı */
+  auto_fixed_count: number;
+  /** Genel validasyon durumu */
+  status: 'valid' | 'warning' | 'error';
+  /** Güvenilirlik skoru */
+  confidence: ValidationConfidence;
+}
+
+/**
+ * Content Validator validasyon sonucu
+ * @since Nov 9, 2025
+ */
+export interface ContentValidationResult {
+  /** Validasyon başarılı mı? */
+  is_valid: boolean;
+  /** Uyarılar listesi */
+  warnings: ValidationWarning[];
+  /** Düzeltilmiş veri (auto-fix uygulandıysa) */
+  fixed_data: ExtractedData | ExtractedDataWithSources;
+  /** Validasyon özeti */
+  summary: ValidationSummary;
+}
+
+/**
+ * Backward compatible type alias
+ * Mevcut kod ValidationResult bekliyor, bunu da destekleyelim
+ */
+export interface EnhancedValidationResult extends ContentValidationResult {}

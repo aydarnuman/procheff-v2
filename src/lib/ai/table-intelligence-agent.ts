@@ -127,7 +127,10 @@ export class TableIntelligenceAgent {
         throw new Error("Unexpected response type");
       }
 
-      const intelligence = this.parseIntelligenceResponse(content.text, tables);
+      let intelligence = this.parseIntelligenceResponse(content.text, tables);
+
+      // 🆕 ENTITY RECONCILIATION (Nov 9, 2025)
+      intelligence = this.reconcileEntities(intelligence);
 
       const totalTime = Date.now() - startTime;
       console.log(`\n✅ TABLE INTELLIGENCE TAMAMLANDI (${totalTime}ms, ${Math.round(totalTime / 1000)}s)`);
@@ -417,6 +420,205 @@ ${tableDescriptions.join("\n")}
     if (intelligence.guven_skoru) {
       console.log(`   ✅ Güven: ${Math.round(intelligence.guven_skoru * 100)}%`);
     }
+  }
+
+  /**
+   * 🆕 ENTITY RECONCILIATION (Nov 9, 2025)
+   * 
+   * Cross-table entity merging - farklı tablolardan aynı entity'leri birleştirir
+   * 
+   * Kullanım alanları:
+   * 1. Kuruluşlar - Aynı kuruluş farklı tablolarda geçiyorsa merge et
+   * 2. Ekipman - Aynı ürün farklı kategorilerde olabilir
+   * 3. Personel - Aynı pozisyon farklı tablolarda sayılmış olabilir
+   * 
+   * @param intelligence - AI'dan gelen intelligence verisi
+   * @returns Reconcile edilmiş intelligence
+   */
+  private reconcileEntities(intelligence: TableIntelligence): TableIntelligence {
+    console.log("\n🔄 ENTITY RECONCILIATION başlatılıyor...");
+    const startTime = Date.now();
+
+    let reconciledCount = 0;
+
+    // 1️⃣ KURULUŞ RECONCILIATION
+    if (intelligence.kuruluslar && intelligence.kuruluslar.length > 1) {
+      const original = intelligence.kuruluslar.length;
+      intelligence.kuruluslar = this.reconcileOrganizations(intelligence.kuruluslar);
+      const diff = original - intelligence.kuruluslar.length;
+      
+      if (diff > 0) {
+        reconciledCount += diff;
+        console.log(`   ✅ Kuruluşlar: ${diff} duplicate merge edildi (${original} → ${intelligence.kuruluslar.length})`);
+      }
+    }
+
+    // 2️⃣ EKIPMAN RECONCILIATION
+    if (intelligence.ekipman_listesi && intelligence.ekipman_listesi.length > 0) {
+      const originalCount = intelligence.ekipman_listesi.reduce(
+        (sum, kat) => sum + (kat.urunler?.length || 0), 
+        0
+      );
+      
+      intelligence.ekipman_listesi = this.reconcileEquipment(intelligence.ekipman_listesi);
+      
+      const newCount = intelligence.ekipman_listesi.reduce(
+        (sum, kat) => sum + (kat.urunler?.length || 0), 
+        0
+      );
+      const diff = originalCount - newCount;
+      
+      if (diff > 0) {
+        reconciledCount += diff;
+        console.log(`   ✅ Ekipman: ${diff} duplicate ürün merge edildi (${originalCount} → ${newCount})`);
+      }
+    }
+
+    // 3️⃣ PERSONEL RECONCILIATION
+    if (intelligence.personel_detaylari?.pozisyonlar && 
+        intelligence.personel_detaylari.pozisyonlar.length > 1) {
+      const original = intelligence.personel_detaylari.pozisyonlar.length;
+      intelligence.personel_detaylari.pozisyonlar = this.reconcilePersonnel(
+        intelligence.personel_detaylari.pozisyonlar
+      );
+      const diff = original - intelligence.personel_detaylari.pozisyonlar.length;
+      
+      if (diff > 0) {
+        reconciledCount += diff;
+        console.log(`   ✅ Personel: ${diff} duplicate pozisyon merge edildi (${original} → ${intelligence.personel_detaylari.pozisyonlar.length})`);
+      }
+    }
+
+    const duration = Date.now() - startTime;
+    
+    if (reconciledCount > 0) {
+      console.log(`✅ Entity reconciliation tamamlandı (${duration}ms): ${reconciledCount} duplicate entity merge edildi`);
+    } else {
+      console.log(`✅ Entity reconciliation tamamlandı (${duration}ms): Duplicate entity bulunamadı`);
+    }
+
+    return intelligence;
+  }
+
+  /**
+   * Kuruluşları reconcile et (aynı isimde olanları merge et)
+   */
+  private reconcileOrganizations(orgs: Array<{
+    ad: string;
+    kisi_sayisi?: number;
+    ogun_dagilimi?: any;
+  }>): typeof orgs {
+    const merged: typeof orgs = [];
+
+    for (const org of orgs) {
+      const existing = merged.find(o => 
+        this.normalizeEntityName(o.ad) === this.normalizeEntityName(org.ad)
+      );
+
+      if (existing) {
+        // Merge: Kişi sayısını topla, öğün dağılımını birleştir
+        if (org.kisi_sayisi) {
+          existing.kisi_sayisi = (existing.kisi_sayisi || 0) + org.kisi_sayisi;
+        }
+
+        if (org.ogun_dagilimi) {
+          if (!existing.ogun_dagilimi) {
+            existing.ogun_dagilimi = {};
+          }
+          
+          // Öğün sayılarını topla
+          for (const [key, value] of Object.entries(org.ogun_dagilimi)) {
+            if (typeof value === 'number') {
+              existing.ogun_dagilimi[key] = (existing.ogun_dagilimi[key] || 0) + value;
+            }
+          }
+        }
+      } else {
+        merged.push({ ...org });
+      }
+    }
+
+    return merged;
+  }
+
+  /**
+   * Ekipman listesini reconcile et (aynı ürünleri merge et)
+   */
+  private reconcileEquipment(equipment: Array<{
+    kategori: string;
+    urunler: Array<{ ad: string; miktar?: string; ozellik?: string }>;
+  }>): typeof equipment {
+    const reconciledCategories: typeof equipment = [];
+
+    for (const category of equipment) {
+      const existingCategory = reconciledCategories.find(c => 
+        this.normalizeEntityName(c.kategori) === this.normalizeEntityName(category.kategori)
+      );
+
+      if (existingCategory) {
+        // Aynı kategorideki ürünleri merge et
+        for (const product of category.urunler) {
+          const existingProduct = existingCategory.urunler.find(p =>
+            this.normalizeEntityName(p.ad) === this.normalizeEntityName(product.ad)
+          );
+
+          if (!existingProduct) {
+            existingCategory.urunler.push({ ...product });
+          }
+          // Duplicate ise skip (miktar bilgisi varsa toplama yapılabilir ama şimdilik basit tut)
+        }
+      } else {
+        reconciledCategories.push({ ...category });
+      }
+    }
+
+    return reconciledCategories;
+  }
+
+  /**
+   * Personel pozisyonlarını reconcile et (aynı pozisyonu merge et)
+   */
+  private reconcilePersonnel(positions: Array<{
+    pozisyon: string;
+    sayi: number;
+    nitelik?: string;
+    maas?: string;
+  }>): typeof positions {
+    const merged: typeof positions = [];
+
+    for (const pos of positions) {
+      const existing = merged.find(p =>
+        this.normalizeEntityName(p.pozisyon) === this.normalizeEntityName(pos.pozisyon)
+      );
+
+      if (existing) {
+        // Aynı pozisyon: Sayıyı topla
+        existing.sayi += pos.sayi;
+        
+        // Nitelik ve maaş varsa güncelle (daha detaylı olanı tut)
+        if (pos.nitelik && (!existing.nitelik || pos.nitelik.length > existing.nitelik.length)) {
+          existing.nitelik = pos.nitelik;
+        }
+        if (pos.maas && !existing.maas) {
+          existing.maas = pos.maas;
+        }
+      } else {
+        merged.push({ ...pos });
+      }
+    }
+
+    return merged;
+  }
+
+  /**
+   * Entity isim normalizasyonu (karşılaştırma için)
+   */
+  private normalizeEntityName(name: string): string {
+    return name
+      .toLowerCase()
+      .replace(/\s+/g, '') // Boşlukları kaldır
+      .replace(/[^\w\sğüşıöçĞÜŞİÖÇ]/g, '') // Noktalama kaldır
+      .trim();
   }
 }
 

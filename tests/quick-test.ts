@@ -1,7 +1,7 @@
 // Quick test to check if fixes work
 import 'dotenv/config';
-import { IhalebulScraper } from './src/lib/ihale-scraper/scrapers/ihalebul-scraper';
-import { getDatabase } from './src/lib/ihale-scraper/database/sqlite-client';
+import { IhalebulScraper } from '../src/lib/ihale-scraper/scrapers/ihalebul-scraper';
+import { getDatabase } from '../src/lib/ihale-scraper/database/sqlite-client';
 
 async function quickTest() {
   console.log('🧪 Quick test: Check recent ihalebul data\n');

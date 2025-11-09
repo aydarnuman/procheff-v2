@@ -58,7 +58,7 @@ export class XlsxProcessor {
         const worksheet = workbook.Sheets[sheetName];
 
         logger.debug(LogKategori.PROCESSING, `Sheet işleniyor: ${sheetName}`, {
-          sheetAdi: sheetName,
+          ek: { sheetAdi: sheetName },
         });
 
         onProgress?.(`⚙️ ${sheetName} işleniyor... (${i + 1}/${workbook.SheetNames.length})`);
@@ -91,12 +91,11 @@ export class XlsxProcessor {
 
           logger.debug(LogKategori.PROCESSING, `✓ ${sheetName} tamamlandı`, {
             satirSayisi: rowCount,
-            hucreSayisi: cellCount,
+            ek: { hucreSayisi: cellCount },
           });
         } catch (sheetError: any) {
           logger.uyari(LogKategori.PROCESSING, `${sheetName} işlenemedi: ${sheetError.message}`, {
-            sheetAdi: sheetName,
-            hata: sheetError.message,
+            ek: { sheetAdi: sheetName, hata: sheetError.message },
           });
           // Continue with other sheets
         }
@@ -105,10 +104,12 @@ export class XlsxProcessor {
       const combinedText = allTexts.join('\n\n');
 
       logger.basarili(LogKategori.PROCESSING, `Excel işleme tamamlandı: ${sheets.length} sheet`, {
-        toplamSheet: sheets.length,
-        toplamSatir: totalRows,
-        toplamHucre: totalCells,
         karakterSayisi: combinedText.length,
+        ek: {
+          toplamSheet: sheets.length,
+          toplamSatir: totalRows,
+          toplamHucre: totalCells,
+        },
       });
 
       onProgress?.(`✅ ${sheets.length} sheet işlendi (${totalRows} satır)`);
@@ -121,10 +122,9 @@ export class XlsxProcessor {
         totalCells,
       };
     } catch (error: any) {
-      logger.hata(LogKategori.PROCESSING, `Excel işleme hatası: ${error.message}`, {
+      logger.hata(LogKategori.PROCESSING, `Excel işleme hatası: ${file.name}`, {
         kod: 'XLSX_PROCESSING_ERROR',
         mesaj: error.message,
-        dosyaAdi: file.name,
       });
 
       return {

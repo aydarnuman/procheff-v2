@@ -59,9 +59,9 @@ class UltraLogger {
    */
   sessionBitir(sessionId: string, durum: IslemDurumu = IslemDurumu.COMPLETED): IslemSession | null {
     if (!this.aktifSession || this.aktifSession.sessionId !== sessionId) {
-      // Session bulunamadı - bu normal bir durum (paralel requestler için)
-      // Sadece warn seviyesinde log, hata olarak işaretleme
-      console.warn(`[LOGGER] Session bulunamadı veya farklı session aktif: ${sessionId}`);
+      // Paralel isteklerde önceki stream kapanırken çağrılabilir; normal durum.
+      // Gürültüyü azaltmak için bilgi seviyesinde loglayalım.
+      console.info(`[LOGGER] Parallel/finished session mismatch (normal): ${sessionId}`);
       return null;
     }
 

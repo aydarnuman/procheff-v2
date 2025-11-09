@@ -591,6 +591,70 @@ export class SmartDocumentProcessor {
                 "Antiword çıktısı boş, alternatif yöntem deneniyor..."
               );
               warnings.push("DOC metin katmanı antiword ile çıkarılamadı");
+
+              // LibreOffice (soffice) ile DOC -> DOCX dönüştürüp Mammoth ile dene
+              try {
+                const { stdout: sofficePath } = await execAsync(
+                  `command -v soffice || which soffice || echo ""`
+                );
+
+                if (sofficePath.trim()) {
+                  const tempDir2 = "/tmp";
+                  const tempDocPath2 = path.join(tempDir2, `doc_${Date.now()}_lo.doc`);
+                  const tempDocxPath = tempDocPath2.replace(/\.doc$/i, ".docx");
+
+                  // DOC içeriğini yeniden yaz (ilk temp dosyası silinmiş olabilir)
+                  try {
+                    const buf2 = Buffer.from(await file.arrayBuffer());
+                    fs.writeFileSync(tempDocPath2, buf2);
+                  } catch (wErr) {
+                    console.warn("DOC tekrar yazma hatası (LibreOffice fallback öncesi):", wErr);
+                  }
+
+                  try {
+                    await execAsync(
+                      `soffice --headless --convert-to docx --outdir "${tempDir2}" "${tempDocPath2}"`,
+                      { timeout: 120000 }
+                    );
+
+                    if (fs.existsSync(tempDocxPath)) {
+                      const docxBuffer = fs.readFileSync(tempDocxPath);
+                      const mammothResult = await mammoth.extractRawText({ buffer: docxBuffer });
+                      const mammothText = mammothResult.value?.trim() || "";
+                      // Temizlik
+                      try { if (fs.existsSync(tempDocPath2)) fs.unlinkSync(tempDocPath2); } catch {}
+                      try { if (fs.existsSync(tempDocxPath)) fs.unlinkSync(tempDocxPath); } catch {}
+
+                      if (mammothText.length > 50) {
+                        const normalizedText = TurkishNormalizer.normalize(mammothText);
+                        console.log(`DOC başarılı (LibreOffice→DOCX→Mammoth): ${normalizedText.length} karakter`);
+                        warnings.push("DOC LibreOffice ile DOCX'e dönüştürüldü (yüksek kalite metin çıkarımı)");
+
+                        return {
+                          success: true,
+                          text: normalizedText,
+                          method: "libreoffice-docx-mammoth",
+                          fileType: "doc",
+                          processingTime: Date.now() - startTime,
+                          warnings,
+                        };
+                      }
+                    } else {
+                      console.warn("LibreOffice dönüşüm çıktısı bulunamadı (DOCX)");
+                    }
+                  } catch (loErr) {
+                    console.warn("LibreOffice dönüşüm hatası:", loErr);
+                  } finally {
+                    // Güvenli temizlik
+                    try { if (fs.existsSync(tempDocPath2)) fs.unlinkSync(tempDocPath2); } catch {}
+                    try { if (fs.existsSync(tempDocxPath)) fs.unlinkSync(tempDocxPath); } catch {}
+                  }
+                } else {
+                  console.log("LibreOffice (soffice) bulunamadı, ham fallback'e geçiliyor");
+                }
+              } catch (sofficeDetectErr) {
+                console.warn("LibreOffice tespit hatası:", sofficeDetectErr);
+              }
             }
           } catch (execError) {
             console.error("Antiword çalıştırma hatası:", execError);
@@ -846,7 +910,6 @@ export class SmartDocumentProcessor {
       try {
         const fs = await import("fs");
         const path = await import("path");
-        const timestamp = Date.now();
 
         // Tüm olası geçici dosyaları temizle
         if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath);

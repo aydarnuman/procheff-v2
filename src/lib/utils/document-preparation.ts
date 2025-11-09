@@ -178,30 +178,58 @@ export const parseRealUrls = (urls: string[]): string[] => {
 };
 
 /**
- * Duplicate dökümanları filtrele
+ * 🆕 CONTENT-BASED HASH GENERATOR (Nov 9, 2025)
+ * 
+ * SHA-256 hash ile dosya içeriği bazlı duplicate detection
+ * Farklı isimde aynı içerik tespit edilir
+ * 
+ * @param blob - Dosya Blob'u
+ * @returns SHA-256 hash string
+ */
+export const generateContentHash = async (blob: Blob): Promise<string> => {
+  try {
+    const arrayBuffer = await blob.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return hashHex;
+  } catch (error) {
+    console.error('Hash generation error:', error);
+    // Fallback: Simple hash based on size and first bytes
+    return `fallback_${blob.size}_${Date.now()}`;
+  }
+};
+
+/**
+ * Duplicate dökümanları filtrele (ENHANCED - Nov 9, 2025)
  *
- * Problem: Aynı döküman 2 kere ekleniyor → setState'de duplicate check yap
- * Çözüm: Title + URL kombinasyonunu unique key olarak kullan
+ * ⚠️ BACKWARD COMPATIBLE: Sync signature korundu, async logic opt-in
+ * 
+ * İki katmanlı duplicate detection:
+ * 1. Title + URL (hızlı, senkron, her zaman çalışır)
+ * 2. Content Hash (SHA-256, async, opt-in via enableContentHash)
  *
  * @param newDocs - Yeni eklenen dökümanlar
  * @param existingDocs - Mevcut dökümanlar
- * @returns Sadece unique dökümanlar
+ * @param options - Opsiyonel: { enableContentHash: boolean }
+ * @returns Sadece unique dökümanlar (sync ise Promise wrap'li)
  */
 export const filterDuplicateDocuments = (
   newDocs: PreparedDocument[],
-  existingDocs: PreparedDocument[]
-): PreparedDocument[] => {
+  existingDocs: PreparedDocument[],
+  options?: { enableContentHash?: boolean }
+): PreparedDocument[] | Promise<PreparedDocument[]> => {
   console.log(`🔍 Duplicate kontrolü başlatıldı:`, {
     yeniDosyaSayisi: newDocs.length,
-    mevcutDosyaSayisi: existingDocs.length
+    mevcutDosyaSayisi: existingDocs.length,
+    contentHashEnabled: options?.enableContentHash || false
   });
 
-  // Mevcut döküman key'leri (title|||url)
+  // Layer 1: Title + URL (ALWAYS - SYNC)
   const existingKeys = new Set(
     existingDocs.map(doc => `${doc.title}|||${doc.url}`)
   );
 
-  // Duplicate olanları logla
   const duplicates: string[] = [];
   const uniqueDocs = newDocs.filter(doc => {
     const fileKey = `${doc.title}|||${doc.url}`;
@@ -215,13 +243,67 @@ export const filterDuplicateDocuments = (
   });
 
   if (duplicates.length > 0) {
-    console.warn(`⚠️ ${duplicates.length} duplicate dosya atlandı:`, duplicates.slice(0, 5));
+    console.warn(`⚠️ ${duplicates.length} duplicate dosya atlandı (title+url):`, duplicates.slice(0, 5));
   }
 
-  console.log(`✅ Duplicate kontrolü tamamlandı: ${uniqueDocs.length} unique dosya`);
+  console.log(`✅ Layer 1 duplicate kontrolü tamamlandı: ${uniqueDocs.length} unique dosya`);
+
+  // Layer 2: Content Hash (OPTIONAL - ASYNC)
+  if (options?.enableContentHash) {
+    return filterDuplicateDocumentsWithContentHash(uniqueDocs, existingDocs);
+  }
 
   return uniqueDocs;
 };
+
+/**
+ * Content-hash based duplicate detection (ASYNC)
+ * 
+ * @param newDocs - Title+URL unique docs
+ * @param existingDocs - Existing docs for hash comparison
+ * @returns Unique docs (no content duplicates)
+ */
+async function filterDuplicateDocumentsWithContentHash(
+  newDocs: PreparedDocument[],
+  existingDocs: PreparedDocument[]
+): Promise<PreparedDocument[]> {
+  console.log('   📝 Layer 2: Content hash hesaplanıyor...');
+  
+  const existingHashes = new Set<string>();
+  
+  // Mevcut dosyaların hash'lerini hesapla (paralel)
+  await Promise.all(
+    existingDocs.map(async (doc) => {
+      const hash = await generateContentHash(doc.blob);
+      existingHashes.add(hash);
+    })
+  );
+
+  // Duplicate tracking
+  const contentDuplicates: string[] = [];
+  const uniqueDocs: PreparedDocument[] = [];
+
+  // Yeni dosyaları kontrol et (sequential - race condition önlemek için)
+  for (const doc of newDocs) {
+    const contentHash = await generateContentHash(doc.blob);
+
+    if (existingHashes.has(contentHash)) {
+      contentDuplicates.push(doc.title);
+    } else {
+      uniqueDocs.push(doc);
+      existingHashes.add(contentHash); // Sonraki iterasyonlar için
+    }
+  }
+
+  // Duplicate report
+  if (contentDuplicates.length > 0) {
+    console.warn(`⚠️ ${contentDuplicates.length} content-hash duplicate atlandı:`, contentDuplicates.slice(0, 5));
+  }
+
+  console.log(`✅ Layer 2 duplicate kontrolü tamamlandı: ${uniqueDocs.length} unique dosya`);
+
+  return uniqueDocs;
+}
 
 /**
  * Type guard: PreparedDocument validation

@@ -162,7 +162,10 @@ export class TableExtractionProvider {
 
     console.log(`\n📊 TABLO ÇIKARIMI TAMAMLANDI: ${allTables.length} tablo bulundu (${chunks.length} chunk)`);
 
-    return { tablolar: allTables };
+    // 🆕 DUPLICATE DETECTION
+    const uniqueTables = this.deduplicateTables(allTables);
+
+    return { tablolar: uniqueTables };
   }
 
   private buildTableExtractionPrompt(tableText: string): string {
@@ -519,5 +522,169 @@ METİN UZUNLUĞU: ${Math.floor(tableText.length / 1000)}K karakter`;
     }
 
     return fixed;
+  }
+
+  /**
+   * 🆕 DUPLICATE TABLE DETECTION (Nov 9, 2025)
+   * 
+   * Similarity-based deduplication - chunk'lardan gelen duplicate tabloları tespit eder
+   * 
+   * Kontrol kriterleri:
+   * 1. Başlık benzerliği (Levenshtein distance > 0.8)
+   * 2. Header overlap (> 0.7)
+   * 3. Row similarity (ilk 3 satır karşılaştırması > 0.6)
+   * 
+   * @param tables - Çıkarılmış tablolar
+   * @returns Unique tablolar
+   */
+  private deduplicateTables(tables: ExtractedTable[]): ExtractedTable[] {
+    if (tables.length <= 1) return tables;
+
+    console.log(`\n🔍 DUPLICATE TABLE DETECTION - ${tables.length} tablo kontrol ediliyor...`);
+    const startTime = Date.now();
+
+    const unique: ExtractedTable[] = [];
+    let duplicateCount = 0;
+
+    for (const table of tables) {
+      const isDuplicate = unique.some(existing => {
+        // 1️⃣ Başlık benzerliği
+        const titleSimilarity = this.calculateSimilarity(
+          this.normalizeText(table.baslik),
+          this.normalizeText(existing.baslik)
+        );
+
+        // 2️⃣ Header overlap (ortak header sayısı / toplam unique header)
+        const headerOverlap = this.calculateArrayOverlap(
+          table.headers,
+          existing.headers
+        );
+
+        // 3️⃣ Row similarity (ilk 3 satırı karşılaştır)
+        const rowSimilarity = this.calculateRowSimilarity(
+          table.rows.slice(0, 3),
+          existing.rows.slice(0, 3)
+        );
+
+        // Threshold kontrolü
+        const isDup = titleSimilarity > 0.8 && 
+                      headerOverlap > 0.7 && 
+                      rowSimilarity > 0.6;
+
+        if (isDup) {
+          console.log(`   ⚠️ Duplicate tespit edildi:`);
+          console.log(`      Başlık: "${table.baslik}" ≈ "${existing.baslik}" (${(titleSimilarity * 100).toFixed(1)}%)`);
+          console.log(`      Header overlap: ${(headerOverlap * 100).toFixed(1)}%`);
+          console.log(`      Row similarity: ${(rowSimilarity * 100).toFixed(1)}%`);
+        }
+
+        return isDup;
+      });
+
+      if (!isDuplicate) {
+        unique.push(table);
+      } else {
+        duplicateCount++;
+      }
+    }
+
+    const duration = Date.now() - startTime;
+    console.log(`✅ Deduplication tamamlandı (${duration}ms):`);
+    console.log(`   Unique: ${unique.length} tablo`);
+    console.log(`   Duplicate: ${duplicateCount} tablo atlandı`);
+
+    return unique;
+  }
+
+  /**
+   * Levenshtein distance ile string similarity hesapla (0-1 arası)
+   */
+  private calculateSimilarity(str1: string, str2: string): number {
+    if (str1 === str2) return 1.0;
+    if (!str1 || !str2) return 0.0;
+
+    const len1 = str1.length;
+    const len2 = str2.length;
+    const maxLen = Math.max(len1, len2);
+
+    if (maxLen === 0) return 1.0;
+
+    // Levenshtein distance
+    const matrix: number[][] = [];
+
+    for (let i = 0; i <= len1; i++) {
+      matrix[i] = [i];
+    }
+
+    for (let j = 0; j <= len2; j++) {
+      matrix[0][j] = j;
+    }
+
+    for (let i = 1; i <= len1; i++) {
+      for (let j = 1; j <= len2; j++) {
+        const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j] + 1,      // deletion
+          matrix[i][j - 1] + 1,      // insertion
+          matrix[i - 1][j - 1] + cost // substitution
+        );
+      }
+    }
+
+    const distance = matrix[len1][len2];
+    return 1 - (distance / maxLen);
+  }
+
+  /**
+   * Array overlap hesapla (Jaccard similarity)
+   */
+  private calculateArrayOverlap(arr1: string[], arr2: string[]): number {
+    if (arr1.length === 0 && arr2.length === 0) return 1.0;
+    if (arr1.length === 0 || arr2.length === 0) return 0.0;
+
+    const normalized1 = arr1.map(s => this.normalizeText(s));
+    const normalized2 = arr2.map(s => this.normalizeText(s));
+
+    const set1 = new Set(normalized1);
+    const set2 = new Set(normalized2);
+
+    // Intersection
+    const intersection = [...set1].filter(x => set2.has(x)).length;
+
+    // Union
+    const union = new Set([...set1, ...set2]).size;
+
+    return union > 0 ? intersection / union : 0;
+  }
+
+  /**
+   * Row similarity hesapla (satır satır karşılaştırma)
+   */
+  private calculateRowSimilarity(rows1: string[][], rows2: string[][]): number {
+    if (rows1.length === 0 && rows2.length === 0) return 1.0;
+    if (rows1.length === 0 || rows2.length === 0) return 0.0;
+
+    const minLen = Math.min(rows1.length, rows2.length);
+    let totalSimilarity = 0;
+
+    for (let i = 0; i < minLen; i++) {
+      const row1Str = rows1[i].join(' ').toLowerCase();
+      const row2Str = rows2[i].join(' ').toLowerCase();
+
+      totalSimilarity += this.calculateSimilarity(row1Str, row2Str);
+    }
+
+    return totalSimilarity / minLen;
+  }
+
+  /**
+   * Text normalizasyonu (comparison için)
+   */
+  private normalizeText(text: string): string {
+    return text
+      .toLowerCase()
+      .replace(/\s+/g, ' ') // Multiple spaces → single space
+      .replace(/[^\w\sğüşıöçĞÜŞİÖÇ]/g, '') // Punctuation kaldır
+      .trim();
   }
 }

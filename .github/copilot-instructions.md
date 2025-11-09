@@ -302,7 +302,35 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 ## 📋 Recent Updates
 
-### Nov 9, 2025 - Content Validation System
+### Nov 9, 2025 (Evening) - Analysis Flow Improvements 🚀
+✅ **Streaming Mode** - Real-time progress tracking with SSE (0-100%)
+✅ **CSV Integration** - Automatic CSV analysis integration to AI
+✅ **Dynamic Token Limit** - 1M tokens for Gemini, 200K for Claude (5x capacity)
+✅ **Retry Logic** - Smart error handling with exponential backoff
+✅ **Memory Optimization** - Auto-cleanup after analysis (80% reduction)
+✅ **Progress Tracker UI** - Visual component with stage indicators
+✅ Documentation: `/docs/ANALYSIS-IMPROVEMENTS-NOV9.md`
+
+**Key Files**:
+- `src/app/ihale/workspace/page.tsx` - Streaming mode + CSV integration + retry logic
+- `src/components/ihale/AnalysisProgressTracker.tsx` - Real-time progress UI
+- `src/app/api/ai/full-analysis/route.ts` - SSE streaming endpoint
+
+**Breaking Changes**: None (backward compatible)
+
+### Nov 9, 2025 (PM) - AI Duplicate/Overlap Detection System
+✅ **Table Deduplication** - Similarity-based duplicate table detection (Levenshtein + Jaccard)
+✅ **Entity Reconciliation** - Cross-table entity merging (organizations, equipment, personnel)
+✅ **File Content Hashing** - SHA-256 based duplicate file prevention (opt-in)
+✅ Performance benchmarks: <30ms for tables, <500ms for file hashing
+✅ Documentation: `/docs/AI-DUPLICATE-OVERLAP-SYSTEM.md`
+
+**Key Files**:
+- `src/lib/ai/table-extraction-provider.ts` - `deduplicateTables()` (automatic)
+- `src/lib/ai/table-intelligence-agent.ts` - `reconcileEntities()` (automatic)
+- `src/lib/utils/document-preparation.ts` - `filterDuplicateDocuments()` (opt-in: `enableContentHash`)
+
+### Nov 9, 2025 (AM) - Content Validation System
 ✅ 5-layer validation (localStorage, SQLite, Turso, API, Frontend)
 ✅ False positive fixes (login menu, error codes in amounts)
 ✅ Auto-cleanup invalid cache
@@ -313,8 +341,25 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 ✅ Premium dark button styling
 ✅ Gradient tabs for special features
 
+### Nov 9, 2025 (Night) - Deep Analysis Modernization & Enhancement 🔥
+✅ **Zod Validation** - Runtime type safety for input/output (422 errors)
+✅ **SDK Retry + Timeout** - 3x retry for 429/5xx, 120s timeout
+✅ **Veri Kaynağı Farkındalığı** - Ham veri + Tablolar + Bağlamsal analiz sentezi
+✅ **Hata Hiyerarşisi** - 422 (validation), 502 (API), 500 (genel)
+✅ **Metadata Tracking** - Token usage, request_id, model info
+✅ **Node.js Runtime** - 120s timeout (Edge 30s limit aşıldı)
+✅ Documentation: `/docs/DEEP-ANALYSIS-ENHANCEMENT-NOV9.md` + `/docs/DEEP-ANALYSIS-MODERNIZATION-NOV9.md`
+
+**Key Files**:
+- `src/app/api/ai/deep-analysis/route.ts` - Zod validation + retry logic + metadata tracking
+- `src/types/ai.ts` - DeepAnalysisResult interface genişletildi (7 yeni alan)
+
+**Breaking Changes**: None (backward compatible, ama invalid input artık 422 error)
+
+**New Dependencies**: `zod` (already installed)
+
 ---
 
-**Version**: 0.3.0
-**Last Updated**: November 9, 2025
-**Major Changes**: Content validation system, cache integrity, false positive prevention
+**Version**: 0.5.2
+**Last Updated**: November 9, 2025 (Night)
+**Major Changes**: Deep analysis modernization, Zod validation, veri kaynağı sentezi

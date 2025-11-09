@@ -122,22 +122,23 @@ export class ZipExtractor {
 
           logger.debug(LogKategori.PROCESSING, `✓ ${fileEntry.name} çıkarıldı`, {
             dosyaAdi: fileEntry.name,
-            boyut: size,
-            tip: type,
+            dosyaBoyutu: size,
+            dosyaTipi: type,
           });
         } catch (fileError: any) {
           logger.uyari(LogKategori.PROCESSING, `${fileEntry.name} çıkarılamadı: ${fileError.message}`, {
-            dosyaAdi: fileEntry.name,
-            hata: fileError.message,
+            ek: { dosyaAdi: fileEntry.name, hata: fileError.message },
           });
           // Continue with other files
         }
       }
 
       logger.basarili(LogKategori.PROCESSING, `ZIP extraction tamamlandı: ${extractedFiles.length}/${fileEntries.length} dosya`, {
-        toplamDosya: fileEntries.length,
-        basariliDosya: extractedFiles.length,
-        toplamBoyut: totalSize,
+        ek: {
+          toplamDosya: fileEntries.length,
+          basariliDosya: extractedFiles.length,
+          toplamBoyut: totalSize,
+        },
       });
 
       onProgress?.(`✅ ${extractedFiles.length} dosya çıkarıldı`);
@@ -149,10 +150,9 @@ export class ZipExtractor {
         totalSize,
       };
     } catch (error: any) {
-      logger.hata(LogKategori.PROCESSING, `ZIP extraction hatası: ${error.message}`, {
+      logger.hata(LogKategori.PROCESSING, `ZIP extraction hatası: ${zipFile.name}`, {
         kod: 'ZIP_EXTRACTION_ERROR',
         mesaj: error.message,
-        dosyaAdi: zipFile.name,
       });
 
       return {

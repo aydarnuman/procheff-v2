@@ -43,6 +43,7 @@
     "node_modules",
     "quick-test.ts",
     "test-*.ts",
-    "scripts/**/*.ts"
+    "scripts/**/*.ts",
+    "tests/**/*.ts"
   ]
 }

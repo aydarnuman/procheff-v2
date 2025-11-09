@@ -169,7 +169,7 @@ class SmokeTestRunner {
     } catch (httpErr) {
       // HTTP başarısız ise route handler'ı doğrudan çağırmayı dene
       try {
-        const { POST } = await import("../../src/app/api/ai/analyze-document/route");
+        const { POST } = await import("../src/app/api/ai/analyze-document/route");
         const req = new Request("http://localhost/api/ai/analyze-document", {
           method: "POST",
           body: formData as any,

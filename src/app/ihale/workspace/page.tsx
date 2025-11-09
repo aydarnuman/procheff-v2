@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Loader2, CheckCircle, XCircle, FileText, Download, ArrowLeft, Terminal, Bug } from 'lucide-react';
 import { SimpleDocumentList } from '@/components/ihale/SimpleDocumentList';
+import { AnalysisProgressTracker } from '@/components/ihale/AnalysisProgressTracker';
 import { useIhaleStore, FileMetadata } from '@/lib/stores/ihale-store';
 import { toast } from 'sonner';
 import { AILogger } from '@/lib/utils/ai-logger';
@@ -314,6 +315,18 @@ function ProcessingMode() {
   const [processing, setProcessing] = useState(false);
   const [fileObjects, setFileObjects] = useState<Map<string, File>>(new Map());
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set()); // 🆕 Toplu seçim
+  
+  // 🚀 YENİ: Real-time analysis progress tracking
+  const [analysisProgress, setAnalysisProgress] = useState<{
+    active: boolean;
+    stage: string;
+    progress: number;
+    details?: string;
+  }>({
+    active: false,
+    stage: '',
+    progress: 0
+  });
 
   // ⚠️ MEMORY LEAK PREVENTİON: Component unmount olunca temizle
   useEffect(() => {
@@ -975,29 +988,42 @@ function ProcessingMode() {
       return;
     }
 
-    // 3. Token limiti kontrolü
+    // 3. Token limiti kontrolü (DİNAMİK - Provider'a göre)
     const totalWordCount = completedFiles.reduce((sum, f) => sum + (f.wordCount || 0), 0);
     const estimatedTokens = Math.ceil(totalWordCount * 1.3);
+    
+    // 🎯 DİNAMİK LİMİT: Hybrid provider selection mantığına göre
+    // <50K text → Claude (200K limit)
+    // >50K text → Gemini (1M limit)
+    const estimatedTextLength = totalWordCount * 5; // Ortalama 5 char/word
+    const effectiveMaxTokens = estimatedTextLength > 50_000 
+      ? 1_000_000  // Gemini 2.0 Flash
+      : 200_000;   // Claude Sonnet 4
+    
+    const selectedProvider = estimatedTextLength > 50_000 ? 'Gemini 2.0 Flash' : 'Claude Sonnet 4';
     
     const tokenInfo = {
       totalFiles: completedFiles.length,
       totalWords: totalWordCount,
       estimatedTokens,
-      maxTokens: MAX_TOKENS,
-      withinLimit: estimatedTokens <= MAX_TOKENS,
-      utilizationPercent: ((estimatedTokens / MAX_TOKENS) * 100).toFixed(1)
+      estimatedTextLength,
+      selectedProvider,
+      maxTokens: effectiveMaxTokens,
+      withinLimit: estimatedTokens <= effectiveMaxTokens,
+      utilizationPercent: ((estimatedTokens / effectiveMaxTokens) * 100).toFixed(1)
     };
 
-    workspaceLogger.info('ANALYSIS', 'Token hesaplaması', tokenInfo);
-    AILogger.tokenUsage('claude', estimatedTokens, 0, 0, 0); // Estimated input tokens
+    workspaceLogger.info('ANALYSIS', 'Token hesaplaması (Dinamik)', tokenInfo);
+    const aiProvider = selectedProvider.includes('Gemini') ? 'gemini' : 'claude';
+    AILogger.tokenUsage(aiProvider as 'gemini' | 'claude', estimatedTokens, 0, 0, 0);
 
-    if (estimatedTokens > MAX_TOKENS) {
+    if (estimatedTokens > effectiveMaxTokens) {
       workspaceLogger.error('ANALYSIS', 'Token limiti aşıldı', null, tokenInfo);
       toast.error(
         `Text çok uzun!`,
         { 
           duration: 7000,
-          description: `${estimatedTokens.toLocaleString('tr-TR')} token (limit: ${MAX_TOKENS.toLocaleString('tr-TR')}). Bazı dosyaları kaldırın.`
+          description: `${estimatedTokens.toLocaleString('tr-TR')} token (${selectedProvider} limit: ${effectiveMaxTokens.toLocaleString('tr-TR')}). Bazı dosyaları kaldırın.`
         }
       );
       return;
@@ -1025,19 +1051,28 @@ function ProcessingMode() {
         estimatedTokens
       });
 
-      toast.loading('AI analizi yapılıyor...', { 
-        id: toastId,
-        description: 'Claude AI çalışıyor...'
-      });
+      // 🚀 STREAMING MODE - Real-time progress tracking
+      workspaceLogger.info('ANALYSIS', 'API request başlatılıyor (STREAMING mode)');
+      
+      // CSV analizlerini Zustand store'dan al
+      const { csvFiles: storeCsvFiles } = useIhaleStore.getState();
+      const csvAnalyses = storeCsvFiles
+        .filter((csv: any) => csv.status === 'completed' && csv.analysis)
+        .map((csv: any) => ({
+          fileName: csv.fileMetadata.name,
+          analysis: csv.analysis
+        }));
 
-      // Premium AI analysis endpoint
-      workspaceLogger.info('ANALYSIS', 'API request başlatılıyor');
-      const response = await fetch('/api/ai/full-analysis', {
+      if (csvAnalyses.length > 0) {
+        workspaceLogger.info('ANALYSIS', `${csvAnalyses.length} CSV analizi gönderiliyor`);
+      }
+
+      const response = await fetch('/api/ai/full-analysis?stream=true', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: combinedText,
-          csvData: null
+          csvAnalyses: csvAnalyses.length > 0 ? csvAnalyses : undefined
         })
       });
 
@@ -1052,11 +1087,85 @@ function ProcessingMode() {
         throw new Error(errorMsg);
       }
 
-      const result = await response.json();
+      // SSE stream okuma
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let result: any = null;
+
+      if (reader) {
+        workspaceLogger.info('ANALYSIS', 'SSE stream başladı');
+        
+        // Progress tracker'ı aktif et
+        setAnalysisProgress({ active: true, stage: 'Başlangıç...', progress: 0 });
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            workspaceLogger.info('ANALYSIS', 'SSE stream tamamlandı');
+            break;
+          }
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+
+                if (data.type === 'progress') {
+                  // Real-time progress update
+                  workspaceLogger.debug('ANALYSIS', `Progress: ${data.progress}% - ${data.stage}`);
+                  
+                  // Progress tracker güncelle
+                  setAnalysisProgress({
+                    active: true,
+                    stage: data.stage,
+                    progress: data.progress,
+                    details: data.details
+                  });
+                  
+                  // Toast güncelle (backup)
+                  toast.loading(data.stage, {
+                    id: toastId,
+                    description: `${data.progress}% • ${data.details || ''}`
+                  });
+                } else if (data.type === 'complete') {
+                  // Final result
+                  result = data.result;
+                  workspaceLogger.success('ANALYSIS', 'Stream complete, result alındı');
+                  
+                  // Progress tracker kapat
+                  setAnalysisProgress({ active: false, stage: '', progress: 100 });
+                } else if (data.type === 'error') {
+                  setAnalysisProgress({ active: false, stage: '', progress: 0 });
+                  throw new Error(data.error);
+                }
+              } catch (parseError) {
+                workspaceLogger.error('ANALYSIS', 'SSE parse error', parseError);
+              }
+            }
+          }
+        }
+
+        // Son buffer'ı işle
+        if (buffer && buffer.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(buffer.slice(6));
+            if (data.type === 'complete') {
+              result = data.result;
+            }
+          } catch (e) {
+            console.error('Final buffer parse error:', e);
+          }
+        }
+      }
 
       // Validate response
-      if (!result.success || !result.data) {
-        workspaceLogger.error('ANALYSIS', 'Invalid API response', null, { result });
+      if (!result) {
+        workspaceLogger.error('ANALYSIS', 'Stream tamamlandı ama result yok');
         throw new Error('Analiz sonucu alınamadı');
       }
 
@@ -1087,7 +1196,7 @@ function ProcessingMode() {
       // Zustand store'a kaydet
       workspaceLogger.info('ANALYSIS', 'Store\'a kaydediliyor');
       const { setCurrentAnalysis } = useIhaleStore.getState();
-      setCurrentAnalysis(result.data);
+      setCurrentAnalysis(result);
 
       // Store güncel analysisHistory'yi al
       const updatedHistory = useIhaleStore.getState().analysisHistory;
@@ -1096,6 +1205,19 @@ function ProcessingMode() {
       workspaceLogger.success('ANALYSIS', 'Store\'a kaydedildi', {
         historyLength: updatedHistory.length,
         targetIndex: lastIndex
+      });
+
+      // 🧹 MEMORY CLEANUP - extractedText'leri temizle (artık gerekmez)
+      workspaceLogger.info('ANALYSIS', 'Memory cleanup başlatılıyor');
+      const memoryBefore = completedFiles.reduce((sum, f) => sum + (f.extractedText?.length || 0), 0);
+      
+      completedFiles.forEach(file => {
+        updateFileStatus(file.fileMetadata.name, { extractedText: undefined });
+      });
+      
+      workspaceLogger.success('ANALYSIS', 'Memory cleanup tamamlandı', {
+        clearedBytes: memoryBefore,
+        clearedMB: (memoryBefore / 1024 / 1024).toFixed(2)
       });
 
       // Premium detay sayfasına yönlendir
@@ -1111,29 +1233,61 @@ function ProcessingMode() {
         errorStack: IS_DEBUG ? error.stack : undefined
       });
       
-      // User-friendly error message
+      // 🎯 AKILLI ERROR HANDLING - Retry yapılabilir mi?
       let userMessage = error.message || 'Analiz başarısız oldu';
       let errorDescription = '';
+      let retryable = false;
+      let retryDelay = 0;
       
       if (error.message?.includes('network') || error.message?.includes('fetch')) {
         errorDescription = 'İnternet bağlantınızı kontrol edin';
+        retryable = true;
+        retryDelay = 2000;
       } else if (error.message?.includes('timeout')) {
         errorDescription = 'İşlem zaman aşımına uğradı';
+        retryable = true;
+        retryDelay = 3000;
       } else if (error.message?.includes('401') || error.message?.includes('403')) {
-        errorDescription = 'Yetkilendirme hatası';
+        errorDescription = 'Yetkilendirme hatası - API key kontrol edilecek';
+        retryable = false;
       } else if (error.message?.includes('429')) {
-        errorDescription = 'Rate limit aşıldı. Biraz bekleyin';
-      } else if (error.message?.includes('500')) {
-        errorDescription = 'Sunucu hatası. Tekrar deneyin';
+        // Rate limit - exponential backoff
+        const retryAfter = error.retryAfter || 60;
+        errorDescription = `Rate limit aşıldı. ${retryAfter} saniye bekleyin`;
+        retryable = true;
+        retryDelay = retryAfter * 1000;
+      } else if (error.message?.includes('500') || error.message?.includes('502') || error.message?.includes('503')) {
+        errorDescription = 'Sunucu geçici olarak kullanılamıyor';
+        retryable = true;
+        retryDelay = 5000;
       } else {
         errorDescription = 'Detaylar terminal loglarında';
+        retryable = false;
       }
       
-      toast.error(userMessage, { 
-        id: toastId,
-        duration: 7000,
-        description: errorDescription
-      });
+      // Toast with retry option
+      if (retryable) {
+        toast.error(userMessage, { 
+          id: toastId,
+          duration: 10000,
+          description: errorDescription,
+          action: {
+            label: `Tekrar Dene${retryDelay > 0 ? ` (${Math.round(retryDelay / 1000)}s)` : ''}`,
+            onClick: () => {
+              setTimeout(() => {
+                workspaceLogger.info('ANALYSIS', 'Retry talebi - yeniden başlatılıyor');
+                handleStartAnalysis();
+              }, retryDelay);
+            }
+          }
+        });
+      } else {
+        toast.error(userMessage, { 
+          id: toastId,
+          duration: 7000,
+          description: errorDescription
+        });
+      }
     } finally {
       setProcessing(false);
       workspaceLogger.info('ANALYSIS', 'İşlem sonlandırıldı', { processing: false });
@@ -1274,6 +1428,15 @@ function ProcessingMode() {
               </p>
             </div>
           </div>
+        )}
+
+        {/* 🚀 Real-time Analysis Progress Tracker */}
+        {analysisProgress.active && (
+          <AnalysisProgressTracker
+            stage={analysisProgress.stage}
+            progress={analysisProgress.progress}
+            details={analysisProgress.details}
+          />
         )}
 
         {/* SimpleDocumentList Component */}

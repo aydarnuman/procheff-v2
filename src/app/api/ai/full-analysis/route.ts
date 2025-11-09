@@ -10,6 +10,8 @@ import { DualAPIOrchestrator } from "@/lib/ai/dual-api-orchestrator";
 import { categorizeTables } from "@/lib/ai/table-categorizer";
 import { CSVCostAnalysis } from "@/lib/csv/csv-parser";
 import { ANALYSIS_STAGES, createProgressEvent, createDocumentStage, getDocumentProcessingProgress } from "@/lib/ai/analysis-stages";
+// 🆕 Content Validator v2.0 (Nov 9, 2025)
+import { ContentValidator } from "@/lib/validation";
 
 // 💾 CACHE MANAGER
 class ServerAnalysisCache {
@@ -41,20 +43,48 @@ class ServerAnalysisCache {
     return entry.data;
   }
 
+  // Clean up expired entries (garbage collection)
+  private static cleanupExpired(): number {
+    const now = Date.now();
+    let removedCount = 0;
+
+    for (const [hash, entry] of this.cache.entries()) {
+      if (now - entry.timestamp > this.TTL) {
+        this.cache.delete(hash);
+        removedCount++;
+      }
+    }
+
+    return removedCount;
+  }
+
   static set(hash: string, data: any): void {
-    // LRU eviction
+    // First, try to clean up expired entries
+    const cleanedCount = this.cleanupExpired();
+    if (cleanedCount > 0) {
+      console.log(`🧹 Cache cleanup: ${cleanedCount} expired entries removed`);
+    }
+
+    // If still full after cleanup, use LRU eviction
     if (this.cache.size >= this.MAX_ENTRIES) {
       const firstKey = this.cache.keys().next().value;
-      if (firstKey) this.cache.delete(firstKey);
+      if (firstKey) {
+        this.cache.delete(firstKey);
+        console.log(`🗑️ Cache LRU eviction: oldest entry removed`);
+      }
     }
 
     this.cache.set(hash, { data, timestamp: Date.now() });
   }
 
   static getStats() {
+    // Real-time cleanup for accurate stats
+    const cleanedCount = this.cleanupExpired();
+
     return {
       entries: this.cache.size,
       maxEntries: this.MAX_ENTRIES,
+      lastCleanup: cleanedCount > 0 ? `${cleanedCount} expired removed` : 'no expired entries',
     };
   }
 }
@@ -76,22 +106,48 @@ function sendProgressEvent(
   controller.enqueue(`data: ${data}\n\n`);
 }
 
-// Helper: Send error event to stream
+// Helper: Send error event to stream (safe)
 function sendErrorEvent(
   controller: ReadableStreamDefaultController,
   error: string
 ) {
-  const data = JSON.stringify({ type: 'error', error });
-  controller.enqueue(`data: ${data}\n\n`);
+  try {
+    if (controller.desiredSize !== null) {
+      const data = JSON.stringify({ type: 'error', error });
+      controller.enqueue(`data: ${data}\n\n`);
+    }
+  } catch (e) {
+    console.warn("Failed to send error event:", e);
+  }
 }
 
-// Helper: Send completion event to stream
+// Helper: Send completion event to stream (safe)
 function sendCompleteEvent(
   controller: ReadableStreamDefaultController,
   result: any
 ) {
-  const data = JSON.stringify({ type: 'complete', result });
-  controller.enqueue(`data: ${data}\n\n`);
+  try {
+    if (controller.desiredSize !== null) {
+      const data = JSON.stringify({ type: 'complete', result });
+      controller.enqueue(`data: ${data}\n\n`);
+    }
+  } catch (e) {
+    console.warn("Failed to send complete event:", e);
+  }
+}
+
+// Helper: Sanitize confidence score (prevent NaN, negative, out-of-range values)
+function sanitizeConfidenceScore(score: any, defaultValue: number = 0.7): number {
+  // Strict type check: must be a valid number
+  if (typeof score !== 'number' || Number.isNaN(score)) {
+    return defaultValue;
+  }
+
+  // Range validation: clamp to [0, 1]
+  if (score < 0) return 0;
+  if (score > 1) return 1;
+
+  return score;
 }
 
 // Helper: Convert CSV cost analysis to ExtractedTable format
@@ -103,8 +159,30 @@ function convertCSVToTables(csvAnalyses: any[]): ExtractedTable[] {
   const tables: ExtractedTable[] = [];
 
   csvAnalyses.forEach((csv: any, csvIndex: number) => {
+    // Defensive checks: validate CSV structure
+    if (!csv || typeof csv !== 'object') {
+      console.warn(`⚠️ CSV ${csvIndex + 1} geçersiz (not an object), atlanıyor`);
+      return;
+    }
+
+    if (!csv.analysis || typeof csv.analysis !== 'object') {
+      console.warn(`⚠️ CSV ${csvIndex + 1} analysis field eksik, atlanıyor`);
+      return;
+    }
+
     const analysis: CSVCostAnalysis = csv.analysis;
     const fileName = csv.fileName || `CSV-${csvIndex + 1}`;
+
+    // Validate analysis structure
+    if (!analysis.items || !Array.isArray(analysis.items)) {
+      console.warn(`⚠️ CSV ${fileName} items eksik veya array değil, atlanıyor`);
+      return;
+    }
+
+    if (!analysis.summary || typeof analysis.summary !== 'object') {
+      console.warn(`⚠️ CSV ${fileName} summary eksik, atlanıyor`);
+      return;
+    }
 
     // Her CSV'den bir maliyet tablosu oluştur
     const headers = ["Ürün Adı", "Miktar", "Birim", "Birim Fiyat (TL)", "Toplam Fiyat (TL)", "Kategori"];
@@ -317,8 +395,29 @@ async function createStreamingResponse(text: string, csvAnalyses: any[] | undefi
         // Validation (sabit stage mapping)
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(createProgressEvent(ANALYSIS_STAGES.VALIDATION))}\n\n`));
 
+        // 🆕 Content Validator v2.0 (Nov 9, 2025)
+        // False positive prevention, confidence scoring, budget ratio check
+        const contentValidation = ContentValidator.validateExtractedData(rawExtractedData);
+        
+        // Legacy DataValidator (backward compatible)
         const validationResult = DataValidator.validate(rawExtractedData);
         let extractedData = validationResult.data;
+
+        // 🆕 Apply content validator fixes (immutable)
+        if (contentValidation.fixed_data && contentValidation.summary.auto_fixed_count > 0) {
+          extractedData = contentValidation.fixed_data;
+        }
+
+        // 🆕 Add validation metadata (type-safe)
+        extractedData = {
+          ...extractedData,
+          _validation_metadata: {
+            confidence: contentValidation.summary.confidence,
+            warnings_count: contentValidation.summary.total_warnings,
+            auto_fixed: contentValidation.summary.auto_fixed_count,
+            status: contentValidation.summary.status,
+          },
+        };
 
         // Financial control (sabit stage mapping)
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(createProgressEvent(ANALYSIS_STAGES.FINANCIAL_CONTROL))}\n\n`));
@@ -371,29 +470,25 @@ async function createStreamingResponse(text: string, csvAnalyses: any[] | undefi
           `${analyzedDocsMessage} ${(totalProcessingTime / 1000).toFixed(1)}s`
         ))}\n\n`));
 
-        // Calculate overall confidence (NaN korumalı)
+        // Calculate overall confidence (sanitized)
         console.log('🔍 [CONFIDENCE DEBUG] extractedData.guven_skoru:', extractedData.guven_skoru);
         console.log('🔍 [CONFIDENCE DEBUG] Type:', typeof extractedData.guven_skoru);
-        console.log('🔍 [CONFIDENCE DEBUG] isNaN check:', isNaN(extractedData.guven_skoru as any));
-        
-        const baseConfidence = typeof extractedData.guven_skoru === 'number' && !isNaN(extractedData.guven_skoru)
-          ? extractedData.guven_skoru
-          : 0.7; // Varsayılan güven skoru
-        
-        console.log('🔍 [CONFIDENCE DEBUG] baseConfidence:', baseConfidence);
-        
-        // ✅ FIX: AI güven skoru döndürmediyse, extracted_data'ya yaz (UI için)
-        if (!extractedData.guven_skoru || isNaN(extractedData.guven_skoru)) {
-          extractedData.guven_skoru = baseConfidence;
-          console.warn('⚠️ Güven skoru AI tarafından döndürülmedi, varsayılan 0.7 kullanıldı');
-          console.log('🔍 [CONFIDENCE DEBUG] After fix, extractedData.guven_skoru:', extractedData.guven_skoru);
+
+        const baseConfidence = sanitizeConfidenceScore(extractedData.guven_skoru, 0.7);
+
+        console.log('🔍 [CONFIDENCE DEBUG] baseConfidence (sanitized):', baseConfidence);
+
+        // ✅ FIX: AI güven skoru döndürmediyse veya invalid ise, extracted_data'ya yaz (UI için)
+        if (baseConfidence === 0.7 && extractedData.guven_skoru !== 0.7) {
+          console.warn('⚠️ Güven skoru invalid, varsayılan 0.7 kullanıldı (original:', extractedData.guven_skoru, ')');
         }
-        
+        extractedData.guven_skoru = baseConfidence;
+
         const overallConfidence = Math.min(
           baseConfidence,
           extractedData.kisi_sayisi && extractedData.tahmini_butce ? 0.95 : 0.8
         );
-        
+
         console.log('🔍 [CONFIDENCE DEBUG] overallConfidence:', overallConfidence);
 
         const result: AIAnalysisResult = {
@@ -447,12 +542,28 @@ async function createStreamingResponse(text: string, csvAnalyses: any[] | undefi
         controller.close();
       } catch (error) {
         console.error("Stream error:", error);
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-          type: 'error',
-          error: error instanceof Error ? error.message : 'Bilinmeyen hata',
-          timestamp: Date.now()
-        })}\n\n`));
-        controller.close();
+
+        // Defensive check: only enqueue if stream is still open
+        try {
+          if (controller.desiredSize !== null) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              type: 'error',
+              error: error instanceof Error ? error.message : 'Bilinmeyen hata',
+              timestamp: Date.now()
+            })}\n\n`));
+          } else {
+            console.warn("Stream already closed, cannot send error message to client");
+          }
+        } catch (enqueueError) {
+          console.error("Failed to enqueue error message:", enqueueError);
+        }
+
+        // Always try to close (safe to call multiple times)
+        try {
+          controller.close();
+        } catch (closeError) {
+          console.warn("Stream already closed:", closeError);
+        }
       }
     }
   });
@@ -652,8 +763,20 @@ export async function POST(request: NextRequest) {
 
     // Step 1.5: Validation & Auto-Fix
     console.log("Adım 1.5: Validation süzgeci çalıştırılıyor...");
+    
+    // 🆕 Content Validator v2.0 (Nov 9, 2025)
+    const contentValidation = ContentValidator.validateExtractedData(rawExtractedData);
+    console.log(`📊 Content Validation - Status: ${contentValidation.summary.status}, Confidence: ${(contentValidation.summary.confidence.overall * 100).toFixed(0)}%, Warnings: ${contentValidation.summary.total_warnings}`);
+    
+    // Legacy DataValidator (backward compatible)
     const validationResult = DataValidator.validate(rawExtractedData);
     let extractedData = validationResult.data;
+
+    // 🆕 Apply content validator fixes
+    if (contentValidation.fixed_data && contentValidation.summary.auto_fixed_count > 0) {
+      console.log(`🔧 Auto-fix uygulandı: ${contentValidation.summary.auto_fixed_count} alan düzeltildi`);
+      extractedData = contentValidation.fixed_data;
+    }
 
     // Step 1.6: Financial Control (JavaScript hesaplama - hızlı!)
     console.log("Adım 1.6: Finansal kontrol hesaplanıyor...");
@@ -661,6 +784,12 @@ export async function POST(request: NextRequest) {
     extractedData = {
       ...extractedData,
       finansal_kontrol: finansalKontrol,
+      _validation_metadata: {
+        confidence: contentValidation.summary.confidence,
+        warnings_count: contentValidation.summary.total_warnings,
+        auto_fixed: contentValidation.summary.auto_fixed_count,
+        status: contentValidation.summary.status,
+      },
     };
     console.log(`Finansal Karar: ${finansalKontrol.girilir_mi} (${finansalKontrol.gerekce})`);
 
@@ -732,29 +861,26 @@ export async function POST(request: NextRequest) {
     console.log(`Bağlamsal analiz tamamlandı: ${analysisTime}ms`);
     console.log(`Toplam işleme süresi: ${totalProcessingTime}ms`);
 
-    // Calculate overall confidence score (NaN korumalı)
+    // Calculate overall confidence score (sanitized)
     console.log('🔍 [NON-STREAMING CONFIDENCE DEBUG] extractedData.guven_skoru:', extractedData.guven_skoru);
     console.log('🔍 [NON-STREAMING CONFIDENCE DEBUG] Type:', typeof extractedData.guven_skoru);
-    
-    const baseConfidence = typeof extractedData.guven_skoru === 'number' && !isNaN(extractedData.guven_skoru)
-      ? extractedData.guven_skoru
-      : 0.7; // Varsayılan güven skoru
-    
-    console.log('🔍 [NON-STREAMING CONFIDENCE DEBUG] baseConfidence:', baseConfidence);
-    
-    // ✅ FIX: AI güven skoru döndürmediyse, extracted_data'ya yaz (UI için)
-    if (!extractedData.guven_skoru || isNaN(extractedData.guven_skoru)) {
-      extractedData.guven_skoru = baseConfidence;
-      console.warn('⚠️ [NON-STREAMING] Güven skoru AI tarafından döndürülmedi, varsayılan 0.7 kullanıldı');
-      console.log('🔍 [NON-STREAMING CONFIDENCE DEBUG] After fix:', extractedData.guven_skoru);
+
+    const baseConfidence = sanitizeConfidenceScore(extractedData.guven_skoru, 0.7);
+
+    console.log('🔍 [NON-STREAMING CONFIDENCE DEBUG] baseConfidence (sanitized):', baseConfidence);
+
+    // ✅ FIX: AI güven skoru döndürmediyse veya invalid ise, extracted_data'ya yaz (UI için)
+    if (baseConfidence === 0.7 && extractedData.guven_skoru !== 0.7) {
+      console.warn('⚠️ [NON-STREAMING] Güven skoru invalid, varsayılan 0.7 kullanıldı (original:', extractedData.guven_skoru, ')');
     }
-    
+    extractedData.guven_skoru = baseConfidence;
+
     const overallConfidence = Math.min(
       baseConfidence,
       // Weight contextual analysis based on data quality
       extractedData.kisi_sayisi && extractedData.tahmini_butce ? 0.95 : 0.8
     );
-    
+
     console.log('🔍 [NON-STREAMING CONFIDENCE DEBUG] overallConfidence:', overallConfidence);
 
     const result: AIAnalysisResult = {
