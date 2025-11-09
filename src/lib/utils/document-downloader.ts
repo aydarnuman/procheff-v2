@@ -66,29 +66,48 @@ export async function downloadDocument(
 ): Promise<DownloadedFile[]> {
   const startTime = Date.now();
   const { endpoint, method, requiresAuth } = getDownloadEndpoint(url);
-  
-  console.log(`📥 İndiriliyor: ${url.substring(url.lastIndexOf('/') + 1)}`);
-  console.log(`${requiresAuth ? '🔐 Auth' : '⚡ Simple'}: ${endpoint}`);
+  const filename = url.substring(url.lastIndexOf('/') + 1);
+
+  console.log(`📥 İndirme başlatıldı:`, {
+    dosya: filename,
+    url: url.substring(0, 80) + '...',
+    authGerekli: requiresAuth,
+    endpoint: endpoint.substring(0, 60)
+  });
 
   try {
     let response: Response;
-    
+
     if (method === 'POST') {
+      console.log(`🔐 POST isteği gönderiliyor: ${endpoint}`);
       response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url })
       });
     } else {
+      console.log(`⚡ GET isteği gönderiliyor: ${endpoint}`);
       response = await fetch(endpoint);
     }
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+      const errorText = await response.text().catch(() => 'Yanıt okunamadı');
+      console.error(`❌ HTTP hatası:`, {
+        status: response.status,
+        statusText: response.statusText,
+        url: filename,
+        errorPreview: errorText.substring(0, 200)
+      });
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
     const data = await response.json();
     if (!data.success) {
+      console.error(`❌ API hatası:`, {
+        url: filename,
+        hata: data.error || 'Bilinmeyen hata',
+        detay: data.details || 'Detay yok'
+      });
       throw new Error(data.error || 'İndirme başarısız');
     }
 
@@ -189,52 +208,82 @@ export async function downloadDocuments(
   options: DownloadOptions = {}
 ): Promise<DownloadedFile[]> {
   const validUrls = urls.filter(url => !url.startsWith('virtual://'));
-  
-  console.log(`📥 Download başlatıldı: ${validUrls.length} dosya`);
-  
+
+  console.log(`📥 Batch download başlatıldı:`, {
+    toplamUrl: urls.length,
+    gecerliUrl: validUrls.length,
+    virtualUrl: urls.length - validUrls.length
+  });
+
   // 🎯 OPTIMIZATION: 3'er 3'er batch processing (paralel değil - seri)
   const BATCH_SIZE = 3;
   const allFiles: DownloadedFile[] = [];
-  
+  const errors: Array<{ url: string; error: string }> = [];
+
   for (let i = 0; i < validUrls.length; i += BATCH_SIZE) {
     const batch = validUrls.slice(i, i + BATCH_SIZE);
-    
+    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+    const totalBatches = Math.ceil(validUrls.length / BATCH_SIZE);
+
+    console.log(`📦 Batch ${batchNum}/${totalBatches} işleniyor (${batch.length} dosya)`);
+
     // Batch içi paralel, batch'ler arası seri
     const batchPromises = batch.map(async (url, batchIndex) => {
       try {
         const globalIndex = i + batchIndex;
+        const filename = url.substring(url.lastIndexOf('/') + 1);
+
         if (options.onProgress) {
           options.onProgress({
             current: globalIndex + 1,
             total: validUrls.length,
-            filename: url.substring(url.lastIndexOf('/') + 1)
+            filename
           });
         }
-        
+
         return await downloadDocument(url, options);
-      } catch (error) {
-        console.error(`❌ Download failed for ${url}:`, error);
+      } catch (error: any) {
+        const filename = url.substring(url.lastIndexOf('/') + 1);
+        const errorMsg = error?.message || String(error);
+
+        console.error(`❌ İndirme başarısız:`, {
+          dosya: filename,
+          hata: errorMsg,
+          batch: batchNum
+        });
+
+        errors.push({ url: filename, error: errorMsg });
         return null;
       }
     });
 
     const batchResults = await Promise.all(batchPromises);
-    
+
     // Flatten ve filtrele
     const batchFiles = batchResults
       .filter((result): result is DownloadedFile[] => result !== null)
       .flat();
-    
+
     allFiles.push(...batchFiles);
-    
+
+    console.log(`✅ Batch ${batchNum}/${totalBatches} tamamlandı: ${batchFiles.length} dosya`);
+
     // 🎯 Batch'ler arası 100ms bekle (main thread'e nefes aldır)
     if (i + BATCH_SIZE < validUrls.length) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
   }
 
-  console.log(`✅ Toplam ${allFiles.length} dosya indirildi`);
-  
+  console.log(`🎉 Batch download tamamlandı:`, {
+    basarili: allFiles.length,
+    basarisiz: errors.length,
+    toplam: validUrls.length
+  });
+
+  if (errors.length > 0) {
+    console.warn(`⚠️ ${errors.length} dosya indirilemedi:`, errors.slice(0, 3));
+  }
+
   return allFiles;
 }
 
