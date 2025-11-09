@@ -988,6 +988,25 @@ Sadece executable JavaScript kodu döndür. Örnek:
 
               if (tender) {
                 console.log(`  ✅ [${globalIdx + 1}/${tenderUrls.length}] ${tender.title}`);
+                
+                // 🆕 ZIP dosyalarını indir ve extract et (background, hata olursa devam et)
+                // NOT: tender objesinde zaten documents array'i var, onu kullan!
+                try {
+                  // Detay HTML'den döküman URL'lerini çıkar (parseDetailPage zaten parse etti)
+                  const detailHtml = await dedicatedPage.content();
+                  const documentUrls = this.extractDocumentUrls(detailHtml);
+                  
+                  if (documentUrls.length > 0) {
+                    await this.downloadAndExtractZipsFromUrls(
+                      dedicatedPage,
+                      tender.source_id, // Tender ID
+                      documentUrls
+                    );
+                  }
+                } catch (zipError) {
+                  console.warn(`  ⚠️ ZIP extraction hatası (devam ediliyor): ${zipError}`);
+                }
+                
                 return tender;
               }
               return null;
@@ -1363,6 +1382,123 @@ Sadece executable JavaScript kodu döndür. Örnek:
   return tender as ScrapedTender;
     } catch (error) {
       console.warn(`⚠️ Detail page parse error: ${error}`);
+      return null;
+    }
+  }
+
+  /**
+   * 🆕 Extract document URLs from detail page HTML
+   */
+  private extractDocumentUrls(html: string): string[] {
+    const $ = cheerio.load(html);
+    const urls: string[] = [];
+    
+    // downloadfile veya download içeren linkleri bul
+    $('a[href*="downloadfile"], a[href*="/download/"]').each((i, el) => {
+      const href = $(el).attr('href');
+      if (href) {
+        // Relative URL'leri absolute yap
+        const fullUrl = href.startsWith('http') 
+          ? href 
+          : `https://www.ihalebul.com${href}`;
+        urls.push(fullUrl);
+      }
+    });
+    
+    return urls;
+  }
+
+  /**
+   * 🆕 ZIP Downloader: Verilen URL'lerden ZIP'leri indir ve session'a kaydet
+   * 
+   * @param page - Puppeteer page (authenticated session ile)
+   * @param tenderId - Tender source ID
+   * @param documentUrls - Document download URLs
+   * @returns Extracted files array veya null
+   */
+  async downloadAndExtractZipsFromUrls(
+    page: any,
+    tenderId: string,
+    documentUrls: string[]
+  ): Promise<any[] | null> {
+    try {
+      console.log(`📦 ZIP files kontrol ediliyor: Tender ${tenderId}`);
+
+      if (documentUrls.length === 0) {
+        console.log('⚠️ ZIP download linki bulunamadı');
+        return null;
+      }
+
+      console.log(`🔗 ${documentUrls.length} download link bulundu:`, documentUrls);
+
+      // Session oluştur (her zaman yeni session - unique timestamp)
+      const { TenderSessionManager } = await import('@/lib/tender-session/session-manager');
+      console.log('📁 Yeni session oluşturuluyor...');
+      const sessionResult = await TenderSessionManager.create({
+        tenderId: parseInt(tenderId),
+        source: 'ihalebul',
+      });
+
+      if (!sessionResult.success || !sessionResult.sessionId) {
+        console.error('❌ Session oluşturulamadı:', sessionResult.error);
+        return null;
+      }
+
+      const sessionId = sessionResult.sessionId;
+      console.log(`✅ Session hazır: ${sessionId}`);
+
+      // ZIP indirme ve extraction için API çağır
+      const path = require('path');
+      const sessionDir = path.join(process.cwd(), 'data', 'sessions', sessionId);
+      
+      // Session klasörü var mı kontrol et, yoksa oluştur
+      const fs = require('fs').promises;
+      try {
+        await fs.mkdir(sessionDir, { recursive: true });
+        console.log(`📂 Session klasörü hazır: ${sessionDir}`);
+      } catch (e) {
+        console.warn('⚠️ Session klasörü oluşturulamadı:', e);
+      }
+
+      // Cookies al (authenticated session için)
+      const cookies = await page.cookies();
+      const cookieString = cookies.map((c: any) => `${c.name}=${c.value}`).join('; ');
+
+      // ZIP Extractor'ı kullan
+      const { ZipExtractor } = await import('@/lib/tender-session/zip-extractor');
+      const extractedFiles = await ZipExtractor.extractAllZipsInSession(
+        sessionDir,
+        documentUrls,
+        cookieString
+      );
+
+      if (extractedFiles.length === 0) {
+        console.log('⚠️ Hiç dosya extract edilemedi');
+        return null;
+      }
+
+      console.log(`✅ ${extractedFiles.length} dosya extract edildi`);
+
+      // DB'ye kaydet
+      for (const file of extractedFiles) {
+        const fileId = `file_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+        await TenderSessionManager.addFile({
+          sessionId,
+          fileId,
+          filename: file.filename,
+          originalFilename: file.filename,
+          storagePath: file.storagePath,
+          size: file.size,
+          mimeType: file.mimeType,
+          isExtractedFromZip: true,
+        });
+        console.log(`  💾 DB'ye kaydedildi: ${file.filename}`);
+      }
+
+      return extractedFiles;
+
+    } catch (error) {
+      console.error('❌ ZIP download/extract hatası:', error);
       return null;
     }
   }

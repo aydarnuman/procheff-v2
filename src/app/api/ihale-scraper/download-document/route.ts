@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fileTypeFromBuffer } from 'file-type';
 import JSZip from 'jszip';
+import * as fs from 'fs';
 
 export const maxDuration = 60;
 
@@ -30,19 +31,89 @@ export async function GET(request: NextRequest) {
       for (let i = 0; i <= retries; i++) {
         try {
           const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 10000); // 10sn timeout
+          const timeout = setTimeout(() => controller.abort(), 50000); // 50sn timeout (büyük dosyalar için)
           const response = await fetch(url, { ...options, signal: controller.signal });
           clearTimeout(timeout);
           return response;
         } catch (err) {
           if (i === retries) throw err;
-          await new Promise(r => setTimeout(r, 500)); // 0.5sn bekle
+          await new Promise(r => setTimeout(r, 1000)); // 1sn bekle (retry arası)
         }
       }
     }
 
-    // Cookie'leri request'ten al (authentication için gerekli)
-    const cookies = request.headers.get('cookie') || '';
+    // ============================================================
+    // 🔑 Authentication: Scraper session cookie'sini kullan
+    // ============================================================
+    let authCookies = '';
+
+    try {
+      const sessionFile = '/tmp/ihalebul-session.json';
+      let sessionValid = false;
+
+      // Mevcut session'ı kontrol et
+      if (fs.existsSync(sessionFile)) {
+        const sessionData = fs.readFileSync(sessionFile, 'utf8');
+        const savedSession = JSON.parse(sessionData);
+        const sessionAge = Date.now() - new Date(savedSession.timestamp).getTime();
+
+        // Session 1 saatten eskiyse veya cookie yoksa, yeniden login gerekli
+        if (sessionAge < 3600000 && Array.isArray(savedSession.cookies) && savedSession.cookies.length > 0) {
+          authCookies = savedSession.cookies
+            .map((c: any) => `${c.name}=${c.value}`)
+            .join('; ');
+          console.log(`🔑 Using scraper session cookies (age: ${Math.round(sessionAge / 60000)} min)`);
+          sessionValid = true;
+        }
+      }
+
+      // Session yoksa veya expire olduysa, scraper'ı çalıştır
+      if (!sessionValid) {
+        console.log('🔄 No valid session found, running scraper to authenticate...');
+
+        const username = process.env.IHALEBUL_USERNAME;
+        const password = process.env.IHALEBUL_PASSWORD;
+
+        if (!username || !password) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: 'İhalebul credentials not configured. Please set IHALEBUL_USERNAME and IHALEBUL_PASSWORD.',
+            },
+            { status: 401 }
+          );
+        }
+
+        // Scraper import ve çalıştır (sadece login için)
+        const { IhalebulScraper } = await import('@/lib/ihale-scraper/scrapers/ihalebul-scraper');
+        const scraper = new IhalebulScraper('new');
+
+        console.log('🔐 Authenticating with ihalebul.com...');
+        await scraper.scrape(); // Bu login yapacak ve session kaydedecek
+
+        // Session'ı tekrar oku
+        if (fs.existsSync(sessionFile)) {
+          const sessionData = fs.readFileSync(sessionFile, 'utf8');
+          const savedSession = JSON.parse(sessionData);
+
+          if (Array.isArray(savedSession.cookies) && savedSession.cookies.length > 0) {
+            authCookies = savedSession.cookies
+              .map((c: any) => `${c.name}=${c.value}`)
+              .join('; ');
+            console.log('✅ Authentication successful, cookies loaded');
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('❌ Authentication error:', error);
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Authentication failed: ' + error.message,
+        },
+        { status: 401 }
+      );
+    }
 
     const fetchHeaders: HeadersInit = {
       'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
@@ -51,9 +122,9 @@ export async function GET(request: NextRequest) {
       'Referer': url,
     };
 
-    // Cookie varsa ekle (authentication için kritik!)
-    if (cookies) {
-      fetchHeaders['Cookie'] = cookies;
+    // Authentication cookie'si varsa ekle
+    if (authCookies) {
+      fetchHeaders['Cookie'] = authCookies;
     }
 
     const response = await safeFetch(url, {

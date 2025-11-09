@@ -202,10 +202,20 @@ export async function POST(request: Request) {
 
       console.log(`✅ ZIP extracted: ${files.length} files`);
 
+      // Format: document-downloader.ts'in beklediği format
       return NextResponse.json({
         success: true,
         isZip: true,
-        files: files,
+        filename: url.split('/').pop() || 'archive.zip',
+        mimeType: 'application/zip',
+        size: buffer.length,
+        files: files.map(f => ({
+          name: f.name,
+          content: f.content,
+          type: f.type,
+          size: Buffer.from(f.content, 'base64').length
+        })),
+        filesCount: files.length
       });
     }
 
@@ -225,11 +235,10 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       isZip: false,
-      file: {
-        name: filename,
-        content: buffer.toString('base64'),
-        type: contentType,
-      },
+      filename: filename,
+      data: buffer.toString('base64'),
+      mimeType: contentType,
+      size: buffer.length
     });
 
   } catch (error: any) {

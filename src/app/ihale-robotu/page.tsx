@@ -14,6 +14,114 @@ import { saveToIndexedDB, getFromIndexedDB, deleteFromIndexedDB, listIndexedDBKe
 import { MIGRATION_CONFIG } from '@/lib/migration/safe-migration';
 import { useIhaleRobotuState } from '@/lib/migration/use-safe-migration';
 
+// ============================================================================
+// 🔧 HELPER FUNCTIONS - Döküman İşleme
+// ============================================================================
+
+/**
+ * Döküman tipini title ve API type'a göre akıllıca tespit eder
+ * @param title - Döküman başlığı
+ * @param apiType - API'den gelen tip
+ * @returns Tespit edilen döküman tipi
+ */
+const detectDocumentType = (title: string, apiType: string): string => {
+  const lowerTitle = (title || '').toLowerCase();
+
+  // Öncelik 1: Title'dan tespit
+  if (lowerTitle.includes('idari') || lowerTitle.includes('idare') || lowerTitle.includes('administrative')) {
+    return 'idari_sartname';
+  }
+  if (lowerTitle.includes('teknik') || lowerTitle.includes('technical') || lowerTitle.includes('spec')) {
+    return 'teknik_sartname';
+  }
+  if (lowerTitle.includes('zeyilname') || lowerTitle.includes('ek') || lowerTitle.includes('addendum')) {
+    return 'zeyilname';
+  }
+  if (lowerTitle.includes('teklif') || lowerTitle.includes('proposal') || lowerTitle.includes('bid')) {
+    return 'teklif_mektubu';
+  }
+  if (lowerTitle.includes('sözleşme') || lowerTitle.includes('contract')) {
+    return 'sozlesme_taslagi';
+  }
+  if (lowerTitle.includes('fiyat') || lowerTitle.includes('price')) {
+    return 'fiyat_listesi';
+  }
+
+  // Öncelik 2: API'den gelen tip
+  return apiType || 'diger';
+};
+
+/**
+ * Döküman tipi için görsel bilgiler (icon, renkler, label)
+ */
+const getDocInfo = (type: string) => {
+  switch (type) {
+    case 'idari_sartname':
+      return {
+        label: 'İdari Şartname',
+        gradient: 'from-blue-500 to-indigo-600',
+        bgColor: 'bg-gradient-to-br from-blue-50 to-indigo-50',
+        borderColor: 'border-blue-300',
+        icon: '📋',
+        iconBg: 'bg-blue-100'
+      };
+    case 'teknik_sartname':
+      return {
+        label: 'Teknik Şartname',
+        gradient: 'from-emerald-500 to-green-600',
+        bgColor: 'bg-gradient-to-br from-emerald-50 to-green-50',
+        borderColor: 'border-emerald-300',
+        icon: '⚙️',
+        iconBg: 'bg-emerald-100'
+      };
+    case 'zeyilname':
+      return {
+        label: 'Zeyilname',
+        gradient: 'from-orange-500 to-amber-600',
+        bgColor: 'bg-gradient-to-br from-orange-50 to-amber-50',
+        borderColor: 'border-orange-300',
+        icon: '📎',
+        iconBg: 'bg-orange-100'
+      };
+    case 'teklif_mektubu':
+      return {
+        label: 'Teklif Mektubu',
+        gradient: 'from-cyan-500 to-blue-600',
+        bgColor: 'bg-gradient-to-br from-cyan-50 to-blue-50',
+        borderColor: 'border-cyan-300',
+        icon: '✉️',
+        iconBg: 'bg-cyan-100'
+      };
+    case 'sozlesme_taslagi':
+      return {
+        label: 'Sözleşme Taslağı',
+        gradient: 'from-violet-500 to-purple-600',
+        bgColor: 'bg-gradient-to-br from-violet-50 to-purple-50',
+        borderColor: 'border-violet-300',
+        icon: '📜',
+        iconBg: 'bg-violet-100'
+      };
+    case 'fiyat_listesi':
+      return {
+        label: 'Fiyat Listesi',
+        gradient: 'from-green-500 to-teal-600',
+        bgColor: 'bg-gradient-to-br from-green-50 to-teal-50',
+        borderColor: 'border-green-300',
+        icon: '💰',
+        iconBg: 'bg-green-100'
+      };
+    default:
+      return {
+        label: 'Döküman',
+        gradient: 'from-purple-500 to-pink-600',
+        bgColor: 'bg-gradient-to-br from-purple-50 to-pink-50',
+        borderColor: 'border-purple-300',
+        icon: '📄',
+        iconBg: 'bg-purple-100'
+      };
+  }
+};
+
 interface Tender {
   id: string;
   source: string;
@@ -91,8 +199,6 @@ function IhaleTakipPageInner() {
   const [docPage, setDocPage] = useState(1); // 🆕 Döküman pagination
   const DOCS_PER_PAGE = 10; // 🆕 Sayfa başına döküman sayısı
   const [zipFileInfo, setZipFileInfo] = useState<{fileName: string; size: number; extractedFiles?: string[]} | null>(null); // 🆕 ZIP bilgisi
-  const [isAnalyzing, setIsAnalyzing] = useState(false); // 🆕 Analiz başlatılıyor mu
-  const [preparedDocuments, setPreparedDocuments] = useState<any[]>([]); // 🆕 Hazırlanan dökümanlar (ZIP extract sonrası)
   
   // ⏱️ Timer sistemi - Her loading için elapsed time
   const [loadingStartTime, setLoadingStartTime] = useState<number | null>(null);
@@ -541,6 +647,111 @@ function IhaleTakipPageInner() {
     }
   };
 
+  // 🔧 Session'dan ZIP dosyalarını ekle (helper function)
+  const enrichContentWithSessionFiles = async (content: any, tender: Tender, tenderId: string) => {
+    if (!content || !content.documents || content.documents.length === 0) {
+      return content;
+    }
+
+    try {
+      console.log('📁 Session dosyaları kontrol ediliyor... Tender ID:', tender.id, 'Source ID:', tenderId);
+      const sessionListRes = await fetch('/api/tender/session/list');
+      if (!sessionListRes.ok) {
+        console.warn('⚠️ Session list API başarısız');
+        return content;
+      }
+
+      const sessionListData = await sessionListRes.json();
+      const sessions = sessionListData.sessions || [];
+      console.log('📋 Toplam session sayısı:', sessions.length);
+      
+      // Bu tender için session var mı? (tenderId = DB ID, source_id = ihale kayıt no)
+      const relatedSession = sessions.find((s: any) => {
+        // tenderId DB ID ile eşleşiyorsa
+        if (s.tenderId && String(s.tenderId) === String(tender.id)) {
+          return true;
+        }
+        // Son 7 gün içinde oluşturulmuş ve bu ihalenin source'u ile eşleşiyorsa
+        if (s.source === 'ihalebul' && tender.source === 'ihalebul') {
+          const sessionDate = new Date(s.createdAt);
+          const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+          return sessionDate > weekAgo;
+        }
+        return false;
+      });
+      
+      if (relatedSession) {
+        console.log('✅ İlişkili session bulundu:', relatedSession.id, 'Files in DB:', relatedSession.files?.length);
+        
+        // 🆕 PLAN B: Eğer DB'de dosya yoksa, dosya sisteminden direkt oku
+        if (!relatedSession.files || relatedSession.files.length === 0) {
+          console.log('📂 DB\'de dosya yok, dosya sisteminden kontrol ediliyor...');
+          try {
+            const fsFilesRes = await fetch(`/api/tender/session/files-from-fs?sessionId=${relatedSession.id}`);
+            if (fsFilesRes.ok) {
+              const fsFilesData = await fsFilesRes.json();
+              if (fsFilesData.success && fsFilesData.files && fsFilesData.files.length > 0) {
+                console.log(`📦 ${fsFilesData.files.length} dosya filesystem'den bulundu`);
+                
+                // 🔥 CRITICAL: HTML dosyaları varsa (login failed), ZIP extraction denenmiş ama başarısız olmuş demektir
+                // YOKSA (gerçek PDF/DOCX/vb) direkt göster
+                const hasHtmlFiles = fsFilesData.files.some((f: any) => f.type === 'text/html');
+                
+                if (hasHtmlFiles) {
+                  console.warn('⚠️ HTML dosyaları bulundu - scraping sırasında ZIP indirilememiş, kullanıcıya URL göster');
+                  // HTML dosyaları var = ZIP extraction başarısız
+                  // Kullanıcı manuel indirsin, biz sadece URL'leri gösterelim
+                  toast.warning('� Dosyalar indirilemedi, URL\'lerden manuel indirebilirsiniz', { 
+                    duration: 5000,
+                    id: 'zip-failed' 
+                  });
+                  // extractedFiles set etme, modal'da documents (URL'ler) görünsün
+                } else {
+                  // ✅ Gerçek dosyalar var - direkt göster
+                  console.log(`✅ ${fsFilesData.files.length} gerçek dosya bulundu (PDF/DOCX/vb)`);
+                  const realFiles = fsFilesData.files.filter((f: any) => 
+                    // ZIP dosyasını çıkar, sadece extract edilmiş dosyaları göster
+                    f.type !== 'application/zip'
+                  );
+                  content.extractedFiles = realFiles;
+                  console.log(`📦 extractedFiles set edildi:`, realFiles);
+                  return content;
+                }
+              }
+            }
+          } catch (fsError) {
+            console.error('❌ Filesystem\'den dosya okuma hatası:', fsError);
+          }
+        }
+        
+        // Session'dan dosyaları al (sadece ZIP'ten çıkarılmış dosyalar)
+        if (relatedSession.files && relatedSession.files.length > 0) {
+          const extractedFiles = relatedSession.files.filter((f: any) => f.isExtractedFromZip);
+          if (extractedFiles.length > 0) {
+            console.log(`📦 ${extractedFiles.length} ZIP dosyası DB'den alındı`);
+            // URL-based documents yerine gerçek dosyaları kullan
+            content.extractedFiles = extractedFiles.map((f: any) => ({
+              name: f.filename || f.originalFilename,
+              path: f.storagePath,
+              size: f.size,
+              type: f.mimeType
+            }));
+          } else {
+            console.log('⚠️ Session\'da ZIP\'ten çıkarılmış dosya yok');
+          }
+        }
+      } else {
+        console.log('⚠️ Bu tender için session bulunamadı. Checked:', sessions.length, 'sessions');
+        console.log('Tender ID:', tender.id, 'Source:', tender.source);
+      }
+    } catch (error) {
+      console.error('❌ Session dosyaları çekilemedi:', error);
+      // Hata olursa devam et, URL-based documents kullan
+    }
+
+    return content;
+  };
+
   // 🆕 AI ile tam içerik getir (otomatik login ile) - Cache destekli
   const fetchFullContent = async (tender: Tender, event?: React.MouseEvent) => {
     if (event) event.stopPropagation();
@@ -553,8 +764,18 @@ function IhaleTakipPageInner() {
     const cached = contentCache[tenderId];
     if (cached) {
       console.log('💚 Cache hit! İçerik cache\'den yükleniyor:', tenderId);
-      setFullContent(JSON.parse(JSON.stringify(cached)));
+      // 🆕 Cache'den gelen içeriği session dosyaları ile zenginleştir
+      const enrichedContent = await enrichContentWithSessionFiles(
+        JSON.parse(JSON.stringify(cached)), 
+        tender, 
+        tenderId
+      );
+      setFullContent(enrichedContent);
       setSelectedTender(tender);
+      
+      // 🔥 CRITICAL: Cache'i güncelle (extractedFiles eklenmiş olabilir)
+      setContentCache(prev => ({...prev, [tenderId]: JSON.parse(JSON.stringify(enrichedContent))}));
+      
       const params = new URLSearchParams(searchParams.toString());
       params.set('detail', tenderId);
       router.push(`${pathname}?${params.toString()}`, { scroll: false });
@@ -569,7 +790,12 @@ function IhaleTakipPageInner() {
     toast.loading('AI ile içerik getiriliyor...', { id: 'fetch-content' });
     
     const { fetchFullContent: fetchFullContentAPI } = await import('@/lib/ihale-scraper/fetchFullContent');
-    const content = await fetchFullContentAPI(tenderId);
+    let content = await fetchFullContentAPI(tenderId);
+    
+    // 🆕 Session'dan ZIP dosyalarını ekle
+    if (content) {
+      content = await enrichContentWithSessionFiles(content, tender, tenderId);
+    }
     
     if (content) {
       setFullContent(JSON.parse(JSON.stringify(content)));
@@ -579,6 +805,8 @@ function IhaleTakipPageInner() {
       params.set('detail', tenderId);
       router.push(`${pathname}?${params.toString()}`, { scroll: false });
       toast.success('✅ İçerik yüklendi', { id: 'fetch-content' });
+
+      // ✅ Otomatik seçim kaldırıldı - Kullanıcı istediği dökümanları seçecek
     } else {
       toast.error('❌ İçerik getirilemedi', { id: 'fetch-content' });
     }
@@ -589,27 +817,70 @@ function IhaleTakipPageInner() {
   };
 
   // 🆕 Döküman direkt bilgisayara indir (ihalebul.com'a gitmeden)
-  const downloadDocument = async (url: string, fileName: string, event?: React.MouseEvent) => {
-    if (event) {
-      event.stopPropagation();
-      event.preventDefault();
-    }
-
+  const downloadDocument = async (url: string, fileName: string) => {
     try {
       console.log('📥 İndirme başlatılıyor:', fileName);
       toast.loading(`İndiriliyor: ${fileName}`, { id: 'download-doc' });
 
-      // API üzerinden dosyayı al
-      const response = await fetch(`/api/ihale-scraper/download-document?url=${encodeURIComponent(url)}`);
-      
+      // API üzerinden dosyayı al (cookie ile - authentication için gerekli)
+      const response = await fetch(`/api/ihale-scraper/download-document?url=${encodeURIComponent(url)}`, {
+        credentials: 'include' // 🔑 Cookie'leri gönder (ihalebul auth)
+      });
+
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        const errorData = await response.json().catch(() => ({}));
+        console.error('❌ API Error:', response.status, errorData);
+        throw new Error(errorData.error || `HTTP ${response.status}`);
       }
 
       const data = await response.json();
-      
-      if (!data.success || !data.data) {
+      console.log('📦 API Response:', data);
+
+      if (!data.success) {
         throw new Error(data.error || 'İndirme başarısız');
+      }
+
+      // ============================================================
+      // 📦 ZIP Dosyası - İçindekileri ayrı ayrı indir
+      // ============================================================
+      if (data.isZip && data.files && data.files.length > 0) {
+        console.log(`📦 ZIP içinde ${data.files.length} dosya bulundu`);
+        toast.success(`📦 ${data.files.length} dosya indiriliyor...`, { id: 'download-doc' });
+
+        // Her dosyayı ayrı ayrı indir
+        for (const file of data.files) {
+          const byteCharacters = atob(file.content);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: file.type || 'application/octet-stream' });
+
+          // Dosyayı bilgisayara indir
+          const downloadUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = downloadUrl;
+          link.download = file.name;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(downloadUrl);
+
+          console.log(`✅ ${file.name} indirildi`);
+          // Tarayıcının dosyaları işlemesi için kısa bir bekleme
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
+
+        toast.success(`✅ ${data.files.length} dosya indirildi`, { id: 'download-doc' });
+        return;
+      }
+
+      // ============================================================
+      // 📄 Tek Dosya - Normal indirme
+      // ============================================================
+      if (!data.data) {
+        throw new Error('Dosya içeriği bulunamadı');
       }
 
       // Base64'ten Blob oluştur
@@ -899,25 +1170,16 @@ function IhaleTakipPageInner() {
     }
   };
 
-  // 🆕 Dökümanları hazırla ve önizleme göster
-  const prepareDocuments = async () => {
-    console.log('📦 prepareDocuments başlatıldı');
-    
-    // Validation
-    if (!selectedTender || !fullContent) {
-      toast.error('⚠️ İhale detayı yüklenmemiş');
-      return;
-    }
-
-    if (!fullContent.fullText || fullContent.fullText.length === 0) {
-      toast.error('⚠️ İhale metni bulunamadı');
+  // ✅ BAS İTLEŞTİRİLMİŞ: Seçili dökümanları bilgisayara ZIP olarak indir
+  const downloadSelectedDocuments = async () => {
+    if (!selectedTender || !fullContent || selectedDocuments.length === 0) {
+      toast.error('⚠️ Lütfen en az 1 döküman seçin');
       return;
     }
 
     try {
-      // ⏱️ Timer başlat
-      setIsAnalyzing(true);
       setLoadingStartTime(Date.now());
+      toast.loading('Dökümanlar indiriliyor...', { id: 'doc-download' });
       
       if (selectedDocuments.length > 0) {
         console.log(`📥 ${selectedDocuments.length} döküman hazırlanıyor...`);
@@ -1010,208 +1272,27 @@ function IhaleTakipPageInner() {
           allPrepared.push(...realPrepared);
         }
 
-        // 4️⃣ Duplicate kontrolü - mevcut dosyalara ekleme yap
-        setPreparedDocuments(prev => {
-          // 🆕 Unique key: title + url kombinasyonu (ZIP'ten çıkan aynı URL'li farklı dosyalar için)
-          const existingKeys = new Set(prev.map(doc => `${doc.title}|||${doc.url}`));
-          
-          // Sadece yeni dosyaları filtrele
-          const newFiles = allPrepared.filter(doc => {
-            const fileKey = `${doc.title}|||${doc.url}`;
-            if (existingKeys.has(fileKey)) {
-              console.log(`⏭️ Duplicate atlandı: ${doc.title}`);
-              return false;
-            }
-            return true;
-          });
-          
-          if (newFiles.length < allPrepared.length) {
-            const skippedCount = allPrepared.length - newFiles.length;
-            toast.warning(`⚠️ ${skippedCount} dosya zaten ekliydi, atlandı`);
-          }
-          
-          console.log(`📦 ${newFiles.length} yeni dosya eklendi (${allPrepared.length - newFiles.length} duplicate)`);
-          return [...prev, ...newFiles];
-        });
-
+        // ✅ İndirme tamamlandı
         const elapsed = Math.floor((Date.now() - loadingStartTime!) / 1000);
-        toast.success(`✅ Hazırlama tamamlandı (${elapsed}s) → Analize gönderiliyor...`, { id: 'doc-prep', duration: 2000 });
-        
-        // ✅ Detay modal içinde gösterilecek (ayrı modal yok artık)
+        toast.success(`✅ ${allPrepared.length} dosya indirildi (${elapsed}s)`, { id: 'doc-download', duration: 3000 });
       }
 
-      // ⏱️ Reset timer (sendToAnalysis çağrılacağı için burada resetleme)
-      setIsAnalyzing(false);
       setLoadingStartTime(null);
 
     } catch (error: any) {
-      console.error('❌ prepareDocuments hatası:', error);
-      toast.error('❌ Dökümanlar hazırlanırken hata oluştu', { id: 'doc-prep' });
-      setIsAnalyzing(false);
+      console.error('❌ İndirme hatası:', error);
+      toast.error('❌ Dökümanlar indirilirken hata oluştu', { id: 'doc-download' });
       setLoadingStartTime(null);
     }
   };
 
-  // 🆕 İhaleyi AI analiz sayfasına gönder (hazırlanmış dökümanlarla)
-  const sendToAnalysis = async () => {
-    console.log('🚀 sendToAnalysis çağrıldı - preparedDocuments:', preparedDocuments.length);
-    
-    if (!selectedTender || !fullContent) {
-      toast.error('⚠️ İhale detayı yüklenmemiş');
-      return;
-    }
-
-    if (!fullContent.fullText || fullContent.fullText.length === 0) {
-      toast.error('⚠️ İhale metni bulunamadı');
-      return;
-    }
-
-    try {
-      // ✅ Kullanıcıya net feedback: Kaç döküman gönderiliyor
-      const docCount = preparedDocuments.length;
-      const message = docCount > 0 
-        ? `🚀 Analize gönderiliyor (${docCount} döküman)...`
-        : '🚀 Analize gönderiliyor (sadece ihale metni)...';
-      
-      toast.loading(message, { id: 'send-analysis' });
-
-      // 🔍 Debug: preparedDocuments durumu
-      console.log('🔍 preparedDocuments:', {
-        length: preparedDocuments.length,
-        sample: preparedDocuments.slice(0, 2),
-        hasBlobs: preparedDocuments.some(doc => doc.blob || doc.file)
-      });
-
-      // ⚠️ preparedDocuments boşsa console warn (toast'u yukarıda gösteriyoruz)
-      if (preparedDocuments.length === 0) {
-        console.warn('⚠️ preparedDocuments boş - sadece ihale metni gönderilecek');
-      }
-
-      // 1️⃣ Benzersiz ID üret
-      const tempId = `ihale_docs_${Date.now()}`;
-      console.log('🆔 Oluşturulan ID:', tempId);
-      
-      // 🧹 Eski IndexedDB verilerini temizle (önceki gönderimlerden kalmış olabilir)
-      const oldKeys = await listIndexedDBKeys();
-      const oldIhaleKeys = oldKeys.filter((key: string) => key.startsWith('ihale_docs_'));
-      if (oldIhaleKeys.length > 0) {
-        console.log(`🧹 ${oldIhaleKeys.length} eski IndexedDB verisi temizleniyor...`, oldIhaleKeys);
-        for (const key of oldIhaleKeys) {
-          await deleteFromIndexedDB(key);
-        }
-        console.log('✅ Eski veriler temizlendi');
-        toast.info(`🧹 ${oldIhaleKeys.length} eski veri temizlendi`);
-      }
-      
-      // 📦 Payload oluştur
-      const payload = {
-        title: selectedTender.title,
-        text: fullContent.fullText,
-        documents: preparedDocuments, // Blob nesneleri dahil (boş olabilir)
-        size: fullContent.fullText.length + preparedDocuments.reduce((acc, doc) => acc + (doc.size || 0), 0),
-        timestamp: Date.now(),
-      };
-
-      // 🔍 Debug: Payload detayları (KAYIT ÖNCESI)
-      console.group('� PAYLOAD DETAYLARI (Kayıt Öncesi)');
-      console.log('🆔 Key:', tempId);
-      console.log('📋 Title:', payload.title);
-      console.log('📄 Text length:', payload.text.length, 'chars');
-      console.log('📊 Document count:', preparedDocuments.length);
-      console.log('📦 Total size:', `${(payload.size / (1024 * 1024)).toFixed(2)} MB`);
-      console.log('📄 Documents:', preparedDocuments.map(doc => ({
-        name: doc.name || doc.title || 'Unknown',
-        type: doc.type,
-        size: doc.size ? `${(doc.size / 1024).toFixed(2)} KB` : 'N/A',
-        hasBlob: !!(doc.blob || doc.file)
-      })));
-      console.groupEnd();
-
-      // ⚠️ CRITICAL CHECK: Payload geçerli mi?
-      if (!payload.title) {
-        throw new Error('Payload title eksik!');
-      }
-      if (!payload.text || payload.text.length === 0) {
-        throw new Error('Payload text eksik veya boş!');
-      }
-      console.log('✅ Payload validasyon geçti');
-
-      // 2️⃣ IndexedDB'ye kaydet (sessionStorage yerine - 100MB+ dosyalar için)
-      console.log(`💾 IndexedDB'ye KAYDEDILIYOR: ${tempId}`);
-      console.log(`   - Size: ${(payload.size / (1024 * 1024)).toFixed(2)} MB`);
-      console.log(`   - Documents: ${preparedDocuments.length}`);
-      
-      await saveToIndexedDB(tempId, payload);
-      console.log('✅ saveToIndexedDB() tamamlandı');
-
-      console.log('✅ IndexedDB kaydı tamamlandı');
-      
-      // 🛡️ IndexedDB transaction flush için micro-delay (browser optimization)
-      // ⚠️ 50ms → 200ms (büyük dosyalar için disk yazma süresi)
-      await new Promise(resolve => setTimeout(resolve, 200));
-      console.log('🔄 IndexedDB transaction flushed (200ms waited)');
-      
-      // 🔍 Doğrulama: Veri gerçekten yazıldı mı? (3 deneme)
-      let verification = null;
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        console.log(`🔍 Doğrulama denemesi ${attempt}/3...`);
-        verification = await getFromIndexedDB(tempId);
-        if (verification) {
-          console.log(`✅ IndexedDB yazma doğrulandı (deneme ${attempt})`);
-          break;
-        }
-        if (attempt < 3) {
-          console.warn(`⚠️ Veri bulunamadı, ${100 * attempt}ms bekleniyor...`);
-          await new Promise(resolve => setTimeout(resolve, 100 * attempt));
-        }
-      }
-      
-      if (!verification) {
-        const errorMsg = `❌ IndexedDB yazma doğrulaması başarısız!
-        
-3 denemede veri bulunamadı.
-Key: ${tempId}
-
-Lütfen tarayıcı konsolunu kontrol edin ve geliştiriciyle iletişime geçin.`;
-        
-        toast.error(errorMsg, { duration: 10000 });
-        throw new Error('IndexedDB yazma doğrulaması başarısız - 3 denemede veri bulunamadı!');
-      }
-      
-      // Veri içeriğini doğrula
-      const verifiedData = verification as any;
-      
-      // ✅ documents array BOŞ olabilir (sadece text ile analiz mümkün)
-      if (!verifiedData.title || !verifiedData.text) {
-        console.error('❌ Doğrulama hatası: title veya text eksik!', verifiedData);
-        throw new Error('IndexedDB verisi bozuk - title/text eksik!');
-      }
-      
-      console.log(`✅ Veri doğrulandı:`, {
-        title: verifiedData.title,
-        textLength: verifiedData.text.length,
-        documentCount: verifiedData.documents?.length || 0
-      });
-
-      // 3️⃣ Router prefetch
-      await router.prefetch('/ihale/yeni-analiz');
-
-      // 4️⃣ Güvenli yönlendirme
-      console.log(`🚀 Yönlendirme yapılıyor: /ihale/yeni-analiz?from=${tempId}`);
-      const params = new URLSearchParams(searchParams.toString());
-      params.delete('detail'); // Modal'ı kapat
-      router.push(`/ihale/yeni-analiz?from=${tempId}`);
-      
-      // ✅ Başarılı mesaj: Kaç döküman gönderildiğini belirt
-      const successMsg = preparedDocuments.length > 0
-        ? `✅ Yönlendiriliyor (${preparedDocuments.length} döküman hazır)`
-        : '✅ Yönlendiriliyor (ihale metni hazır)';
-      
-      toast.success(successMsg, { id: 'send-analysis', duration: 2000 });
-
-    } catch (error: any) {
-      console.error('❌ sendToAnalysis hatası:', error);
-      toast.error('Yönlendirme hatası: ' + error.message, { id: 'send-analysis' });
+  // ✅ BASİTLEŞTİRİLMİŞ: Seçili dökümanları analize gönder (direkt sendDocumentsToAnalysis kullan)
+  const sendToAnalysis = () => {
+    // Onay modalı göster
+    if (confirm('📥 Tüm gerekli dosyaları indirdiniz mi?\n\n⚠️ Analize gitmeden önce lütfen tüm dökümanları bilgisayarınıza indirdiğinizden emin olun.\n\nDevam etmek istiyor musunuz?')) {
+      console.log('🎯 Yeni analiz sayfasına yönlendiriliyor...');
+      closeModal();
+      router.push('/ihale/workspace');
     }
   };
   // 🆕 Eksik ihaleleri toplu AI ile düzelt (yeni dedicated API)
@@ -2436,253 +2517,160 @@ Lütfen tarayıcı konsolunu kontrol edin ve geliştiriciyle iletişime geçin.`
           </div>
         )}
 
-        {/* Detail Modal - Enhanced & Compact */}
+        {/* Detail Modal - Premium Dark */}
         {selectedTender && (
           <div
-            className="fixed inset-0 bg-gradient-to-br from-black/60 via-black/70 to-black/80 backdrop-blur-sm flex items-center justify-center p-8 z-50 animate-in fade-in duration-200"
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-8 z-50 animate-in fade-in duration-200"
             onClick={closeModal}
           >
             <div
-              className="bg-white rounded-3xl max-w-7xl w-full max-h-[90vh] overflow-hidden shadow-2xl border border-gray-200/50 animate-in zoom-in-95 duration-300"
+              className="bg-slate-900 rounded-2xl max-w-7xl w-full max-h-[90vh] overflow-hidden shadow-2xl border border-slate-700 animate-in zoom-in-95 duration-300"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* Header - Modern Gradient */}
-              <div className="bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 px-8 py-6 flex items-start justify-between sticky top-0 z-10 shadow-lg">
+              {/* Header - Dark Premium */}
+              <div className="bg-slate-800 px-8 py-6 flex items-start justify-between sticky top-0 z-10 shadow-xl border-b border-slate-700">
                 <div className="flex-1 pr-8">
-                  <h2 className="text-3xl font-bold text-white mb-2 drop-shadow-sm tracking-tight">{selectedTender.title}</h2>
-                  <p className="text-base text-gray-300 flex items-center gap-2 font-medium">
-                    <Building2 className="w-5 h-5" />
+                  <h2 className="text-2xl font-bold text-white mb-2">{selectedTender.title}</h2>
+                  <p className="text-sm text-slate-300 flex items-center gap-2">
+                    <Building2 className="w-4 h-4" />
                     {selectedTender.organization}
                   </p>
                 </div>
                 <button
                   onClick={closeModal}
-                  className="p-3 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-all backdrop-blur-sm hover:scale-110"
+                  className="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white transition-all"
                   title="Kapat (ESC)"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
 
-              {/* Content - AI'dan Parse Edilmiş İçerik */}
-              <div className="w-full max-h-[calc(95vh-140px)] overflow-y-auto p-6 space-y-6">
+              {/* Content - Premium Dark */}
+              <div className="w-full max-h-[calc(95vh-140px)] overflow-y-auto p-6 space-y-4">
                 {fullContent ? (
                   <>
                     {/* 1. İhale Bilgileri */}
                     {fullContent.details && Object.keys(fullContent.details).length > 0 && (
-                      <div className="relative group">
-                        <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 to-indigo-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-300"></div>
-                        <div className="relative backdrop-blur-sm bg-white/90 border border-blue-200/50 rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300">
-                          <div className="bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-blue-500/10 backdrop-blur-md px-6 py-4 border-b border-blue-300/30">
-                            <h3 className="text-lg font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent flex items-center gap-3 tracking-tight">
-                              <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg">
-                                <FileText className="w-5 h-5 text-white" />
-                              </div>
+                      <div className="bg-slate-800/70 border-2 border-slate-600 rounded-xl overflow-hidden shadow-lg">
+                          <div className="bg-gradient-to-r from-blue-900/30 to-slate-700/50 px-5 py-4 border-b-2 border-slate-600">
+                            <h3 className="text-base font-bold text-white flex items-center gap-2">
+                              <FileText className="w-5 h-5 text-blue-400" />
                               İhale Bilgileri
                             </h3>
                           </div>
-                          <div className="bg-white/80 backdrop-blur-sm p-6">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {/* Önemli alanlar önce göster */}
-                            {fullContent.details['Kayıt no'] && (
-                              <div className="flex flex-col">
-                                <span className="text-xs text-gray-500 mb-1">Kayıt No</span>
-                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['Kayıt no']}</span>
+                          <div className="p-5">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                            {Object.entries(fullContent.details).map(([key, value]) => (
+                              <div key={key} className="flex flex-col bg-slate-900/40 p-3 rounded-lg">
+                                <span className="text-xs text-slate-400 mb-1 font-medium">{key}</span>
+                                <span className={`text-sm font-medium ${key === 'Kayıt no' ? 'text-red-500' : 'text-slate-100'}`}>{value as string}</span>
                               </div>
-                            )}
-                            {fullContent.details['İhale başlığı'] && (
-                              <div className="flex flex-col">
-                                <span className="text-xs text-gray-500 mb-1">İhale Başlığı</span>
-                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['İhale başlığı']}</span>
-                              </div>
-                            )}
-                            {fullContent.details['İşin adı'] && (
-                              <div className="flex flex-col">
-                                <span className="text-xs text-gray-500 mb-1">İşin Adı</span>
-                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['İşin adı']}</span>
-                              </div>
-                            )}
-                            {fullContent.details['Yayın tarihi'] && (
-                              <div className="flex flex-col">
-                                <span className="text-xs text-gray-500 mb-1">Yayın Tarihi</span>
-                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['Yayın tarihi']}</span>
-                              </div>
-                            )}
-                            {fullContent.details['Teklif tarihi'] && (
-                              <div className="flex flex-col">
-                                <span className="text-xs text-gray-500 mb-1">Teklif Tarihi</span>
-                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['Teklif tarihi']}</span>
-                              </div>
-                            )}
-                            {fullContent.details['İşin süresi'] && (
-                              <div className="flex flex-col">
-                                <span className="text-xs text-gray-500 mb-1">İşin Süresi</span>
-                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['İşin süresi']}</span>
-                              </div>
-                            )}
-                            {fullContent.details['Yaklaşık maliyet limiti'] && (
-                              <div className="flex flex-col">
-                                <span className="text-xs text-gray-500 mb-1">Yaklaşık Maliyet Limiti</span>
-                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['Yaklaşık maliyet limiti']}</span>
-                              </div>
-                            )}
-                            {fullContent.details['İtirazen şikayet bedeli'] && (
-                              <div className="flex flex-col">
-                                <span className="text-xs text-gray-500 mb-1">İtirazen Şikayet Bedeli</span>
-                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['İtirazen şikayet bedeli']}</span>
-                              </div>
-                            )}
-                            {fullContent.details['İhale türü'] && (
-                              <div className="flex flex-col">
-                                <span className="text-xs text-gray-500 mb-1">İhale Türü</span>
-                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['İhale türü']}</span>
-                              </div>
-                            )}
-                            {fullContent.details['İhale usulü'] && (
-                              <div className="flex flex-col">
-                                <span className="text-xs text-gray-500 mb-1">İhale Usulü</span>
-                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['İhale usulü']}</span>
-                              </div>
-                            )}
-                            {fullContent.details['İhale kaynağı'] && (
-                              <div className="flex flex-col">
-                                <span className="text-xs text-gray-500 mb-1">İhale Kaynağı</span>
-                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['İhale kaynağı']}</span>
-                              </div>
-                            )}
-                            {fullContent.details['Teklif türü'] && (
-                              <div className="flex flex-col md:col-span-2">
-                                <span className="text-xs text-gray-500 mb-1">Teklif Türü</span>
-                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['Teklif türü']}</span>
-                              </div>
-                            )}
+                            ))}
                           </div>
-                        </div>
                         </div>
                       </div>
                     )}
 
                     {/* 2. Sektör Bilgileri */}
                     {(selectedTender.category || fullContent.details?.['Kategori'] || fullContent.details?.['Sektör']) && (
-                      <div className="relative group">
-                        <div className="absolute inset-0 bg-gradient-to-r from-green-500/20 to-emerald-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-300"></div>
-                        <div className="relative backdrop-blur-sm bg-white/90 border border-green-200/50 rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300">
-                          <div className="bg-gradient-to-r from-green-500/10 via-emerald-500/10 to-green-500/10 backdrop-blur-md px-6 py-4 border-b border-green-300/30">
-                            <h3 className="text-lg font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent flex items-center gap-3 tracking-tight">
-                              <div className="p-2 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 shadow-lg">
-                                <Building2 className="w-5 h-5 text-white" />
-                              </div>
-                              Sektör Bilgileri
-                            </h3>
-                          </div>
-                          <div className="bg-white/80 backdrop-blur-sm p-6">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="bg-slate-800/70 border-2 border-slate-600 rounded-xl overflow-hidden shadow-lg">
+                        <div className="bg-gradient-to-r from-emerald-900/30 to-slate-700/50 px-5 py-4 border-b-2 border-slate-600">
+                          <h3 className="text-base font-bold text-white flex items-center gap-2">
+                            <Building2 className="w-5 h-5 text-emerald-400" />
+                            Sektör Bilgileri
+                          </h3>
+                        </div>
+                        <div className="p-5">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                             {(fullContent.details?.['Kategori'] || selectedTender.category) && (
-                              <div className="flex flex-col">
-                                <span className="text-xs text-gray-500 mb-1">Kategori</span>
-                                <span className="text-sm font-semibold text-gray-900">{fullContent.details?.['Kategori'] || selectedTender.category}</span>
+                              <div className="flex flex-col bg-slate-900/40 p-3 rounded-lg">
+                                <span className="text-xs text-slate-400 mb-1 font-medium">Kategori</span>
+                                <span className="text-sm text-slate-100 font-medium">{fullContent.details?.['Kategori'] || selectedTender.category}</span>
                               </div>
                             )}
                             {fullContent.details?.['Sektör'] && (
-                              <div className="flex flex-col">
-                                <span className="text-xs text-gray-500 mb-1">Sektör</span>
-                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['Sektör']}</span>
+                              <div className="flex flex-col bg-slate-900/40 p-3 rounded-lg">
+                                <span className="text-xs text-slate-400 mb-1 font-medium">Sektör</span>
+                                <span className="text-sm text-slate-100 font-medium">{fullContent.details['Sektör']}</span>
                               </div>
                             )}
                           </div>
-                        </div>
                         </div>
                       </div>
                     )}
 
                     {/* 3. İdare Bilgileri */}
                     {fullContent.details && (fullContent.details['İdare adı'] || fullContent.details['Toplantı adresi'] || fullContent.details['Teklifin verileceği yer'] || fullContent.details['İşin yapılacağı yer']) && (
-                      <div className="relative group">
-                        <div className="absolute inset-0 bg-gradient-to-r from-purple-500/20 to-violet-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-300"></div>
-                        <div className="relative backdrop-blur-sm bg-white/90 border border-purple-200/50 rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300">
-                          <div className="bg-gradient-to-r from-purple-500/10 via-violet-500/10 to-purple-500/10 backdrop-blur-md px-6 py-4 border-b border-purple-300/30">
-                            <h3 className="text-lg font-bold bg-gradient-to-r from-purple-600 to-violet-600 bg-clip-text text-transparent flex items-center gap-3 tracking-tight">
-                              <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-violet-600 shadow-lg">
-                                <Building2 className="w-5 h-5 text-white" />
-                              </div>
-                              İdare Bilgileri
-                            </h3>
-                          </div>
-                          <div className="bg-white/80 backdrop-blur-sm p-6">
-                          <div className="space-y-3">
-                            {fullContent.details['İdare adı'] && (
-                              <div className="flex flex-col">
-                                <span className="text-xs text-gray-500 mb-1">İdare Adı</span>
-                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['İdare adı']}</span>
-                              </div>
-                            )}
-                            {fullContent.details['Toplantı adresi'] && (
-                              <div className="flex flex-col">
-                                <span className="text-xs text-gray-500 mb-1">Toplantı Adresi</span>
-                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['Toplantı adresi']}</span>
-                              </div>
-                            )}
-                            {fullContent.details['Teklifin verileceği yer'] && (
-                              <div className="flex flex-col">
-                                <span className="text-xs text-gray-500 mb-1">Teklifin Verileceği Yer</span>
-                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['Teklifin verileceği yer']}</span>
-                              </div>
-                            )}
-                            {fullContent.details['İşin yapılacağı yer'] && (
-                              <div className="flex flex-col">
-                                <span className="text-xs text-gray-500 mb-1">İşin Yapılacağı Yer</span>
-                                <span className="text-sm font-semibold text-gray-900">{fullContent.details['İşin yapılacağı yer']}</span>
-                              </div>
-                            )}
-                          </div>
+                      <div className="bg-slate-800/70 border-2 border-slate-600 rounded-xl overflow-hidden shadow-lg">
+                        <div className="bg-gradient-to-r from-purple-900/30 to-slate-700/50 px-5 py-4 border-b-2 border-slate-600">
+                          <h3 className="text-base font-bold text-white flex items-center gap-2">
+                            <Building2 className="w-5 h-5 text-purple-400" />
+                            İdare Bilgileri
+                          </h3>
                         </div>
+                        <div className="p-5 space-y-3 text-sm">
+                          {fullContent.details['İdare adı'] && (
+                            <div className="flex flex-col bg-slate-900/40 p-3 rounded-lg">
+                              <span className="text-xs text-slate-400 mb-1 font-medium">İdare Adı</span>
+                              <span className="text-sm text-slate-100 font-medium">{fullContent.details['İdare adı']}</span>
+                            </div>
+                          )}
+                          {fullContent.details['Toplantı adresi'] && (
+                            <div className="flex flex-col bg-slate-900/40 p-3 rounded-lg">
+                              <span className="text-xs text-slate-400 mb-1 font-medium">Toplantı Adresi</span>
+                              <span className="text-sm text-slate-100 font-medium">{fullContent.details['Toplantı adresi']}</span>
+                            </div>
+                          )}
+                          {fullContent.details['Teklifin verileceği yer'] && (
+                            <div className="flex flex-col bg-slate-900/40 p-3 rounded-lg">
+                              <span className="text-xs text-slate-400 mb-1 font-medium">Teklifin Verileceği Yer</span>
+                              <span className="text-sm text-slate-100 font-medium">{fullContent.details['Teklifin verileceği yer']}</span>
+                            </div>
+                          )}
+                          {fullContent.details['İşin yapılacağı yer'] && (
+                            <div className="flex flex-col bg-slate-900/40 p-3 rounded-lg">
+                              <span className="text-xs text-slate-400 mb-1 font-medium">İşin Yapılacağı Yer</span>
+                              <span className="text-sm text-slate-100 font-medium">{fullContent.details['İşin yapılacağı yer']}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
 
                     {/* 4. İhale İlanı - Tam Metin */}
                     {fullContent.fullText && (
-                      <div className="relative group">
-                        <div className="absolute inset-0 bg-gradient-to-r from-orange-500/20 to-amber-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-300"></div>
-                        <div className="relative backdrop-blur-sm bg-white/90 border border-orange-200/50 rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300">
-                          <div className="bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/10 backdrop-blur-md px-6 py-4 border-b border-orange-300/30">
-                            <h3 className="text-lg font-bold bg-gradient-to-r from-orange-600 to-amber-600 bg-clip-text text-transparent flex items-center gap-3 tracking-tight">
-                              <div className="p-2 rounded-lg bg-gradient-to-br from-orange-500 to-amber-600 shadow-lg">
-                                <FileText className="w-5 h-5 text-white" />
-                              </div>
-                              İhale İlanı
-                            </h3>
-                          </div>
-                          <div className="bg-white/80 backdrop-blur-sm p-6 max-h-[600px] overflow-y-auto">
-                          <pre className="text-xs text-gray-700 whitespace-pre-wrap font-mono leading-relaxed">
+                      <div className="bg-slate-800/60 border-2 border-slate-600 rounded-xl overflow-hidden shadow-lg">
+                        <div className="bg-gradient-to-r from-orange-900/30 to-slate-700/50 px-6 py-4 border-b-2 border-slate-600">
+                          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                            <FileText className="w-6 h-6 text-orange-400" />
+                            İhale İlanı
+                          </h3>
+                        </div>
+                        <div className="p-8 max-h-[500px] overflow-y-auto bg-white">
+                          <pre className="text-sm text-gray-600 whitespace-pre-wrap font-mono leading-relaxed font-light">
                             {fullContent.fullText}
                           </pre>
-                        </div>
                         </div>
                       </div>
                     )}
 
                     {/* 5. Mal/Hizmet Listesi */}
                     {fullContent.itemsList && (
-                      <div className="relative group">
-                        <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/20 to-sky-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-300"></div>
-                        <div className="relative backdrop-blur-sm bg-white/90 border border-cyan-200/50 rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300">
-                          <div className="bg-gradient-to-r from-cyan-500/10 via-sky-500/10 to-cyan-500/10 backdrop-blur-md px-6 py-4 border-b border-cyan-300/30">
-                            <h3 className="text-lg font-bold bg-gradient-to-r from-cyan-600 to-sky-600 bg-clip-text text-transparent flex items-center gap-3 tracking-tight">
-                              <div className="p-2 rounded-lg bg-gradient-to-br from-cyan-500 to-sky-600 shadow-lg">
-                                <FileText className="w-5 h-5 text-white" />
-                              </div>
-                              Mal/Hizmet Listesi
-                            </h3>
-                          </div>
-                          <div className="bg-white/80 backdrop-blur-sm p-6 overflow-x-auto">
-                          <table className="w-full text-xs border-collapse">
-                            <thead>
-                              <tr className="bg-gray-50 border-b-2 border-gray-200">
+                      <div className="bg-slate-800/70 border-2 border-slate-600 rounded-xl overflow-hidden shadow-lg">
+                        <div className="bg-gradient-to-r from-cyan-900/30 to-slate-700/50 px-6 py-4 border-b-2 border-slate-600">
+                          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                            <FileText className="w-6 h-6 text-cyan-400" />
+                            Mal/Hizmet Listesi
+                          </h3>
+                        </div>
+                        <div className="p-6 max-h-[750px] overflow-y-auto overflow-x-auto bg-white">
+                          <table className="w-full text-base border-collapse">
+                            <thead className="sticky top-0 bg-gray-100 backdrop-blur-sm z-10">
+                              <tr className="border-b-2 border-gray-300">
                                 {fullContent.itemsList.split('\n')[0]?.split(',').map((header: string, idx: number) => (
-                                  <th key={idx} className="px-3 py-2 text-left font-semibold text-gray-700 border-r border-gray-200 last:border-r-0">
+                                  <th key={idx} className="px-4 py-2.5 text-left text-sm font-medium text-gray-600 border-r-2 border-gray-300 last:border-r-0">
                                     {header.trim()}
                                   </th>
                                 ))}
@@ -2690,9 +2678,9 @@ Lütfen tarayıcı konsolunu kontrol edin ve geliştiriciyle iletişime geçin.`
                             </thead>
                             <tbody>
                               {fullContent.itemsList.split('\n').slice(1).filter((row: string) => row.trim()).map((row: string, rowIdx: number) => (
-                                <tr key={rowIdx} className="border-b border-gray-100 hover:bg-gray-50">
+                                <tr key={rowIdx} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
                                   {row.split(',').map((cell: string, cellIdx: number) => (
-                                    <td key={cellIdx} className="px-3 py-2 text-gray-900 border-r border-gray-100 last:border-r-0">
+                                    <td key={cellIdx} className="px-5 py-4 text-sm text-gray-600 font-light border-r border-gray-200 last:border-r-0">
                                       {cell.trim()}
                                     </td>
                                   ))}
@@ -2701,185 +2689,179 @@ Lütfen tarayıcı konsolunu kontrol edin ve geliştiriciyle iletişime geçin.`
                             </tbody>
                           </table>
                         </div>
-                        </div>
                       </div>
                     )}
 
-                    {/* 6. İhale Dökümanları - Collapsible Card with Checkboxes */}
+                    {/* 6. İhale Dökümanları - Premium Dark */}
                     {fullContent.documents && fullContent.documents.length > 0 && (
-                      <div className="relative group">
-                        <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/20 to-blue-500/20 rounded-3xl blur-xl group-hover:blur-2xl transition-all duration-300"></div>
-                        <div className="relative backdrop-blur-sm bg-white/90 border border-indigo-200/50 rounded-2xl overflow-hidden shadow-xl hover:shadow-2xl transition-all duration-300">
-                        {/* Header - Modern Gradient */}
+                      <div className="bg-slate-800/60 border-2 border-slate-600 rounded-xl overflow-hidden shadow-xl">
+                        {/* Header */}
                         <button
                           onClick={() => setDocumentsExpanded(!documentsExpanded)}
-                          className="w-full flex items-center justify-between px-6 py-4 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 transition-all"
+                          className="w-full flex items-center justify-between px-5 py-4 bg-gradient-to-r from-indigo-900/30 to-slate-700/50 hover:from-indigo-900/40 hover:to-slate-700/60 transition-all border-b-2 border-slate-600"
                         >
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                              <FileText className="w-5 h-5 text-white" />
-                            </div>
+                            <FileText className="w-5 h-5 text-indigo-400" />
                             <div className="text-left">
                               <h3 className="text-base font-bold text-white">
                                 İhale Dökümanları
                               </h3>
-                              <p className="text-xs text-indigo-100">
-                                {fullContent.documents.length} döküman mevcut
+                              <p className="text-sm text-slate-300 font-medium">
+                                {fullContent.documents.length} döküman {selectedDocuments.length > 0 && (
+                                  <span className="text-emerald-400">• {selectedDocuments.length} seçili</span>
+                                )}
                               </p>
                             </div>
-                            {selectedDocuments.length > 0 && (
-                              <div className="ml-3 flex items-center gap-2 px-3 py-1.5 bg-white/20 backdrop-blur-sm rounded-full">
-                                <CheckCircle className="w-4 h-4 text-white" />
-                                <span className="text-sm font-bold text-white">
-                                  {selectedDocuments.length} seçili
-                                </span>
-                              </div>
-                            )}
                           </div>
-                          <div className="p-2 rounded-lg bg-white/10 backdrop-blur-sm">
+                          <div className="text-slate-300">
                             {documentsExpanded ? (
-                              <ChevronUp className="w-5 h-5 text-white" />
+                              <ChevronUp className="w-5 h-5" />
                             ) : (
-                              <ChevronDown className="w-5 h-5 text-white" />
+                              <ChevronDown className="w-5 h-5" />
                             )}
                           </div>
                         </button>
 
-                        {/* Collapsible Content */}
+                        {/* Content */}
                         {documentsExpanded && (
-                          <div className="p-6 space-y-4 bg-gradient-to-br from-gray-50 to-white">
-                            {/* Export Butonları - Seçilebilir Kartlar */}
-                            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-                              <div className="flex items-center gap-3 mb-5">
-                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center shadow-md">
-                                  <FileText className="w-5 h-5 text-white" />
-                                </div>
+                          <div className="p-6 space-y-6 bg-slate-900/40">
+                            {/* Export Butonları */}
+                            <div className="bg-slate-800/80 rounded-xl p-5 border-2 border-slate-600 shadow-lg">
+                              <div className="flex items-center gap-3 mb-4">
+                                <FileText className="w-5 h-5 text-orange-400" />
                                 <div>
-                                  <h4 className="text-base font-bold text-gray-800">İhale Raporu (Export Formatları)</h4>
-                                  <p className="text-xs text-gray-500">
-                                    Analize dahil etmek için seçin veya bilgisayarınıza indirin
-                                  </p>
+                                  <h4 className="text-base font-bold text-white">İhale Detay Raporu</h4>
+                                  <p className="text-sm text-slate-300">Export formatları</p>
                                 </div>
                               </div>
                               
-                              <div className="grid grid-cols-3 gap-4">
-                                {/* CSV Export - Seçilebilir */}
-                                <div 
+                              <div className="space-y-2">
+                                {/* 💎 CSV - Selectable + Quick Download */}
+                                <div
                                   onClick={() => toggleDocumentSelection('virtual://csv')}
-                                  className={`group relative cursor-pointer`}
-                                >
-                                  <div className={`w-full flex flex-col gap-3 p-4 rounded-xl border-2 transition-all duration-200 ${
+                                  className={`group cursor-pointer rounded-lg border-2 transition-all ${
                                     selectedDocuments.includes('virtual://csv')
-                                      ? 'bg-gradient-to-br from-emerald-100 to-green-100 border-emerald-500 shadow-lg'
-                                      : 'bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-200 hover:border-emerald-400 hover:shadow-lg'
-                                  }`}>
-                                    <div className="flex items-center justify-between">
-                                      <div className={`w-14 h-14 rounded-xl flex items-center justify-center transition-colors shadow-md ${
-                                        selectedDocuments.includes('virtual://csv')
-                                          ? 'bg-emerald-600'
-                                          : 'bg-emerald-500 group-hover:bg-emerald-600'
+                                      ? 'bg-slate-800 border-slate-500 shadow-lg'
+                                      : 'bg-slate-900 border-slate-700 hover:border-slate-600'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3 p-3">
+                                    <div className={`w-8 h-8 rounded flex items-center justify-center ${
+                                      selectedDocuments.includes('virtual://csv')
+                                        ? 'bg-emerald-500/20'
+                                        : 'bg-slate-800'
+                                    }`}>
+                                      {selectedDocuments.includes('virtual://csv') ? (
+                                        <CheckCircle className="w-4 h-4 text-emerald-400" />
+                                      ) : (
+                                        <span className="text-sm">📊</span>
+                                      )}
+                                    </div>
+                                    <div className="flex-1">
+                                      <span className={`text-sm font-medium ${
+                                        selectedDocuments.includes('virtual://csv') ? 'text-emerald-400' : 'text-slate-300'
                                       }`}>
-                                        {selectedDocuments.includes('virtual://csv') ? (
-                                          <CheckCircle className="w-7 h-7 text-white" />
-                                        ) : (
-                                          <span className="text-2xl">📊</span>
-                                        )}
-                                      </div>
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          exportAsCSV();
-                                        }}
-                                        className="p-2 rounded-lg bg-white/80 hover:bg-white text-emerald-600 transition-all"
-                                        title="Bilgisayara indir"
-                                      >
-                                        <Download className="w-4 h-4" />
-                                      </button>
+                                        CSV Export
+                                      </span>
+                                      <p className="text-xs text-slate-500">İhale detay raporu</p>
                                     </div>
-                                    <div className="text-center space-y-1">
-                                      <div className="text-base font-bold text-gray-800">CSV</div>
-                                      <div className="text-xs text-gray-500 leading-relaxed">Excel uyumlu, UTF-8</div>
-                                    </div>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        exportAsCSV();
+                                      }}
+                                      className="p-2 bg-slate-800 hover:bg-emerald-600 text-slate-400 hover:text-white rounded-lg transition-all"
+                                      title="Direkt İndir"
+                                    >
+                                      <Download className="w-4 h-4" />
+                                    </button>
                                   </div>
                                 </div>
 
-                                {/* TXT Export - Seçilebilir */}
-                                <div 
+                                {/* 💎 TXT - Selectable + Quick Download */}
+                                <div
                                   onClick={() => toggleDocumentSelection('virtual://txt')}
-                                  className={`group relative cursor-pointer`}
-                                >
-                                  <div className={`w-full flex flex-col gap-3 p-4 rounded-xl border-2 transition-all duration-200 ${
+                                  className={`group cursor-pointer rounded-lg border-2 transition-all ${
                                     selectedDocuments.includes('virtual://txt')
-                                      ? 'bg-gradient-to-br from-blue-100 to-indigo-100 border-blue-500 shadow-lg'
-                                      : 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 hover:border-blue-400 hover:shadow-lg'
-                                  }`}>
-                                    <div className="flex items-center justify-between">
-                                      <div className={`w-14 h-14 rounded-xl flex items-center justify-center transition-colors shadow-md ${
-                                        selectedDocuments.includes('virtual://txt')
-                                          ? 'bg-blue-600'
-                                          : 'bg-blue-500 group-hover:bg-blue-600'
+                                      ? 'bg-slate-800 border-slate-500 shadow-lg'
+                                      : 'bg-slate-900 border-slate-700 hover:border-slate-600'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3 p-3">
+                                    <div className={`w-8 h-8 rounded flex items-center justify-center ${
+                                      selectedDocuments.includes('virtual://txt')
+                                        ? 'bg-blue-500/20'
+                                        : 'bg-slate-800'
+                                    }`}>
+                                      {selectedDocuments.includes('virtual://txt') ? (
+                                        <CheckCircle className="w-4 h-4 text-blue-400" />
+                                      ) : (
+                                        <span className="text-sm">📝</span>
+                                      )}
+                                    </div>
+                                    <div className="flex-1">
+                                      <span className={`text-sm font-medium ${
+                                        selectedDocuments.includes('virtual://txt') ? 'text-blue-400' : 'text-slate-300'
                                       }`}>
-                                        {selectedDocuments.includes('virtual://txt') ? (
-                                          <CheckCircle className="w-7 h-7 text-white" />
-                                        ) : (
-                                          <span className="text-2xl">📝</span>
-                                        )}
-                                      </div>
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          exportAsTXT();
-                                        }}
-                                        className="p-2 rounded-lg bg-white/80 hover:bg-white text-blue-600 transition-all"
-                                        title="Bilgisayara indir"
-                                      >
-                                        <Download className="w-4 h-4" />
-                                      </button>
+                                        TXT Export
+                                      </span>
+                                      <p className="text-xs text-slate-500">Metin formatında rapor</p>
                                     </div>
-                                    <div className="text-center space-y-1">
-                                      <div className="text-base font-bold text-gray-800">TXT</div>
-                                      <div className="text-xs text-gray-500 leading-relaxed">Düz metin, UTF-8</div>
-                                    </div>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        exportAsTXT();
+                                      }}
+                                      className="p-2 bg-slate-800 hover:bg-blue-600 text-slate-400 hover:text-white rounded-lg transition-all"
+                                      title="Direkt İndir"
+                                    >
+                                      <Download className="w-4 h-4" />
+                                    </button>
                                   </div>
                                 </div>
 
-                                {/* JSON Export - Seçilebilir */}
-                                <div 
+                                {/* 💎 JSON - Selectable + Quick Download */}
+                                <div
                                   onClick={() => toggleDocumentSelection('virtual://json')}
-                                  className={`group relative cursor-pointer`}
-                                >
-                                  <div className={`w-full flex flex-col gap-3 p-4 rounded-xl border-2 transition-all duration-200 ${
+                                  className={`group cursor-pointer rounded-lg border-2 transition-all ${
                                     selectedDocuments.includes('virtual://json')
-                                      ? 'bg-gradient-to-br from-purple-100 to-pink-100 border-purple-500 shadow-lg'
-                                      : 'bg-gradient-to-br from-purple-50 to-pink-50 border-purple-200 hover:border-purple-400 hover:shadow-lg'
-                                  }`}>
-                                    <div className="flex items-center justify-between">
-                                      <div className={`w-14 h-14 rounded-xl flex items-center justify-center transition-colors shadow-md ${
-                                        selectedDocuments.includes('virtual://json')
-                                          ? 'bg-purple-600'
-                                          : 'bg-purple-500 group-hover:bg-purple-600'
+                                      ? 'bg-slate-800 border-slate-500 shadow-lg'
+                                      : 'bg-slate-900 border-slate-700 hover:border-slate-600'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3 p-3">
+                                    <div className={`w-8 h-8 rounded flex items-center justify-center ${
+                                      selectedDocuments.includes('virtual://json')
+                                        ? 'bg-purple-500/20'
+                                        : 'bg-slate-800'
+                                    }`}>
+                                      {selectedDocuments.includes('virtual://json') ? (
+                                        <CheckCircle className="w-4 h-4 text-purple-400" />
+                                      ) : (
+                                        <span className="text-sm">🔧</span>
+                                      )}
+                                    </div>
+                                    <div className="flex-1">
+                                      <span className={`text-sm font-medium ${
+                                        selectedDocuments.includes('virtual://json') ? 'text-purple-400' : 'text-slate-300'
                                       }`}>
-                                        {selectedDocuments.includes('virtual://json') ? (
-                                          <CheckCircle className="w-7 h-7 text-white" />
-                                        ) : (
-                                          <span className="text-2xl">🔧</span>
-                                        )}
-                                      </div>
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          exportAsJSON();
-                                        }}
-                                        className="p-2 rounded-lg bg-white/80 hover:bg-white text-purple-600 transition-all"
-                                        title="Bilgisayara indir"
-                                      >
-                                        <Download className="w-4 h-4" />
-                                      </button>
+                                        JSON Export
+                                      </span>
+                                      <p className="text-xs text-slate-500">Programatik kullanım</p>
                                     </div>
-                                    <div className="text-center space-y-1">
-                                      <div className="text-base font-bold text-gray-800">JSON</div>
-                                      <div className="text-xs text-gray-500 leading-relaxed">API uyumlu</div>
-                                    </div>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        exportAsJSON();
+                                      }}
+                                      className="p-2 bg-slate-800 hover:bg-purple-600 text-slate-400 hover:text-white rounded-lg transition-all"
+                                      title="Direkt İndir"
+                                    >
+                                      <Download className="w-4 h-4" />
+                                    </button>
                                   </div>
                                 </div>
                               </div>
@@ -2912,28 +2894,44 @@ Lütfen tarayıcı konsolunu kontrol edin ve geliştiriciyle iletişime geçin.`
                                     
                                     {/* ZIP İçerik Önizleme Butonu */}
                                     <button
-                                      onClick={() => {
+                                      onClick={async () => {
                                         // ZIP dosyasının bilgilerini al
                                         const zipUrl = selectedDocuments.find(url => {
                                           const fn = url.split('/').pop() || '';
                                           return fn.toLowerCase().endsWith('.zip') || fn.toLowerCase().endsWith('.rar');
                                         });
-                                        
-                                        if (zipUrl) {
-                                          const zipFileName = zipUrl.split('/').pop() || 'archive.zip';
-                                          // Tahmini içerik göster (gerçek API'den gelene kadar)
-                                          setZipFileInfo({
-                                            fileName: zipFileName,
-                                            size: 5242880, // 5 MB tahmini
-                                            extractedFiles: [
-                                              'idari_sartname.pdf',
-                                              'teknik_sartname.pdf', 
-                                              'ek_dosyalar.xlsx',
-                                              'fiyat_listesi.pdf',
-                                              'sss.txt'
-                                            ]
+
+                                        if (!zipUrl) return;
+
+                                        try {
+                                          toast.loading('ZIP içeriği getiriliyor...', { id: 'zip-preview' });
+
+                                          // API'den gerçek ZIP içeriğini al
+                                          const response = await fetch(`/api/ihale-scraper/download-document?url=${encodeURIComponent(zipUrl)}`, {
+                                            credentials: 'include'
                                           });
-                                          setShowZipContents(true);
+
+                                          if (!response.ok) {
+                                            throw new Error('ZIP indirilemedi');
+                                          }
+
+                                          const data = await response.json();
+
+                                          if (data.isZip && data.files) {
+                                            // Gerçek ZIP içeriğini göster
+                                            setZipFileInfo({
+                                              fileName: data.filename,
+                                              size: data.size,
+                                              extractedFiles: data.files.map((f: any) => f.name)
+                                            });
+                                            setShowZipContents(true);
+                                            toast.success(`${data.files.length} dosya bulundu`, { id: 'zip-preview' });
+                                          } else {
+                                            throw new Error('ZIP dosyası değil');
+                                          }
+                                        } catch (error: any) {
+                                          console.error('ZIP önizleme hatası:', error);
+                                          toast.error('ZIP önizlenemedi', { id: 'zip-preview' });
                                         }
                                       }}
                                       className="mt-2 flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-all shadow-sm hover:shadow-md"
@@ -2945,93 +2943,80 @@ Lütfen tarayıcı konsolunu kontrol edin ve geliştiriciyle iletişime geçin.`
                                 </div>
                               </div>
                             )}
-                            
-                            {/* Gerçek Dökümanlar Listesi */}
-                            {fullContent.documents && fullContent.documents.length > 0 && (
-                              <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-                                <div className="flex items-center gap-3 mb-4">
-                                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-md">
-                                    <FileText className="w-5 h-5 text-white" />
-                                  </div>
-                                  <div>
-                                    <h4 className="text-base font-bold text-gray-800">Dökümanlar</h4>
-                                    <p className="text-xs text-gray-500">
-                                      {fullContent.documents.length} dosya mevcut
-                                    </p>
-                                  </div>
+
+                            {/* 📦 Extracted Files - ZIP'ten çıkarılan gerçek dosyalar */}
+                            {fullContent.extractedFiles && fullContent.extractedFiles.length > 0 && (() => {
+                              // Test dosyalarını filtrele - sadece gerçek dökümanları göster
+                              const realFiles = fullContent.extractedFiles.filter((f: any) =>
+                                !f.name.toLowerCase().startsWith('test.')
+                              );
+
+                              if (realFiles.length === 0) return null;
+
+                              return (
+                              <div className="mb-4 p-5 bg-slate-800/70 rounded-xl border-2 border-emerald-600 shadow-lg">
+                                <div className="flex items-center gap-2 mb-3 bg-gradient-to-r from-emerald-900/30 to-slate-700/50 -m-5 p-4 mb-4 rounded-t-xl border-b-2 border-emerald-700/50">
+                                  <FileText className="w-5 h-5 text-emerald-400" />
+                                  <h4 className="text-base font-bold text-white">
+                                    📦 ZIP'ten Çıkarılan Dosyalar ({realFiles.length})
+                                  </h4>
                                 </div>
+                                <div className="space-y-2">
+                                  {realFiles.map((file: any, idx: number) => (
+                                    <div
+                                      key={idx}
+                                      className="flex items-center justify-between p-3 bg-slate-900/60 rounded-lg border-2 border-slate-700 hover:border-emerald-500 hover:shadow-md transition-all group"
+                                    >
+                                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                                        <FileText className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-sm font-medium text-slate-100 truncate">{file.name}</p>
+                                          <p className="text-xs text-slate-400">
+                                            {(file.size / 1024).toFixed(1)} KB
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <button
+                                        onClick={async () => {
+                                          try {
+                                            toast.loading('İndiriliyor...', { id: 'file-download' });
+                                            // Session'dan dosyayı indir (path: "sessions/tender_xxx/file.bin" or "data/sessions/...")
+                                            const downloadPath = file.path.startsWith('data/')
+                                              ? file.path
+                                              : `data/${file.path}`;
 
-                                {/* Döküman kartları - burada devam edecek */}
-                                <div className="space-y-3">
-                                  {/* TODO: Döküman kartları eklenecek */}
-                                </div>
-                              </div>
-                            )}
-                            
-                            {/* Action Bar - Sadece İndirme */}
-                            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-                              <div className="flex items-center justify-between gap-4">
-                                {/* Toplu İndirme Butonu */}
-                                <button
-                                  onClick={async () => {
-                                    if (selectedDocuments.length === 0) {
-                                      toast.error('⚠️ Lütfen en az 1 döküman seçin');
-                                      return;
-                                    }
+                                            const response = await fetch(`/api/tender/session/download?path=${encodeURIComponent(downloadPath)}`);
+                                            if (!response.ok) {
+                                              console.error('❌ Download failed:', response.status, response.statusText);
+                                              throw new Error(`İndirme başarısız: ${response.status}`);
+                                            }
 
-                                    toast.info(`📥 ${selectedDocuments.length} döküman indiriliyor...`);
-                                    
-                                    // Dökümanları bilgisayara indir
-                                    await prepareDocuments();
-                                    
-                                    toast.success(`✅ ${selectedDocuments.length} döküman indirildi!`);
-                                  }}
-                                  disabled={selectedDocuments.length === 0}
-                                  className="group relative flex items-center gap-3 px-6 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold transition-all shadow-lg hover:shadow-xl disabled:shadow-none transform hover:scale-105 disabled:scale-100"
-                                  title="Seçili dökümanları bilgisayara indir"
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <Download className="w-5 h-5" />
-                                    <span>Toplu İndir</span>
-                                  </div>
-                                  {selectedDocuments.length > 0 && (
-                                    <span className="px-2.5 py-0.5 bg-white/20 rounded-full text-xs font-bold">
-                                      {selectedDocuments.length}
-                                    </span>
-                                  )}
-                                </button>
+                                            const blob = await response.blob();
+                                            const url = URL.createObjectURL(blob);
+                                            const link = document.createElement('a');
+                                            link.href = url;
+                                            link.download = file.name;
+                                            document.body.appendChild(link);
+                                            link.click();
+                                            document.body.removeChild(link);
+                                            URL.revokeObjectURL(url);
 
-                                {/* Orta: Seçim Kontrolü */}
-                                <div className="flex items-center gap-3">
-                                  <button
-                                    onClick={() => toggleAllDocuments()}
-                                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-all"
-                                  >
-                                    <CheckCircle className="w-4 h-4" />
-                                    {(() => {
-                                      const totalDocs = (fullContent?.documents?.length || 0) + 3;
-                                      const isAllSelected = selectedDocuments.length === totalDocs;
-                                      return isAllSelected ? 'Seçimi Kaldır' : 'Tümünü Seç';
-                                    })()}
-                                  </button>
-
-                                  {/* Sağ: Önizleme */}
-                                  <button
-                                    onClick={() => setShowPreviewModal(true)}
-                                    disabled={selectedDocuments.length === 0}
-                                    className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-all shadow-sm hover:shadow-md"
-                                  >
-                                    <Eye className="w-4 h-4" />
-                                    <span>Önizle</span>
-                                    {selectedDocuments.length > 0 && (
-                                      <span className="px-2 py-0.5 bg-white/20 rounded-full text-xs">
-                                        {selectedDocuments.length}
-                                      </span>
-                                    )}
-                                  </button>
+                                            toast.success('✅ İndirildi', { id: 'file-download' });
+                                          } catch (error) {
+                                            console.error('❌ İndirme hatası:', error);
+                                            toast.error('❌ İndirme hatası', { id: 'file-download' });
+                                          }
+                                        }}
+                                        className="p-2 bg-slate-800 hover:bg-emerald-600 text-slate-300 hover:text-white rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                      >
+                                        <Download className="w-5 h-5" />
+                                      </button>
+                                    </div>
+                                  ))}
                                 </div>
                               </div>
-                            </div>
+                              );
+                            })()}
 
                             {/* Document List - Modern Cards with Pagination */}
                             <div className="space-y-3">
@@ -3047,29 +3032,29 @@ Lütfen tarayıcı konsolunu kontrol edin ve geliştiriciyle iletişime geçin.`
                                   <>
                                     {/* Pagination Info */}
                                     {totalDocs > DOCS_PER_PAGE && (
-                                      <div className="flex items-center justify-between mb-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200">
-                                        <div className="flex items-center gap-2 text-sm text-gray-700">
-                                          <span className="font-medium">
+                                      <div className="flex items-center justify-between mb-4 p-4 bg-gradient-to-r from-slate-800/80 to-slate-700/80 rounded-xl border-2 border-slate-600 shadow-lg">
+                                        <div className="flex items-center gap-2 text-sm text-slate-100">
+                                          <span className="font-semibold">
                                             {startIdx + 1}-{endIdx} arası görüntüleniyor
                                           </span>
-                                          <span className="text-gray-400">•</span>
-                                          <span className="text-gray-500">Toplam {totalDocs} döküman</span>
+                                          <span className="text-slate-500">•</span>
+                                          <span className="text-slate-300">Toplam {totalDocs} döküman</span>
                                         </div>
                                         <div className="flex items-center gap-2">
                                           <button
                                             onClick={() => setDocPage(p => Math.max(1, p - 1))}
                                             disabled={docPage === 1}
-                                            className="px-3 py-1.5 bg-white hover:bg-gray-50 disabled:bg-gray-100 disabled:cursor-not-allowed rounded-lg text-sm font-medium text-gray-700 disabled:text-gray-400 border border-gray-200 transition-all"
+                                            className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800/50 disabled:cursor-not-allowed rounded-lg text-sm font-medium text-slate-100 disabled:text-slate-500 border-2 border-slate-600 hover:border-slate-500 disabled:border-slate-700 transition-all"
                                           >
                                             ← Önceki
                                           </button>
-                                          <span className="px-4 py-1.5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg text-sm font-bold">
+                                          <span className="px-4 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg text-sm font-bold shadow-md">
                                             {docPage} / {totalPages}
                                           </span>
                                           <button
                                             onClick={() => setDocPage(p => Math.min(totalPages, p + 1))}
                                             disabled={docPage === totalPages}
-                                            className="px-3 py-1.5 bg-white hover:bg-gray-50 disabled:bg-gray-100 disabled:cursor-not-allowed rounded-lg text-sm font-medium text-gray-700 disabled:text-gray-400 border border-gray-200 transition-all"
+                                            className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800/50 disabled:cursor-not-allowed rounded-lg text-sm font-medium text-slate-100 disabled:text-slate-500 border-2 border-slate-600 hover:border-slate-500 disabled:border-slate-700 transition-all"
                                           >
                                             Sonraki →
                                           </button>
@@ -3105,302 +3090,63 @@ Lütfen tarayıcı konsolunu kontrol edin ve geliştiriciyle iletişime geçin.`
                                   }
                                 }
 
-                                // 🆕 Akıllı Tip Tespiti - Dosya adından gerçek içeriği anla
-                                const detectDocumentType = (title: string, apiType: string) => {
-                                  const lowerTitle = (title || '').toLowerCase();
-                                  
-                                  // Öncelik 1: Title'dan tespit
-                                  if (lowerTitle.includes('idari') || lowerTitle.includes('idare') || lowerTitle.includes('administrative')) {
-                                    return 'idari_sartname';
-                                  }
-                                  if (lowerTitle.includes('teknik') || lowerTitle.includes('technical') || lowerTitle.includes('spec')) {
-                                    return 'teknik_sartname';
-                                  }
-                                  if (lowerTitle.includes('zeyilname') || lowerTitle.includes('ek') || lowerTitle.includes('addendum')) {
-                                    return 'zeyilname';
-                                  }
-                                  if (lowerTitle.includes('teklif') || lowerTitle.includes('proposal') || lowerTitle.includes('bid')) {
-                                    return 'teklif_mektubu';
-                                  }
-                                  if (lowerTitle.includes('sözleşme') || lowerTitle.includes('contract')) {
-                                    return 'sozlesme_taslagi';
-                                  }
-                                  if (lowerTitle.includes('fiyat') || lowerTitle.includes('price')) {
-                                    return 'fiyat_listesi';
-                                  }
-                                  
-                                  // Öncelik 2: API'den gelen tip
-                                  return apiType || 'diger';
-                                };
-
+                                // 🆕 Akıllı Tip Tespiti - Helper fonksiyonları kullan
                                 const detectedType = detectDocumentType(doc.title, doc.type);
-
-                                // Dosya tipine göre badge ve icon - Modern renkler + yeni tipler
-                                const getDocInfo = (type: string, ext: string) => {
-                                  switch (type) {
-                                    case 'idari_sartname':
-                                      return {
-                                        label: 'İdari Şartname',
-                                        gradient: 'from-blue-500 to-indigo-600',
-                                        bgColor: 'bg-gradient-to-br from-blue-50 to-indigo-50',
-                                        borderColor: 'border-blue-300',
-                                        icon: '📋',
-                                        iconBg: 'bg-blue-100'
-                                      };
-                                    case 'teknik_sartname':
-                                      return {
-                                        label: 'Teknik Şartname',
-                                        gradient: 'from-emerald-500 to-green-600',
-                                        bgColor: 'bg-gradient-to-br from-emerald-50 to-green-50',
-                                        borderColor: 'border-emerald-300',
-                                        icon: '⚙️',
-                                        iconBg: 'bg-emerald-100'
-                                      };
-                                    case 'zeyilname':
-                                      return {
-                                        label: 'Zeyilname',
-                                        gradient: 'from-orange-500 to-amber-600',
-                                        bgColor: 'bg-gradient-to-br from-orange-50 to-amber-50',
-                                        borderColor: 'border-orange-300',
-                                        icon: '📎',
-                                        iconBg: 'bg-orange-100'
-                                      };
-                                    case 'teklif_mektubu':
-                                      return {
-                                        label: 'Teklif Mektubu',
-                                        gradient: 'from-cyan-500 to-blue-600',
-                                        bgColor: 'bg-gradient-to-br from-cyan-50 to-blue-50',
-                                        borderColor: 'border-cyan-300',
-                                        icon: '✉️',
-                                        iconBg: 'bg-cyan-100'
-                                      };
-                                    case 'sozlesme_taslagi':
-                                      return {
-                                        label: 'Sözleşme Taslağı',
-                                        gradient: 'from-violet-500 to-purple-600',
-                                        bgColor: 'bg-gradient-to-br from-violet-50 to-purple-50',
-                                        borderColor: 'border-violet-300',
-                                        icon: '📜',
-                                        iconBg: 'bg-violet-100'
-                                      };
-                                    case 'fiyat_listesi':
-                                      return {
-                                        label: 'Fiyat Listesi',
-                                        gradient: 'from-green-500 to-teal-600',
-                                        bgColor: 'bg-gradient-to-br from-green-50 to-teal-50',
-                                        borderColor: 'border-green-300',
-                                        icon: '💰',
-                                        iconBg: 'bg-green-100'
-                                      };
-                                    default:
-                                      return {
-                                        label: 'Döküman',
-                                        gradient: 'from-purple-500 to-pink-600',
-                                        bgColor: 'bg-gradient-to-br from-purple-50 to-pink-50',
-                                        borderColor: 'border-purple-300',
-                                        icon: '📄',
-                                        iconBg: 'bg-purple-100'
-                                      };
-                                  }
-                                };
-
-                                const docInfo = getDocInfo(detectedType, fileExt);
+                                const docInfo = getDocInfo(detectedType);
 
                                 return (
                                   <div
                                     key={`doc-${realIdx}-${doc.url}`}
                                     className="relative group"
                                   >
-                                    {/* Glow effect - Balon hissi */}
+                                    {/* Hafif gri glow efekt */}
                                     {isSelected && (
-                                      <div className={`absolute -inset-1 bg-gradient-to-r ${docInfo.gradient} opacity-30 blur-lg rounded-3xl transition-all duration-300`}></div>
+                                      <div className="absolute -inset-0.5 bg-gradient-to-r from-slate-600/30 to-slate-500/30 rounded-xl blur-sm"></div>
                                     )}
-                                    
+
                                     <div
-                                      className={`relative overflow-hidden rounded-2xl border-2 transition-all duration-300 cursor-pointer backdrop-blur-sm ${
+                                      className={`relative overflow-hidden rounded-xl border-2 transition-all duration-300 cursor-pointer ${
                                         isSelected
-                                          ? `bg-white/90 ${docInfo.borderColor} shadow-2xl transform scale-[1.02]`
-                                          : 'bg-white/80 border-gray-200/50 hover:border-gray-300/70 hover:shadow-lg hover:bg-white/95'
+                                          ? 'bg-gradient-to-r from-slate-700/50 to-slate-800/90 border-slate-400 shadow-xl'
+                                          : 'bg-slate-900/60 border-slate-600 hover:border-slate-500 hover:shadow-md'
                                       }`}
                                       onClick={() => toggleDocumentSelection(doc.url)}
                                     >
-                                      {/* Gradient overlay */}
-                                      {isSelected && (
-                                        <div className={`absolute inset-0 bg-gradient-to-br ${docInfo.gradient} opacity-5`}></div>
-                                      )}
-                                    
-                                    <div className="relative flex items-center gap-4 p-5">
-                                      {/* Modern Toggle Switch */}
-                                      <div className="flex-shrink-0">
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            toggleDocumentSelection(doc.url);
-                                          }}
-                                          className={`relative w-14 h-7 rounded-full transition-all duration-300 ${
-                                            isSelected
-                                              ? `bg-gradient-to-r ${docInfo.gradient} shadow-lg`
-                                              : 'bg-gray-300 hover:bg-gray-400'
-                                          }`}
-                                          aria-label="Toggle selection"
-                                        >
-                                          <div
-                                            className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-all duration-300 flex items-center justify-center ${
-                                              isSelected ? 'translate-x-7' : 'translate-x-0'
-                                            }`}
-                                          >
-                                            {isSelected && (
-                                              <CheckCircle className="w-4 h-4 text-blue-600" />
-                                            )}
-                                          </div>
-                                        </button>
-                                      </div>
 
-                                      {/* Icon - Gradient Background with Animation */}
-                                      <div className={`flex-shrink-0 w-14 h-14 rounded-xl ${docInfo.iconBg} flex items-center justify-center text-2xl shadow-sm transition-all duration-300 ${
-                                        isSelected ? 'scale-110 shadow-md' : 'scale-100'
+                                    <div className="relative flex items-center gap-3 p-4">
+                                      {/* Icon - Premium Dark */}
+                                      <div className={`flex-shrink-0 w-11 h-11 rounded-lg flex items-center justify-center text-lg transition-all ${
+                                        isSelected ? 'bg-slate-600/60 text-white shadow-md' : 'bg-slate-800 text-slate-300'
                                       }`}>
-                                        {docInfo.icon}
+                                        {isSelected ? <CheckCircle className="w-6 h-6" /> : docInfo.icon}
                                       </div>
 
                                       {/* Content */}
                                       <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-3 mb-2">
-                                          <h4 className={`font-semibold truncate text-base transition-colors duration-300 ${
-                                            isSelected ? 'text-gray-900' : 'text-gray-700'
-                                          }`}>
-                                            {doc.title || `Döküman ${realIdx + 1}`}
-                                          </h4>
-                                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-gradient-to-r ${docInfo.gradient} text-white shadow-sm`}>
-                                            {docInfo.label}
-                                          </span>
-                                        </div>
-
-                                        <div className="flex items-center gap-4 text-sm text-gray-600">
-                                          {/* Kelime Sayısı */}
-                                          <div className="flex items-center gap-2">
-                                            <div className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${
-                                              isSelected ? 'bg-blue-500' : 'bg-gray-400'
-                                            }`}></div>
-                                            <span className="font-medium text-gray-500">Kelime:</span>
-                                            <span className={`px-2 py-1 rounded text-xs font-semibold transition-all duration-300 ${
-                                              isSelected ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-gray-100 text-gray-700'
-                                            }`}>
-                                              {(() => {
-                                                // Döküman tipine göre kelime sayısı tahmini
-                                                if (doc.type === 'idari_sartname') return '~8.5K';
-                                                if (doc.type === 'teknik_sartname') return '~12K';
-                                                if (fileExt === 'ZIP' || fileExt === 'RAR') return 'Arşiv';
-                                                if (fileExt === 'XLSX' || fileExt === 'XLS') return 'Tablo';
-                                                return '~5K';
-                                              })()}
-                                            </span>
-                                          </div>
-                                          
-                                          {/* Dosya Boyutu (Akıllı Tahmin) */}
-                                          <div className="flex items-center gap-2">
-                                            <div className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${
-                                              isSelected ? 'bg-green-500' : 'bg-gray-400'
-                                            }`}></div>
-                                            <span className="font-medium text-gray-500">Boyut:</span>
-                                            <span className={`px-2 py-1 rounded text-xs font-semibold transition-all duration-300 ${
-                                              isSelected ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-gray-100 text-gray-700'
-                                            }`}>
-                                              {(() => {
-                                                // 🔒 DETERMINISTIK BOYUT - URL'den hash üret, her zaman aynı değer dönsün
-                                                // Math.random() yerine URL-based seed kullan
-                                                const generateSeed = (str: string) => {
-                                                  let hash = 0;
-                                                  for (let i = 0; i < str.length; i++) {
-                                                    const char = str.charCodeAt(i);
-                                                    hash = ((hash << 5) - hash) + char;
-                                                    hash = hash & hash; // Convert to 32bit integer
-                                                  }
-                                                  return Math.abs(hash);
-                                                };
-                                                
-                                                // URL'den sabit seed oluştur (0-1 arası normalize et)
-                                                const seed = (generateSeed(doc.url) % 10000) / 10000;
-                                                
-                                                // Dosya tipine + document tipine göre sabit boyutlar
-                                                // seed kullanarak varyasyon ekle (ama her zaman aynı URL için aynı değer)
-                                                
-                                                // Arşiv dosyaları her zaman büyük
-                                                if (fileExt === 'ZIP' || fileExt === 'RAR') {
-                                                  return `${(3.5 + seed * 3).toFixed(1)} MB`;
-                                                }
-                                                
-                                                // Teknik şartname genelde en büyük PDF
-                                                if (detectedType === 'teknik_sartname' && fileExt === 'PDF') {
-                                                  return `${(2.8 + seed * 1.5).toFixed(1)} MB`;
-                                                }
-                                                
-                                                // İdari şartname orta boy
-                                                if (detectedType === 'idari_sartname' && fileExt === 'PDF') {
-                                                  return `${(1.5 + seed * 1.2).toFixed(1)} MB`;
-                                                }
-                                                
-                                                // Zeyilname/Ekler genelde küçük
-                                                if (detectedType === 'zeyilname') {
-                                                  return `${(450 + seed * 350).toFixed(0)} KB`;
-                                                }
-                                                
-                                                // Excel/CSV dosyaları
-                                                if (fileExt === 'XLSX' || fileExt === 'XLS') {
-                                                  return `${(380 + seed * 280).toFixed(0)} KB`;
-                                                }
-                                                if (fileExt === 'CSV') {
-                                                  return `${(85 + seed * 95).toFixed(0)} KB`;
-                                                }
-                                                
-                                                // Word dosyaları
-                                                if (fileExt === 'DOCX' || fileExt === 'DOC') {
-                                                  return `${(650 + seed * 400).toFixed(0)} KB`;
-                                                }
-                                                
-                                                // Text dosyaları
-                                                if (fileExt === 'TXT') {
-                                                  return `${(35 + seed * 85).toFixed(0)} KB`;
-                                                }
-                                                
-                                                // Varsayılan PDF (seed ile deterministik)
-                                                return `${(1.2 + seed * 1.5).toFixed(1)} MB`;
-                                              })()}
-                                            </span>
-                                          </div>
-
-                                          {/* Dosya Tipi */}
-                                          <div className="flex items-center gap-2">
-                                            <div className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${
-                                              isSelected ? 'bg-purple-500' : 'bg-gray-400'
-                                            }`}></div>
-                                            <span className="font-medium text-gray-500">Tip:</span>
-                                            <code className={`px-2 py-1 rounded text-xs font-mono font-semibold transition-all duration-300 ${
-                                              isSelected ? 'bg-purple-50 text-purple-700 border border-purple-200' : 'bg-gray-100 text-gray-700'
-                                            }`}>{fileExt}</code>
-                                          </div>
+                                        <h4 className={`font-semibold truncate text-sm transition-colors ${
+                                          isSelected ? 'text-slate-100' : 'text-slate-100'
+                                        }`}>
+                                          {doc.title || `Döküman ${realIdx + 1}`}
+                                        </h4>
+                                        <div className="flex items-center gap-2 mt-1">
+                                          <span className="text-xs text-slate-400">{docInfo.label}</span>
+                                          <span className="text-slate-600">•</span>
+                                          <code className="text-xs text-slate-400 font-mono">{fileExt}</code>
                                         </div>
                                       </div>
 
-                                      {/* Download Button - Always visible on hover */}
+                                      {/* Download Button - Minimal */}
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          downloadDocument(doc.url, doc.title || `document_${realIdx}.${fileExt.toLowerCase()}`, e);
+                                          e.preventDefault();
+                                          downloadDocument(doc.url, doc.title || `document_${realIdx}.${fileExt.toLowerCase()}`);
                                         }}
-                                        className={`flex-shrink-0 p-3 rounded-xl bg-gradient-to-r ${docInfo.gradient} text-white transition-all shadow-lg hover:shadow-xl transform hover:scale-110 opacity-0 group-hover:opacity-100`}
-                                        title="Bilgisayara indir"
+                                        className="flex-shrink-0 p-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-all shadow-sm"
+                                        title="İndir"
                                       >
                                         <Download className="w-5 h-5" />
                                       </button>
-
-                                      {/* Selection Indicator - Compact Badge */}
-                                      {isSelected && (
-                                        <div className="absolute top-3 right-3 px-2 py-1 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center gap-1 shadow-md">
-                                          <CheckCircle className="w-3 h-3 text-white" />
-                                          <span className="text-[10px] font-bold text-white uppercase tracking-wide">Seçili</span>
-                                        </div>
-                                      )}
                                     </div>
                                     </div>
                                   </div>
@@ -3412,153 +3158,91 @@ Lütfen tarayıcı konsolunu kontrol edin ve geliştiriciyle iletişime geçin.`
                             </div>
                           </div>
                         )}
-                        </div>
                       </div>
                     )}
 
-                    {/* 🆕 Hazırlanan Dökümanlar Önizlemesi - İçeride */}
-                    {preparedDocuments.length > 0 && (
-                      <div className="relative group mt-6">
-                        <div className="absolute inset-0 bg-gradient-to-r from-green-500/20 to-emerald-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-300"></div>
-                        <div className="relative backdrop-blur-sm bg-white/90 border border-green-200/50 rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300">
-                          {/* Header */}
-                          <div className="bg-gradient-to-r from-green-500/10 via-emerald-500/10 to-green-500/10 backdrop-blur-md px-6 py-4 border-b border-green-300/30">
-                            <div className="flex items-center justify-between">
-                              <h3 className="text-lg font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent flex items-center gap-3 tracking-tight">
-                                <div className="p-2 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 shadow-lg">
-                                  <CheckCircle className="w-5 h-5 text-white" />
-                                </div>
-                                Dökümanlar Hazır
-                                <span className="ml-2 px-3 py-1 bg-green-100 text-green-700 text-sm font-bold rounded-full">
-                                  {preparedDocuments.length} dosya
+                    {/* 💎 PREMIUM ACTION BAR - Dark & Elegant - En Alta Taşındı */}
+                    <div className="mt-6 bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl p-6 shadow-2xl border-2 border-slate-700">
+                      {/* Üst: Ana Aksiyon Butonları */}
+                      <div className="flex flex-col gap-3 mb-4">
+                        {/* Tümünü Seç ve Önizle - Üstte */}
+                        <div className="flex items-center justify-between gap-3">
+                          {/* Sol: Orijinal Sayfa */}
+                          <a
+                            href={selectedTender.source_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-800/80 hover:bg-slate-700 text-slate-100 hover:text-white rounded-lg transition-all border-2 border-slate-600 hover:border-slate-500 shadow-md text-sm font-semibold"
+                          >
+                            <ExternalLink className="w-5 h-5" />
+                            Orijinal Sayfayı Aç
+                          </a>
+
+                          {/* Sağ: Tümünü Seç ve Önizle */}
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={() => toggleAllDocuments()}
+                              className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-slate-100 bg-slate-800/80 hover:bg-slate-700 rounded-lg transition-all border-2 border-slate-600 hover:border-slate-500 shadow-md"
+                            >
+                              <CheckCircle className="w-5 h-5" />
+                              {(() => {
+                                const virtualExports = 3;
+                                const realDocs = fullContent?.documents?.length || 0;
+                                const totalDocs = realDocs + virtualExports;
+                                const isAllSelected = selectedDocuments.length === totalDocs;
+                                return isAllSelected ? 'Seçimi Kaldır' : 'Tümünü Seç';
+                              })()}
+                            </button>
+
+                            <button
+                              onClick={() => setShowPreviewModal(true)}
+                              disabled={selectedDocuments.length === 0}
+                              className="flex items-center gap-2 px-5 py-2.5 bg-slate-800/80 hover:bg-slate-700 disabled:bg-slate-800/50 disabled:cursor-not-allowed text-slate-100 disabled:text-slate-600 rounded-lg text-sm font-semibold transition-all border-2 border-slate-600 hover:border-slate-500 disabled:border-slate-700 shadow-md"
+                            >
+                              <Eye className="w-5 h-5" />
+                              <span>Önizle</span>
+                              {selectedDocuments.length > 0 && (
+                                <span className="px-2.5 py-0.5 bg-indigo-500/20 text-indigo-200 rounded-full text-xs font-bold border border-indigo-400/30">
+                                  {selectedDocuments.length}
                                 </span>
-                              </h3>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={() => {
-                                    console.log('📊 Prepared Documents Debug:', preparedDocuments);
-                                    console.table(preparedDocuments.map(d => ({
-                                      title: d.title,
-                                      type: d.type,
-                                      mimeType: d.mimeType,
-                                      size: `${(d.size / 1024).toFixed(1)} KB`,
-                                      isFromZip: d.isFromZip,
-                                      url: d.url.substring(0, 50)
-                                    })));
-                                    toast.success('Console\'da detaylar görüntülendi!');
-                                  }}
-                                  className="p-2 rounded-lg bg-blue-100 hover:bg-blue-200 text-blue-600 transition-all"
-                                  title="Console'da debug"
-                                >
-                                  🐛
-                                </button>
-                                <button
-                                  onClick={() => setPreparedDocuments([])}
-                                  className="p-2 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 transition-all"
-                                  title="Hazırlanan dökümanları temizle"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Dosya Listesi */}
-                          <div className="bg-white/80 backdrop-blur-sm p-6">
-                            <div className="space-y-3 max-h-[300px] overflow-y-auto">
-                              {preparedDocuments.map((doc, idx) => {
-                                // Export dosyası mı yoksa gerçek döküman mı?
-                                const isExport = doc.type === 'export';
-                                const exportIcon = doc.mimeType === 'application/json' ? '🔧' :
-                                                   doc.mimeType === 'text/plain' ? '📝' :
-                                                   doc.mimeType === 'text/csv' ? '📊' : '📄';
-                                
-                                return (
-                                  <div
-                                    key={idx}
-                                    className="flex items-center gap-4 p-4 rounded-xl bg-gradient-to-r from-gray-50 to-white border border-gray-200 hover:shadow-md transition-all"
-                                  >
-                                    {/* Icon */}
-                                    <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                                      isExport ? 'bg-orange-100' :
-                                      doc.isFromZip ? 'bg-purple-100' : 'bg-blue-100'
-                                    }`}>
-                                      {isExport ? exportIcon : doc.isFromZip ? '📦' : '📄'}
-                                    </div>
-
-                                    {/* Info */}
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-2 mb-1">
-                                        <h4 className="font-semibold text-gray-900 truncate">{doc.title}</h4>
-                                        {isExport && (
-                                          <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs font-bold rounded-full">
-                                            EXPORT
-                                          </span>
-                                        )}
-                                        {doc.isFromZip && !isExport && (
-                                          <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-bold rounded-full">
-                                            ZIP'ten
-                                          </span>
-                                        )}
-                                      </div>
-                                      <div className="flex items-center gap-4 text-xs text-gray-600">
-                                        <span>{doc.mimeType}</span>
-                                        <span>•</span>
-                                        <span>{(doc.size / 1024).toFixed(1)} KB</span>
-                                        {doc.extractedFrom && (
-                                        <>
-                                          <span>•</span>
-                                          <span className="text-purple-600">{doc.extractedFrom}</span>
-                                        </>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                    {/* Checkmark */}
-                                    <div className="flex-shrink-0">
-                                      <CheckCircle className="w-6 h-6 text-green-500" />
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-
-                            {/* Action Button - İşlemeye Gönder */}
-                            <div className="mt-6 pt-4 border-t border-gray-200">
-                              <button
-                                onClick={async () => {
-                                  // ✅ Sadece dökümanları hazırla (indirmeye hazır hale getir)
-                                  await prepareDocuments();
-                                  toast.success(`✅ ${preparedDocuments.length} dosya hazır! İndirme başlayabilir.`);
-                                }}
-                                className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white rounded-xl text-base font-bold transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
-                              >
-                                <Download className="w-5 h-5" />
-                                <span>Dosyaları İşlemeye Hazırla</span>
-                                <span className="px-3 py-1 bg-white/20 rounded-full text-sm">
-                                  {preparedDocuments.length} dosya
-                                </span>
-                              </button>
-                              <p className="text-xs text-center text-gray-500 mt-3">
-                                Dökümanlar indirmeye hazır hale getirilecek (otomatik analiz yok)
-                              </p>
-                            </div>
+                              )}
+                            </button>
                           </div>
                         </div>
-                      </div>
-                    )}
 
-                    {/* Kaynak Link */}
-                    <div className="pt-4 border-t">
-                      <a
-                        href={selectedTender.source_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                        Orijinal Sayfayı Aç
-                      </a>
+                        {/* Analize Git ve Toplu İndir - Altında */}
+                        <div className="flex items-center justify-end gap-3">
+                          {/* 1️⃣ ANALİZE GİT - Premium Dark */}
+                          <button
+                            onClick={sendToAnalysis}
+                            className="flex items-center gap-2 px-6 py-3 text-base font-semibold text-slate-100 bg-gradient-to-br from-purple-900/30 to-slate-800 hover:from-purple-900/50 hover:to-slate-700 rounded-lg transition-all border-2 border-purple-500/30 hover:border-purple-500/60 shadow-md"
+                            title="Yeni AI analiz sayfasına git"
+                          >
+                            <Wand2 className="w-5 h-5 text-purple-400" />
+                            <span className="tracking-wide">Analize Git</span>
+                          </button>
+
+                          {/* 2️⃣ TOPLU İNDİR - Premium Dark */}
+                          <button
+                            onClick={async () => {
+                              if (selectedDocuments.length === 0) {
+                                toast.error('⚠️ Lütfen en az 1 döküman seçin');
+                                return;
+                              }
+                              await downloadSelectedDocuments();
+                            }}
+                            disabled={selectedDocuments.length === 0}
+                            className="group relative flex items-center gap-2 px-6 py-3 bg-gradient-to-br from-blue-900/30 to-slate-800 hover:from-blue-900/50 hover:to-slate-700 disabled:from-slate-800/50 disabled:to-slate-800/50 disabled:cursor-not-allowed text-white rounded-lg text-base font-semibold transition-all shadow-md hover:shadow-blue-500/30 border-2 border-blue-500/30 hover:border-blue-500/60 disabled:border-slate-700"
+                            title="Seçili dökümanları ZIP olarak indir"
+                          >
+                            <Download className="w-5 h-5 text-blue-400" />
+                            <span className="tracking-wide">Toplu İndir</span>
+                            {selectedDocuments.length > 0 && (
+                              <span className="ml-1 text-xs text-blue-200">({selectedDocuments.length})</span>
+                            )}
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </>
                 ) : (
