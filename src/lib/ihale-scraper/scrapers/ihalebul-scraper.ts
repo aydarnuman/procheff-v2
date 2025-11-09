@@ -1239,7 +1239,39 @@ Sadece executable JavaScript kodu döndür. Örnek:
       const sourceId = url.split('/tender/')[1]?.split('?')[0] || `IHB${Date.now()}`;
       const $ = cheerio.load(html);
       const tenderData = this.parseTenderInfo($);
-      const htmlContent = $('.htmlcontent').html() || '';
+
+      // ✅ İYİLEŞTİRME: Sadece .htmlcontent yerine daha geniş içerik al
+      let htmlContent = $('.htmlcontent').html() || '';
+
+      // Eğer .htmlcontent boş veya çok kısa ise, alternatif selektorlar dene
+      if (!htmlContent || htmlContent.length < 100) {
+        console.warn(`⚠️ .htmlcontent çok kısa (${htmlContent.length} karakter), alternatif selector deneniyor...`);
+
+        // Alternatif 1: #tender container (tüm ihale bilgileri)
+        const tenderContainer = $('#tender').html();
+        if (tenderContainer && tenderContainer.length > htmlContent.length) {
+          htmlContent = tenderContainer;
+          console.log(`✅ #tender container kullanıldı (${tenderContainer.length} karakter)`);
+        }
+
+        // Alternatif 2: .container (daha geniş alan)
+        if (!htmlContent || htmlContent.length < 100) {
+          const containerContent = $('.container').html();
+          if (containerContent && containerContent.length > 100) {
+            htmlContent = containerContent;
+            console.log(`✅ .container kullanıldı (${containerContent.length} karakter)`);
+          }
+        }
+
+        // Alternatif 3: body text (son çare)
+        if (!htmlContent || htmlContent.length < 100) {
+          const bodyText = $('body').text();
+          if (bodyText && bodyText.length > 100) {
+            htmlContent = bodyText;
+            console.log(`✅ body text kullanıldı (${bodyText.length} karakter)`);
+          }
+        }
+      }
 
       // Kayıt No
       let kayitNo = tenderData['Kayıt no'];

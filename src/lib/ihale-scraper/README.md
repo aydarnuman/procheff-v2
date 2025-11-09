@@ -344,6 +344,204 @@ Scraper istatistikleri.
 
 ---
 
+## 🔒 DETAY İÇERİK VALİDASYON SİSTEMİ (Nov 9, 2025)
+
+### Problem
+İhale detay sayfalarına tıklandığında bazı ihaleler tam içerik gösterirken, bazıları sadece "Sektör: Yemek" gibi minimal bilgi gösteriyordu. **Sorun**: Eksik/geçersiz içerikler cache'e kaydedilince, her açılışta aynı eksik veri geliyordu.
+
+### Çözüm: 3-Katmanlı Validasyon
+
+**Validator Sistemi** ([validators.ts](./validators.ts)):
+
+```typescript
+// ✅ Akıllı validasyon: details varsa login/error kontrol skip edilir
+export function validateTenderContent(data: TenderContentData, options): ValidationResult {
+  // 1. fullText length kontrolü (min 100 karakter)
+  // 2. Login kontrolü - SADECE details < 3 ise (false positive önleme)
+  // 3. Error content kontrolü - SADECE details < 3 ise
+  // 4. details count kontrolü (min 3 alan)
+  // 5. documents kontrolü (optional)
+  // 6. title ve organization kontrolü
+
+  return { valid: errors.length === 0, errors, warnings };
+}
+```
+
+**Validasyon Noktaları**:
+
+1. **localStorage Cache** ([fetchFullContent.ts](./fetchFullContent.ts)):
+   ```typescript
+   const validation = validateTenderContent(cachedData, {
+     minTextLength: 100,
+     minDetailsCount: 3,
+     requireDocuments: false,
+   });
+
+   if (!validation.valid) {
+     // Geçersiz cache'i sil, DB'ye geç
+     delete parsed[tenderId];
+     localStorage.setItem('ihale-content-cache', JSON.stringify(parsed));
+     return null;
+   }
+   ```
+
+2. **Turso Database** ([turso-adapter.ts](./database/turso-adapter.ts)):
+   ```typescript
+   // Save sırasında
+   const validation = validateTenderContent(analysisResult, {...});
+   if (!validation.valid) {
+     console.error('❌ Geçersiz içerik, DB'ye kaydedilmiyor');
+     return { success: false, error: validation.errors };
+   }
+
+   // Get sırasında
+   if (!validation.valid) {
+     // Geçersiz DB kaydını sil
+     await db.execute(`DELETE FROM tender_analysis WHERE tender_id = ?`, [tenderId]);
+     return null;
+   }
+   ```
+
+3. **SQLite Database** ([sqlite-client.ts](./database/sqlite-client.ts)):
+   - Aynı validasyon pattern (save + get)
+
+4. **AI Fetch API** ([fetch-full-content/route.ts](../app/api/ihale-scraper/fetch-full-content/route.ts)):
+   ```typescript
+   const validation = validateTenderContent(structuredData, {...});
+   if (!validation.valid) {
+     return NextResponse.json({
+       success: false,
+       error: `AI parsing validation failed: ${validation.errors.join(', ')}`
+     }, { status: 400 });
+   }
+   ```
+
+5. **Frontend Layer** ([ihale-robotu/page.tsx](../app/ihale-robotu/page.tsx)):
+   ```typescript
+   if (!validation.valid) {
+     const isLoginError = validation.errors.some(e =>
+       e.toLowerCase().includes('login')
+     );
+
+     if (isLoginError) {
+       toast.error('❌ Login hatası!');
+     } else {
+       toast.error(`❌ İçerik yetersiz: ${validation.errors.join(', ')}`);
+     }
+     return; // Cache'e kaydetme
+   }
+   ```
+
+### Kritik Düzeltmeler
+
+#### 1. Login False Positive Fix
+**Problem**: "Giriş Yap" butonu sayfa menüsünde olduğu için geçerli veri de reddediliyordu.
+
+**Çözüm**: Login kontrolü sadece details eksikse yapılır:
+```typescript
+// ✅ Eğer 18-19 detail varsa zaten login başarılı demektir
+if (fullText && data.details && Object.keys(data.details).length < 3) {
+  const loginCheck = isLoginRequired(fullText);
+  if (loginCheck) {
+    errors.push('İçerik login mesajı içeriyor');
+  }
+}
+```
+
+#### 2. Error Content False Positive Fix
+**Problem**: "404" ya da "500" sayıları ihale miktarlarında geçebiliyor, geçerli veri reddediliyordu.
+
+**Çözüm**: Error kontrolü de sadece details eksikse yapılır:
+```typescript
+if (fullText && (!data.details || Object.keys(data.details).length < 3)) {
+  if (isErrorContent(fullText)) {
+    errors.push('İçerik hata mesajı içeriyor');
+  }
+}
+```
+
+### Validator Fonksiyonları
+
+**isLoginRequired(text: string)**:
+- Strict keywords: "lütfen giriş yapın", "authentication required"
+- İhale içeriği kontrolü: "ihale bilgileri", "kayıt no", "yaklaşık maliyet"
+- İhale içeriği varsa → false (login gerekmiyor)
+
+**isErrorContent(text: string)**:
+- Error keywords: "sayfa bulunamadı", "page not found", "404", "500"
+- Sadece fullText'te aranır
+
+### Akış Diyagramı
+
+```
+User tıklar → fetchFullContent(tenderId)
+  ↓
+1. tryCache (localStorage)
+   ├─ Valid? → Return ✅
+   └─ Invalid? → Delete cache, continue
+  ↓
+2. tryDB (Turso/SQLite)
+   ├─ Valid? → Return ✅
+   └─ Invalid? → Delete DB entry, continue
+  ↓
+3. fetchAI (Puppeteer + Claude)
+   ├─ Valid? → Save to DB → Return ✅
+   └─ Invalid? → Return error ❌
+```
+
+### Test Sonuçları (Nov 9, 2025)
+
+3 ihale üzerinde test edildi:
+
+| Tender ID | Title | Details | Result |
+|-----------|-------|---------|--------|
+| 1759958231462 | İaşe Hizmeti Alınacaktır | 18 | ✅ Pass |
+| 1760908153775 | Yemek Hizmeti Alınacaktır | 24 | ✅ Pass |
+| 1762119925357 | Yemek Hizmeti Alınacaktır | 19 | ✅ Pass (after fix) |
+
+**Önceki Hata** (Tender #3):
+```
+❌ İçerik hata mesajı içeriyor
+```
+
+**Düzeltme Sonrası**:
+```
+✅ [AI Fetch] Validasyon başarılı
+✅ [saveTenderAnalysis (Turso)] Validasyon başarılı
+```
+
+### Kullanım
+
+**Manuel Validasyon**:
+```typescript
+import { validateTenderContent, logValidationResult } from '@/lib/ihale-scraper/validators';
+
+const result = validateTenderContent(data, {
+  minTextLength: 100,
+  minDetailsCount: 3,
+  requireDocuments: false,
+  strict: false, // Warnings yerine errors
+});
+
+logValidationResult('MyContext', result, data);
+```
+
+**Validation Options**:
+- `minTextLength`: Minimum fullText karakter sayısı (default: 100)
+- `minDetailsCount`: Minimum details alan sayısı (default: 3)
+- `requireDocuments`: Documents zorunlu mu? (default: false)
+- `strict`: Warnings'leri error'a çevir (default: false)
+
+### Faydalar
+
+✅ **Kalıcı Cache Kirliliği Önlendi**: Eksik veri artık cache'e kaydedilmiyor
+✅ **Otomatik Temizlik**: Eski geçersiz cache'ler otomatik siliniyor
+✅ **False Positive Önleme**: Login/error kontrolü sadece gerektiğinde yapılıyor
+✅ **3-Katmanlı Güvenlik**: localStorage → DB → AI fetch (her katmanda validasyon)
+✅ **Kullanıcı Dostu**: Toast bildirimleri ile net hata mesajları
+
+---
+
 ## 🐛 TROUBLESHOOTING
 
 ### Scraper Çalışmıyor

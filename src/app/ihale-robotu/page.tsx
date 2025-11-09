@@ -570,8 +570,46 @@ function IhaleTakipPageInner() {
     
     const { fetchFullContent: fetchFullContentAPI } = await import('@/lib/ihale-scraper/fetchFullContent');
     const content = await fetchFullContentAPI(tenderId);
-    
+
     if (content) {
+      // ✅ İçerik validasyonu ekle (cache'e kaydetmeden önce)
+      const { validateTenderContent, logValidationResult } = await import('@/lib/ihale-scraper/validators');
+      const validation = validateTenderContent(content, {
+        minTextLength: 100,
+        minDetailsCount: 3,
+        requireDocuments: false,
+        strict: false,
+      });
+
+      logValidationResult('fetchFullContent (ihale-robotu page)', validation, content);
+
+      if (!validation.valid) {
+        console.error('❌ Geçersiz içerik geldi:', validation.errors);
+
+        // Login hatası mı yoksa içerik hatası mı?
+        const isLoginError = validation.errors.some(e =>
+          e.toLowerCase().includes('login') ||
+          e.toLowerCase().includes('giriş')
+        );
+
+        if (isLoginError) {
+          toast.error('❌ Login hatası! Lütfen tekrar deneyin veya manuel login yapın.', {
+            id: 'fetch-content',
+            duration: 5000,
+          });
+        } else {
+          toast.error(`❌ İçerik yetersiz: ${validation.errors.join(', ')}`, {
+            id: 'fetch-content',
+            duration: 5000,
+          });
+        }
+
+        setLoadingContent(false);
+        setLoadingStartTime(null);
+        setAnalyzingId(null);
+        return;
+      }
+
       setFullContent(JSON.parse(JSON.stringify(content)));
       setSelectedTender(tender);
       setContentCache(prev => ({...prev, [tenderId]: JSON.parse(JSON.stringify(content))}));

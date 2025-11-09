@@ -81,22 +81,65 @@ export async function POST(request: Request) {
         // Wait for navigation after login
         await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 }).catch(() => {});
 
+        // ✅ Login doğrulaması güçlendir
         const currentUrl = page.url();
-        if (!currentUrl.includes('/tenders') && !currentUrl.includes('/ihale')) {
-          console.warn('⚠️ Login may have failed, URL:', currentUrl);
+        const pageContent = await page.content();
+        const isLoginPage = pageContent.toLowerCase().includes('giriş yap') ||
+                           pageContent.toLowerCase().includes('kullanıcı adı') ||
+                           currentUrl.includes('/login');
+
+        if (isLoginPage) {
+          console.error('❌ Login başarısız - hala login sayfasında');
+          throw new Error('Login failed - still on login page');
         } else {
-          console.log('✅ Login successful');
+          console.log('✅ Login successful, redirected to:', currentUrl);
         }
       } catch (loginError) {
         console.error('⚠️ Login error:', loginError);
+        throw new Error(`Login failed: ${loginError}`);
       }
     }
 
     // Navigate to the tender page
+    console.log('🌐 Navigating to tender page:', url);
     await page.goto(url, {
       waitUntil: 'networkidle0',
       timeout: 30000,
     });
+
+    // ✅ Sayfa yüklendikten sonra login kontrolü
+    const pageContent = await page.content();
+    const pageText = await page.evaluate(() => document.body.innerText);
+
+    console.log('📄 Sayfa metni ilk 200 karakter:', pageText.slice(0, 200));
+
+    // Daha akıllı login kontrolü: Sadece belirli pattern'ler
+    const loginPatterns = [
+      'lütfen giriş yapın',
+      'please sign in',
+      'kullanıcı adı',
+      'şifrenizi girin',
+      'oturum açın',
+      'login required',
+      'authentication required'
+    ];
+
+    const lowerText = pageText.toLowerCase();
+    const hasLoginPattern = loginPatterns.some(pattern => lowerText.includes(pattern));
+
+    // Ek kontrol: İhale içerik göstergeleri var mı?
+    const hasTenderContent = lowerText.includes('ihale bilgileri') ||
+                             lowerText.includes('kayıt no') ||
+                             lowerText.includes('ihale başlığı') ||
+                             lowerText.includes('yayın tarihi');
+
+    if (hasLoginPattern && !hasTenderContent) {
+      console.error('❌ Tender sayfası login gerektiriyor');
+      console.error('📄 Sayfa içeriği:', pageText.slice(0, 500));
+      throw new Error('Tender page requires login - session may have expired');
+    }
+
+    console.log('✅ Sayfa başarıyla yüklendi, ihale içeriği mevcut');
 
     // ⏳ WAIT for dynamic content to load (ihalebul uses JavaScript)
     console.log('⏳ Waiting for dynamic content to load...');
@@ -450,6 +493,19 @@ ${innerText.slice(0, 300000)}
       documentsCount: (parsedData.documents || []).length,
     });
 
+    // HTML'den detayları çıkaran fonksiyon (Scraper mantığı ile)
+    async function extractDetailsFromHTML(html: string): Promise<Record<string, string>> {
+      const cheerio = require('cheerio');
+      const $ = cheerio.load(html);
+      const details: Record<string, string> = {};
+      $('#tender .row').each((i: any, row: any) => {
+        const key = $(row).find('.fw-bold').text().replace(/\s+/g, ' ').trim();
+        const value = $(row).find('.text-dark-emphasis').text().replace(/\s+/g, ' ').trim();
+        if (key && value) details[key] = value;
+      });
+      return details;
+    }
+
     // Scraper'dan gelen details ana kaynak, AI'dan gelen ek bilgiler (ör: açıklama, risk, özel şartlar) sadece gerektiğinde eklenir
     const structuredData = {
       title: parsedData.title || '',
@@ -463,17 +519,26 @@ ${innerText.slice(0, 300000)}
       ...(parsedData.ozel_sartlar ? { ozel_sartlar: parsedData.ozel_sartlar } : {}),
     };
 
-    // HTML'den detayları çıkaran fonksiyon (Scraper mantığı ile)
-    async function extractDetailsFromHTML(html: string): Promise<Record<string, string>> {
-      const cheerio = require('cheerio');
-      const $ = cheerio.load(html);
-      const details: Record<string, string> = {};
-      $('#tender .row').each((i: any, row: any) => {
-        const key = $(row).find('.fw-bold').text().replace(/\s+/g, ' ').trim();
-        const value = $(row).find('.text-dark-emphasis').text().replace(/\s+/g, ' ').trim();
-        if (key && value) details[key] = value;
-      });
-      return details;
+    // ✅ İçerik validasyonu ekle (DB'ye kaydetmeden önce)
+    const { validateTenderContent, logValidationResult } = await import('@/lib/ihale-scraper/validators');
+    const validation = validateTenderContent(structuredData, {
+      minTextLength: 100,
+      minDetailsCount: 3,
+      requireDocuments: false,
+      strict: false,
+    });
+
+    logValidationResult('AI Fetch (fetch-full-content)', validation, structuredData);
+
+    if (!validation.valid) {
+      console.error('❌ AI parse sonucu geçersiz:', validation.errors);
+      return NextResponse.json(
+        {
+          success: false,
+          error: `AI parsing validation failed: ${validation.errors.join(', ')}`,
+        },
+        { status: 400 }
+      );
     }
 
     // 🆕 Parse edilen detayları veritabanına kaydet (eğer tenderId varsa)
@@ -490,6 +555,7 @@ ${innerText.slice(0, 300000)}
         });
 
         // 2. tender_analysis tablosuna kaydet (cache için)
+        // saveTenderAnalysis içinde de validasyon var, ancak zaten burada geçerli olduğunu biliyoruz
         const saveResult = await TenderDatabase.saveTenderAnalysis(
           tenderId.toString(),
           structuredData, // analysisResult

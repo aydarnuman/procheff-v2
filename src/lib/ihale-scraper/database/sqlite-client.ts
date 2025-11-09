@@ -752,6 +752,26 @@ export class TenderDatabase {
   static async saveTenderAnalysis(tenderId: string, analysisResult: any, fullContent: any): Promise<{ success: boolean; error?: string }> {
     try {
       console.log(`💾 [DB] saveTenderAnalysis called for: ${tenderId}`);
+
+      // ✅ İçerik validasyonu ekle
+      const { validateTenderContent, logValidationResult } = await import('../validators');
+      const validation = validateTenderContent(analysisResult, {
+        minTextLength: 100,
+        minDetailsCount: 3,
+        requireDocuments: false, // Bazı ihalelerde doküman olmayabilir
+        strict: false, // Uyarılar sadece log'lanacak
+      });
+
+      logValidationResult('saveTenderAnalysis', validation, analysisResult);
+
+      if (!validation.valid) {
+        console.error(`❌ [DB] Geçersiz içerik, DB'ye kaydedilmiyor:`, validation.errors);
+        return {
+          success: false,
+          error: `Validation failed: ${validation.errors.join(', ')}`
+        };
+      }
+
       const db = getDatabase();
       const stmt = db.prepare(`
         INSERT INTO tender_analysis (tender_id, analysis_result, full_content, analyzed_at, updated_at)
@@ -807,9 +827,33 @@ export class TenderDatabase {
         plainRow[key] = result[key];
       }
 
+      const analysisResult = plainRow.analysis_result ? JSON.parse(plainRow.analysis_result as string) : null;
+
+      // ✅ Okunan veriyi validate et
+      if (analysisResult) {
+        const { validateTenderContent, logValidationResult } = await import('../validators');
+        const validation = validateTenderContent(analysisResult, {
+          minTextLength: 100,
+          minDetailsCount: 3,
+          requireDocuments: false,
+          strict: false,
+        });
+
+        if (!validation.valid) {
+          console.error(`❌ [DB] Cache'deki veri geçersiz, siliniyor:`, validation.errors);
+          logValidationResult('getTenderAnalysis (cache invalid)', validation, analysisResult);
+
+          // Geçersiz cache'i sil
+          const deleteStmt = db.prepare(`DELETE FROM tender_analysis WHERE tender_id = ?`);
+          deleteStmt.run(tenderId);
+
+          return null;
+        }
+      }
+
       console.log(`✅ [DB] Analysis found for tender_id: ${tenderId}`);
       return {
-        analysisResult: plainRow.analysis_result ? JSON.parse(plainRow.analysis_result as string) : null,
+        analysisResult,
         fullContent: plainRow.full_content ? JSON.parse(plainRow.full_content as string) : null
       };
     } catch (error: any) {

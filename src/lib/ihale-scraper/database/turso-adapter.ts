@@ -720,7 +720,26 @@ export class TursoTenderDatabase {
   static async saveTenderAnalysis(tenderId: string, analysisResult: any, fullContent: any): Promise<{ success: boolean; error?: string }> {
     try {
       console.log(`💾 [DB] saveTenderAnalysis called for: ${tenderId}`);
-      
+
+      // ✅ İçerik validasyonu ekle
+      const { validateTenderContent, logValidationResult } = await import('../validators');
+      const validation = validateTenderContent(analysisResult, {
+        minTextLength: 100,
+        minDetailsCount: 3,
+        requireDocuments: false, // Bazı ihalelerde doküman olmayabilir
+        strict: false, // Uyarılar sadece log'lanacak
+      });
+
+      logValidationResult('saveTenderAnalysis (Turso)', validation, analysisResult);
+
+      if (!validation.valid) {
+        console.error(`❌ [DB] Geçersiz içerik, DB'ye kaydedilmiyor:`, validation.errors);
+        return {
+          success: false,
+          error: `Validation failed: ${validation.errors.join(', ')}`
+        };
+      }
+
       const analysisJson = JSON.stringify(analysisResult);
       const fullContentJson = JSON.stringify(fullContent);
 
@@ -751,7 +770,7 @@ export class TursoTenderDatabase {
   static async getTenderAnalysis(tenderId: string): Promise<{ analysisResult: any; fullContent: any } | null> {
     try {
       console.log(`📊 [DB] getTenderAnalysis(${tenderId})`);
-      
+
       const result = await executeQuerySingle(
         `SELECT analysis_result, full_content FROM tender_analysis WHERE tender_id = ?`,
         [tenderId]
@@ -763,9 +782,35 @@ export class TursoTenderDatabase {
       }
 
       const row = result as any;
+      const analysisResult = row.analysis_result ? JSON.parse(row.analysis_result) : null;
+
+      // ✅ Okunan veriyi validate et
+      if (analysisResult) {
+        const { validateTenderContent, logValidationResult } = await import('../validators');
+        const validation = validateTenderContent(analysisResult, {
+          minTextLength: 100,
+          minDetailsCount: 3,
+          requireDocuments: false,
+          strict: false,
+        });
+
+        if (!validation.valid) {
+          console.error(`❌ [DB] Cache'deki veri geçersiz, siliniyor:`, validation.errors);
+          logValidationResult('getTenderAnalysis (Turso - cache invalid)', validation, analysisResult);
+
+          // Geçersiz cache'i sil
+          await executeWrite(
+            `DELETE FROM tender_analysis WHERE tender_id = ?`,
+            [tenderId]
+          );
+
+          return null;
+        }
+      }
+
       console.log(`✅ [DB] Analysis found for tender_id: ${tenderId}`);
       return {
-        analysisResult: row.analysis_result ? JSON.parse(row.analysis_result) : null,
+        analysisResult,
         fullContent: row.full_content ? JSON.parse(row.full_content) : null
       };
     } catch (error: any) {

@@ -130,6 +130,62 @@ const tenders = db.prepare('SELECT * FROM tenders WHERE id = ?').get(id);
 
 ---
 
+## 🔒 İhale Content Validation System (Nov 9, 2025)
+
+**CRITICAL**: NEVER cache invalid/incomplete tender content. All cache layers MUST validate.
+
+### Validation Pattern (5 Layers)
+
+```typescript
+import { validateTenderContent } from '@/lib/ihale-scraper/validators';
+
+const validation = validateTenderContent(data, {
+  minTextLength: 100,
+  minDetailsCount: 3,
+  requireDocuments: false,
+  strict: false,
+});
+
+if (!validation.valid) {
+  // Delete invalid cache entry
+  delete cache[tenderId];
+  return null; // Fallback to next layer
+}
+```
+
+**Where to Validate**:
+1. ✅ localStorage (fetchFullContent.ts)
+2. ✅ SQLite DB (sqlite-client.ts)
+3. ✅ Turso DB (turso-adapter.ts)
+4. ✅ AI Fetch API (fetch-full-content/route.ts)
+5. ✅ Frontend (ihale-robotu/page.tsx)
+
+### False Positive Prevention
+
+```typescript
+// ✅ CORRECT - Skip login check if details exist
+if (fullText && data.details && Object.keys(data.details).length < 3) {
+  const loginCheck = isLoginRequired(fullText);
+  if (loginCheck) {
+    errors.push('İçerik login mesajı içeriyor');
+  }
+}
+
+// ❌ WRONG - Always checking (causes false positives)
+if (isLoginRequired(fullText)) {
+  errors.push('Login required');
+}
+```
+
+**Reasoning**: If `details` has 18-19 items, login was successful. "Giriş Yap" button in page menu should not trigger error.
+
+**Auto-Cleanup**:
+- Invalid cache → delete from localStorage
+- Invalid DB entry → delete from database
+- Fallback: localStorage → DB → AI fetch
+
+---
+
 ## 🎨 UI/UX & Notifications
 
 ### Toast Notifications (Sonner)
@@ -244,6 +300,21 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 ---
 
-**Version**: 0.2.1
-**Last Updated**: November 8, 2025
-**Major Changes**: Routing fix, premium UI, workspace integration
+## 📋 Recent Updates
+
+### Nov 9, 2025 - Content Validation System
+✅ 5-layer validation (localStorage, SQLite, Turso, API, Frontend)
+✅ False positive fixes (login menu, error codes in amounts)
+✅ Auto-cleanup invalid cache
+✅ 3/3 real tenders tested successfully
+
+### Nov 8, 2025 - Routing & Premium UI
+✅ Fixed dynamic routing conflict
+✅ Premium dark button styling
+✅ Gradient tabs for special features
+
+---
+
+**Version**: 0.3.0
+**Last Updated**: November 9, 2025
+**Major Changes**: Content validation system, cache integrity, false positive prevention

@@ -389,6 +389,134 @@ function useTenderAnalysis(tenderId: string) {
 
 ---
 
+## İhale Scraper - Content Validation Rules (Nov 9, 2025)
+
+### Validation System Architecture
+
+**NEVER cache invalid/incomplete tender content**. All cache layers (localStorage, SQLite, Turso) MUST validate data before save/return.
+
+**Validator Location**: `src/lib/ihale-scraper/validators.ts`
+
+**Core Principle**: "If `details` field exists and has 3+ items, login was successful and page is valid. Skip login/error checks."
+
+### Validation Rules
+
+**ALWAYS validate at these 5 layers**:
+1. ✅ localStorage cache (fetchFullContent.ts → tryCache)
+2. ✅ SQLite DB (sqlite-client.ts → saveTenderAnalysis + getTenderAnalysis)
+3. ✅ Turso DB (turso-adapter.ts → saveTenderAnalysis + getTenderAnalysis)
+4. ✅ AI Fetch API (fetch-full-content/route.ts → before response)
+5. ✅ Frontend (ihale-robotu/page.tsx → before state update)
+
+**Validation Pattern**:
+```typescript
+import { validateTenderContent, logValidationResult } from '@/lib/ihale-scraper/validators';
+
+const validation = validateTenderContent(data, {
+  minTextLength: 100,
+  minDetailsCount: 3,
+  requireDocuments: false,
+  strict: false,
+});
+
+if (!validation.valid) {
+  // Delete invalid cache/DB entry
+  // Return null or error
+  logValidationResult('Context', validation, data);
+  return null;
+}
+```
+
+### Critical Logic: False Positive Prevention
+
+**Login Check** (ONLY if details < 3):
+```typescript
+// ✅ CORRECT - Skip if details exist
+if (fullText && data.details && Object.keys(data.details).length < 3) {
+  const loginCheck = isLoginRequired(fullText);
+  if (loginCheck) {
+    errors.push('İçerik login mesajı içeriyor');
+  }
+}
+
+// ❌ WRONG - Always checking
+if (isLoginRequired(fullText)) {
+  errors.push('Login required');
+}
+```
+
+**Error Content Check** (ONLY if details < 3):
+```typescript
+// ✅ CORRECT - Skip if details exist
+if (fullText && (!data.details || Object.keys(data.details).length < 3)) {
+  if (isErrorContent(fullText)) {
+    errors.push('İçerik hata mesajı içeriyor');
+  }
+}
+
+// ❌ WRONG - Always checking
+if (isErrorContent(fullText)) {
+  errors.push('Error found');
+}
+```
+
+**Reasoning**:
+- "Giriş Yap" button exists in page menu (navigation)
+- "404", "500" can appear in tender amounts/quantities
+- If `details` field has 18-19 items, login was successful
+- Only check login/error when data is incomplete
+
+### Auto-Cleanup Pattern
+
+**localStorage** (client-side):
+```typescript
+if (!validation.valid) {
+  delete parsed[tenderId];
+  localStorage.setItem('ihale-content-cache', JSON.stringify(parsed));
+  return null; // Fallback to DB
+}
+```
+
+**Database** (server-side):
+```typescript
+if (!validation.valid) {
+  // Delete invalid entry
+  await db.execute(`DELETE FROM tender_analysis WHERE tender_id = ?`, [tenderId]);
+  return null; // Fallback to AI fetch
+}
+```
+
+### NEVER
+
+- ❌ Save data without validation
+- ❌ Always run login/error checks (causes false positives)
+- ❌ Return invalid data from cache
+- ❌ Skip validation in any layer
+
+### ALWAYS
+
+- ✅ Validate before save (all layers)
+- ✅ Validate after load (all layers)
+- ✅ Auto-delete invalid cache entries
+- ✅ Check `details` count before running login/error checks
+- ✅ Log validation results with `logValidationResult()`
+
+### Validation Criteria
+
+**Minimum Requirements**:
+- `fullText`: >= 100 characters
+- `details`: >= 3 fields (object)
+- `title`: non-empty string
+- `documents`: optional (warning if missing)
+- `organization`: optional (warning if missing)
+
+**Strict Mode** (`strict: true`):
+- Warnings become errors
+- Enforces documents array
+- Enforces title and organization
+
+---
+
 ## Database Rules (SQLite)
 
 ### Singleton Pattern (CRITICAL)
@@ -802,6 +930,32 @@ docker compose restart         # Restart app
 
 ---
 
-**Last Updated**: November 8, 2025
-**Version**: 0.2.1
+## Recent Updates Log
+
+### November 9, 2025 - Content Validation System
+**Problem Solved**: Incomplete tender content being permanently cached, causing poor UX on detail pages.
+
+**Solution**: 5-layer validation system with auto-cleanup:
+- Created `validators.ts` with smart validation (skip login/error checks if details exist)
+- Integrated validation in: localStorage, SQLite, Turso, AI API, Frontend
+- Fixed 2 false positives: Login menu detection, error code in amounts
+- Tested on 3 real tenders (18-24 details each) - all passing
+
+**Key Files**:
+- [validators.ts](src/lib/ihale-scraper/validators.ts) - Core validation logic
+- [fetchFullContent.ts](src/lib/ihale-scraper/fetchFullContent.ts) - localStorage validation
+- [sqlite-client.ts](src/lib/ihale-scraper/database/sqlite-client.ts) - SQLite validation
+- [turso-adapter.ts](src/lib/ihale-scraper/database/turso-adapter.ts) - Turso validation
+- [route.ts](src/app/api/ihale-scraper/fetch-full-content/route.ts) - AI API validation
+- [page.tsx](src/app/ihale-robotu/page.tsx) - Frontend validation
+
+**Result**: ✅ Cache pollution prevented, auto-cleanup working, 3/3 tenders validated successfully
+
+### November 8, 2025 - Routing & Premium UI
 **Major Focus**: Routing system fix, premium UI styling, workspace integration
+
+---
+
+**Last Updated**: November 9, 2025
+**Version**: 0.3.0
+**Major Focus**: Content validation system, cache integrity, false positive prevention

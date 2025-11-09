@@ -1,6 +1,8 @@
 // fetchFullContent.ts
 // Tek akış: tryCache → tryDB → fetchAI
 
+import { validateTenderContent, logValidationResult } from './validators';
+
 export async function fetchFullContent(tenderId: string): Promise<any> {
   // Validation: tenderId string ve yeterince uzun olmalı
   if (!tenderId || typeof tenderId !== 'string' || tenderId.length < 8) {
@@ -41,10 +43,42 @@ function tryCache(tenderId: string): any {
   if (typeof window !== 'undefined') {
     const cache = localStorage.getItem('ihale-content-cache');
     if (cache) {
-      const parsed = JSON.parse(cache);
-      if (parsed[tenderId]) {
-        console.log('💚 Cache bulundu:', tenderId);
-        return parsed[tenderId];
+      try {
+        const parsed = JSON.parse(cache);
+        if (parsed[tenderId]) {
+          const cachedData = parsed[tenderId];
+
+          // ✅ Cache validasyonu ekle
+          try {
+            const validation = validateTenderContent(cachedData, {
+              minTextLength: 100,
+              minDetailsCount: 3,
+              requireDocuments: false,
+              strict: false,
+            });
+
+            if (!validation.valid) {
+              console.error(`❌ localStorage cache'deki veri geçersiz, siliniyor:`, validation.errors);
+              logValidationResult('tryCache (localStorage - invalid)', validation, cachedData);
+
+              // Geçersiz cache'i sil
+              delete parsed[tenderId];
+              localStorage.setItem('ihale-content-cache', JSON.stringify(parsed));
+
+              return null;
+            }
+
+            console.log('💚 Cache bulundu ve geçerli:', tenderId);
+            return cachedData;
+          } catch (validationError) {
+            console.error('❌ Validasyon hatası:', validationError);
+            // Validasyon hatası olursa cache'i kullanma
+            return null;
+          }
+        }
+      } catch (e) {
+        console.error('❌ Cache parse hatası:', e);
+        return null;
       }
     }
   }
