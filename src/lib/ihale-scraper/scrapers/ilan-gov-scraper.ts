@@ -6,6 +6,7 @@
 import { BaseScraper } from './base-scraper';
 import type { ScrapedTender } from '../types';
 import * as cheerio from 'cheerio';
+import type { Element as DomHandlerElement } from 'domhandler';
 import puppeteer from 'puppeteer';
 import axios from 'axios';
 import { MOCK_TENDERS } from '../test-data';
@@ -358,7 +359,7 @@ export class IlanGovScraper extends BaseScraper {
 
         elements.each((i, elem) => {
           try {
-            const tender = this.parseHTMLElement($, $(elem) as cheerio.Cheerio<cheerio.Element>);
+            const tender = this.parseHTMLElement($, $(elem) as cheerio.Cheerio<DomHandlerElement>);
             if (this.validateTender(tender)) {
               tenders.push(tender as ScrapedTender);
             }
@@ -407,8 +408,8 @@ export class IlanGovScraper extends BaseScraper {
   /**
    * Parse HTML element to ScrapedTender
    */
-  private parseHTMLElement($: cheerio.CheerioAPI, elem: cheerio.Cheerio<cheerio.Element>): Partial<ScrapedTender> {
-    const $elem = $(elem);
+  private parseHTMLElement($: cheerio.CheerioAPI, elem: cheerio.Cheerio<DomHandlerElement>): Partial<ScrapedTender> {
+    const $elem = elem;
 
     const title =
       $elem.find('.baslik, .title, .ihale-adi, h3, h4, td:nth-child(2), .col:nth-child(2)').first().text().trim() ||
