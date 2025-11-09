@@ -5,6 +5,7 @@
 // ============================================================================
 
 import * as cheerio from 'cheerio';
+import type { Element } from 'domhandler';
 
 /**
  * İhale kalemi (mal/hizmet)
@@ -68,7 +69,7 @@ export class ItemParser {
   /**
    * 📝 Tek bir satırı parse et - Farklı sütun düzenlerini handle eder
    */
-  private static parseItemRow($row: cheerio.Cheerio<cheerio.AnyNode>, $: cheerio.CheerioAPI): TenderItem | null {
+  private static parseItemRow($row: cheerio.Cheerio<Element>, $: cheerio.CheerioAPI): TenderItem | null {
     const cells = $row.find('td');
     if (cells.length < 1) return null; // En az 1 hücre olmalı
 
