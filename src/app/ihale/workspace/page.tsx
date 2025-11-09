@@ -7,22 +7,59 @@
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Loader2, CheckCircle, XCircle, FileText, Download, ArrowLeft } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, FileText, Download, ArrowLeft, Terminal, Bug } from 'lucide-react';
 import { SimpleDocumentList } from '@/components/ihale/SimpleDocumentList';
 import { useIhaleStore, FileMetadata } from '@/lib/stores/ihale-store';
 import { toast } from 'sonner';
+import { AILogger } from '@/lib/utils/ai-logger';
+
+// ============================================================================
+// TYPE DEFINITIONS
+// ============================================================================
+
+type SupportedMimeType = 
+  | 'application/pdf'
+  | 'application/msword'
+  | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  | 'application/vnd.ms-excel'
+  | 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  | 'text/plain'
+  | 'text/csv'
+  | 'image/png'
+  | 'image/jpeg'
+  | 'image/jpg'
+  | 'image/tiff'
+  | 'application/zip';
+
+enum FileProcessStatus {
+  PENDING = 'pending',
+  PROCESSING = 'processing',
+  COMPLETED = 'completed',
+  ERROR = 'error'
+}
+
+enum SessionStatus {
+  CREATED = 'created',
+  UPLOADING = 'uploading',
+  UPLOADED = 'uploaded',
+  ANALYZING = 'analyzing',
+  COMPLETED = 'completed',
+  ERROR = 'error'
+}
 
 interface TenderFile {
   id: string;
   filename: string;
-  mimeType: string;
+  mimeType: SupportedMimeType;
   size: number;
   isExtractedFromZip?: boolean;
+  uploadedAt?: Date;
+  processedAt?: Date;
 }
 
 interface TenderSession {
   id: string;
-  status: 'created' | 'uploading' | 'uploaded' | 'analyzing' | 'completed' | 'error';
+  status: SessionStatus;
   files: TenderFile[];
   result?: any;
   errorMessage?: string;
@@ -61,17 +98,230 @@ function TenderWorkspacePageInner() {
 }
 
 // ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+// Debug Mode (development'ta true, production'da false)
+const IS_DEBUG = process.env.NODE_ENV === 'development';
+
+// Enhanced Logging Helper
+const workspaceLogger = {
+  info: (stage: string, message: string, data?: any) => {
+    const timestamp = new Date().toISOString();
+    const logData = { timestamp, stage, message, ...data };
+    
+    if (IS_DEBUG) {
+      console.log(`🔵 [WORKSPACE/${stage}]`, message, data || '');
+    }
+    
+    // AILogger için terminal output
+    AILogger.info(`[WORKSPACE] ${stage}: ${message}`);
+    return logData;
+  },
+  
+  success: (stage: string, message: string, data?: any) => {
+    const timestamp = new Date().toISOString();
+    const logData = { timestamp, stage, message, ...data };
+    
+    if (IS_DEBUG) {
+      console.log(`✅ [WORKSPACE/${stage}]`, message, data || '');
+    }
+    
+    AILogger.success(`[WORKSPACE] ${stage}: ${message}`);
+    return logData;
+  },
+  
+  error: (stage: string, message: string, error?: any, data?: any) => {
+    const timestamp = new Date().toISOString();
+    const errorDetails = {
+      timestamp,
+      stage,
+      message,
+      errorType: error?.name || 'UnknownError',
+      errorMessage: error?.message || String(error),
+      stack: IS_DEBUG ? error?.stack : undefined,
+      ...data
+    };
+    
+    console.error(`❌ [WORKSPACE/${stage}]`, message, errorDetails);
+    AILogger.error(`[WORKSPACE] ${stage}: ${message} - ${error?.message || error}`);
+    
+    return errorDetails;
+  },
+  
+  warning: (stage: string, message: string, data?: any) => {
+    const timestamp = new Date().toISOString();
+    const logData = { timestamp, stage, message, ...data };
+    
+    if (IS_DEBUG) {
+      console.warn(`⚠️ [WORKSPACE/${stage}]`, message, data || '');
+    }
+    
+    AILogger.warning(`[WORKSPACE] ${stage}: ${message}`);
+    return logData;
+  },
+  
+  debug: (stage: string, message: string, data?: any) => {
+    if (IS_DEBUG) {
+      const timestamp = new Date().toISOString();
+      console.debug(`🐛 [WORKSPACE/${stage}]`, message, data || '');
+    }
+  }
+};
+
+// Constants
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+const ALLOWED_MIME_TYPES: SupportedMimeType[] = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/plain',
+  'text/csv',
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/tiff',
+  'application/zip'
+];
+
+// File validation
+const validateFile = (file: File): { valid: boolean; error?: string } => {
+  workspaceLogger.debug('VALIDATION', 'Validating file', {
+    name: file.name,
+    size: file.size,
+    type: file.type
+  });
+
+  // Size check
+  if (file.size > MAX_FILE_SIZE) {
+    const error = `Dosya çok büyük. Maksimum ${MAX_FILE_SIZE / 1024 / 1024}MB (${file.name}: ${(file.size / 1024 / 1024).toFixed(1)}MB)`;
+    workspaceLogger.error('VALIDATION', 'File too large', null, {
+      fileName: file.name,
+      fileSize: file.size,
+      maxSize: MAX_FILE_SIZE
+    });
+    return { valid: false, error };
+  }
+
+  // Empty file check
+  if (file.size === 0) {
+    workspaceLogger.error('VALIDATION', 'Empty file', null, { fileName: file.name });
+    return { valid: false, error: 'Dosya boş' };
+  }
+
+  // MIME type check
+  if (!ALLOWED_MIME_TYPES.includes(file.type as SupportedMimeType)) {
+    const error = `Desteklenmeyen dosya formatı: ${file.type}. İzin verilenler: PDF, Word, Excel, Text, Image, ZIP`;
+    workspaceLogger.error('VALIDATION', 'Unsupported MIME type', null, {
+      fileName: file.name,
+      mimeType: file.type,
+      allowedTypes: ALLOWED_MIME_TYPES
+    });
+    return { valid: false, error };
+  }
+
+  // Filename security check (prevent path traversal)
+  if (/[\/\\]/.test(file.name)) {
+    workspaceLogger.error('VALIDATION', 'Path traversal attempt', null, { fileName: file.name });
+    return { valid: false, error: 'Dosya adı geçersiz karakter içeriyor (/ veya \\)' };
+  }
+
+  // Check for dangerous characters
+  if (!/^[\w\s\-_.()ğüşıöçĞÜŞİÖÇ]+\.[a-zA-Z0-9]+$/i.test(file.name)) {
+    workspaceLogger.error('VALIDATION', 'Invalid filename characters', null, { fileName: file.name });
+    return { 
+      valid: false, 
+      error: 'Dosya adı yalnızca harf, rakam, boşluk ve .-_() karakterlerini içerebilir' 
+    };
+  }
+
+  workspaceLogger.success('VALIDATION', 'File validated', { fileName: file.name });
+  return { valid: true };
+};
+
+// Türkçe karakterleri destekleyen kelime sayma
+const countWords = (text: string): number => {
+  if (!text || text.trim().length === 0) return 0;
+  const words = text.match(/[\wğüşıöçĞÜŞİÖÇ]+/gu);
+  return words ? words.length : 0;
+};
+
+// Token tahmini (Türkçe için ~1.3 token/kelime)
+const estimateTokens = (text: string): number => {
+  const wordCount = countWords(text);
+  return Math.ceil(wordCount * 1.3);
+};
+
+// Token limits (Claude Sonnet 4)
+const MAX_TOKENS = 180000; // 200K limiti, güvenlik için 180K
+const CHUNK_SIZE_TOKENS = 50000; // Her chunk max 50K token
+
+// OCR detection
+const shouldUseOCR = (file: File): boolean => {
+  const fileName = file.name.toLowerCase();
+  const fileType = file.type;
+  
+  // Image dosyaları kesinlikle OCR
+  if (fileType.startsWith('image/') || 
+      fileName.match(/\.(png|jpg|jpeg|tiff|bmp|webp)$/)) {
+    return true;
+  }
+  
+  // PDF'ler için OCR (scanned vs native ayrımı yapılabilir gelecekte)
+  if (fileType === 'application/pdf' || fileName.endsWith('.pdf')) {
+    return true;
+  }
+  
+  return false;
+};
+
+// ============================================================================
 // MODE 1: PROCESSING MODE (dosya işleme)
 // ============================================================================
 function ProcessingMode() {
   const router = useRouter();
-  const { fileStatuses, addFileStatus, updateFileStatus, removeFileStatus } = useIhaleStore();
+  const { fileStatuses, addFileStatus, updateFileStatus, removeFileStatus, clearFileStatuses } = useIhaleStore();
   const [processing, setProcessing] = useState(false);
-  const [fileObjects, setFileObjects] = useState<Map<string, File>>(new Map()); // File objelerini ayrı sakla
+  const [fileObjects, setFileObjects] = useState<Map<string, File>>(new Map());
+
+  // ⚠️ MEMORY LEAK PREVENTİON: Component unmount olunca temizle
+  useEffect(() => {
+    return () => {
+      // File objelerini temizle
+      setFileObjects(new Map());
+      // Store'daki file status'ları da temizle
+      clearFileStatuses();
+    };
+  }, [clearFileStatuses]);
 
   // Dosya seçme
   const handleFileSelect = async (files: File[]) => {
+    workspaceLogger.info('FILE_SELECT', `Dosya seçildi (${files.length})`, {
+      fileCount: files.length,
+      files: files.map(f => ({ name: f.name, size: f.size, type: f.type }))
+    });
+
+    let validCount = 0;
+    let invalidCount = 0;
+    const validationErrors: Array<{ file: string; error: string }> = [];
+
     for (const file of files) {
+      // ✅ FILE VALIDATION
+      const validation = validateFile(file);
+      
+      if (!validation.valid) {
+        // Geçersiz dosya - kullanıcıyı uyar
+        toast.error(`${file.name}: ${validation.error}`, { 
+          duration: 5000,
+          description: 'Dosya validation başarısız'
+        });
+        validationErrors.push({ file: file.name, error: validation.error! });
+        invalidCount++;
+        continue; // Bu dosyayı atla
+      }
+
       // File metadata oluştur
       const metadata: FileMetadata = {
         name: file.name,
@@ -87,10 +337,41 @@ function ProcessingMode() {
         progress: 'Bekliyor...'
       });
 
-      // File objesini ayrı sakla
+      // File objesini geçici olarak sakla (işlendikten sonra silinecek)
       setFileObjects(prev => new Map(prev).set(file.name, file));
+      validCount++;
+      
+      workspaceLogger.success('FILE_SELECT', `Dosya eklendi: ${file.name}`, {
+        size: file.size,
+        type: file.type
+      });
     }
-    toast.success(`${files.length} dosya eklendi`);
+
+    // Özet logging
+    if (invalidCount > 0) {
+      workspaceLogger.warning('FILE_SELECT', `Geçersiz dosyalar`, {
+        invalidCount,
+        errors: validationErrors
+      });
+    }
+
+    // Özet toast
+    if (validCount > 0) {
+      const message = `${validCount} dosya eklendi${invalidCount > 0 ? ` (${invalidCount} geçersiz atlandı)` : ''}`;
+      toast.success(message, {
+        description: `Toplam: ${files.length} dosya`
+      });
+      workspaceLogger.success('FILE_SELECT', 'Dosya ekleme tamamlandı', {
+        valid: validCount,
+        invalid: invalidCount,
+        total: files.length
+      });
+    } else if (invalidCount > 0) {
+      toast.error(`Tüm dosyalar geçersiz (${invalidCount})`, {
+        description: 'Dosya gereksinimlerini kontrol edin'
+      });
+      workspaceLogger.error('FILE_SELECT', 'Tüm dosyalar geçersiz', null, { invalidCount });
+    }
   };
 
   // Dosya silme
@@ -106,44 +387,90 @@ function ProcessingMode() {
 
   // Tek dosyayı işle
   const handleFileProcess = async (fileName: string) => {
+    workspaceLogger.info('FILE_PROCESS', `İşlem başlatılıyor: ${fileName}`);
+    
     const fileStatus = fileStatuses.find(f => f.fileMetadata.name === fileName);
     const fileObject = fileObjects.get(fileName);
 
     if (!fileStatus || !fileObject) {
-      toast.error('Dosya bulunamadı');
+      const errorMsg = 'Dosya bulunamadı';
+      workspaceLogger.error('FILE_PROCESS', errorMsg, null, { fileName });
+      toast.error(errorMsg, { description: fileName });
       return;
     }
 
     // Status'u processing'e çek
     updateFileStatus(fileName, { status: 'processing', progress: 'Başlatılıyor...' });
+    workspaceLogger.info('FILE_PROCESS', `Processing başladı: ${fileName}`, {
+      size: fileObject.size,
+      type: fileObject.type
+    });
+
+    let response: Response | null = null;
+    const startTime = Date.now();
 
     try {
       // FormData oluştur
       const formData = new FormData();
       formData.append('file0', fileObject);
       formData.append('fileCount', '1');
-      // PDF ise OCR kullan
-      const useOCR = fileObject.type === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf');
+      
+      // ✅ SMART OCR DETECTION
+      const useOCR = shouldUseOCR(fileObject);
       formData.append('useOCR', useOCR ? 'true' : 'false');
+      if (useOCR) {
+        formData.append('ocrQuality', 'high');
+        formData.append('ocrLanguage', 'tur');
+        workspaceLogger.info('FILE_PROCESS', `OCR enabled: ${fileName}`, { useOCR, quality: 'high' });
+      }
 
       // SSE ile stream al
-      const response = await fetch('/api/upload', {
+      workspaceLogger.info('FILE_PROCESS', `Upload başlatılıyor: ${fileName}`);
+      response = await fetch('/api/upload', {
         method: 'POST',
         body: formData
       });
 
-      if (!response.ok) throw new Error('Upload failed');
+      if (!response.ok) {
+        const errorMsg = `Upload failed with status ${response.status}`;
+        workspaceLogger.error('FILE_PROCESS', errorMsg, null, { 
+          fileName, 
+          status: response.status,
+          statusText: response.statusText 
+        });
+        throw new Error(errorMsg);
+      }
+
+      workspaceLogger.success('FILE_PROCESS', `Upload başarılı, stream okunuyor: ${fileName}`);
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
+      
+      // ✅ SSE BUFFER FIX: Partial message'ları handle etmek için buffer kullan
+      let buffer = '';
 
       if (reader) {
+        workspaceLogger.info('FILE_PROCESS', `SSE stream başladı: ${fileName}`);
+        let chunkCount = 0;
+
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
+          if (done) {
+            workspaceLogger.info('FILE_PROCESS', `SSE stream tamamlandı: ${fileName}`, { 
+              totalChunks: chunkCount 
+            });
+            break;
+          }
 
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n\n');
+          chunkCount++;
+          // Chunk'ı buffer'a ekle
+          buffer += decoder.decode(value, { stream: true });
+          
+          // Buffer'ı satırlara böl
+          const lines = buffer.split('\n\n');
+          
+          // Son satır incomplete olabilir, buffer'da tut
+          buffer = lines.pop() || '';
 
           for (const line of lines) {
             if (line.startsWith('data: ')) {
@@ -151,21 +478,24 @@ function ProcessingMode() {
                 const data = JSON.parse(line.slice(6));
 
                 if (data.type === 'progress') {
+                  workspaceLogger.debug('FILE_PROCESS', `Progress: ${data.message}`, { fileName });
                   updateFileStatus(fileName, {
                     status: 'processing',
                     progress: data.message
                   });
                 } else if (data.type === 'success') {
-                  // SSE'den gelen data formatı: { type: 'success', text: '...', stats: { wordCount: ... } }
+                  // SSE'den gelen data formatı
                   const extractedText = data.text || '';
                   const wordCount = data.stats?.wordCount ||
                                    data.stats?.totalWordCount ||
                                    extractedText.split(/\s+/).filter((w: string) => w.length > 0).length;
 
-                  console.log('✅ Dosya işlendi:', {
-                    fileName,
+                  const processingTime = Date.now() - startTime;
+
+                  workspaceLogger.success('FILE_PROCESS', `Dosya işlendi: ${fileName}`, {
                     textLength: extractedText.length,
                     wordCount,
+                    processingTime: `${(processingTime / 1000).toFixed(2)}s`,
                     stats: data.stats
                   });
 
@@ -175,87 +505,320 @@ function ProcessingMode() {
                     extractedText,
                     wordCount
                   });
-                  toast.success(`${fileName} işlendi (${wordCount.toLocaleString('tr-TR')} kelime)`);
+                  
+                  toast.success(`${fileName} işlendi`, {
+                    description: `${wordCount.toLocaleString('tr-TR')} kelime • ${(processingTime / 1000).toFixed(1)}s`
+                  });
+                  
+                  // ✅ MEMORY OPTIMIZATION
+                  setFileObjects(prev => {
+                    const next = new Map(prev);
+                    next.delete(fileName);
+                    return next;
+                  });
+                  
+                  workspaceLogger.debug('FILE_PROCESS', `Memory cleanup: ${fileName}`);
                 } else if (data.type === 'error') {
-                  throw new Error(data.error || 'İşleme hatası');
+                  const errorMsg = data.error || 'İşleme hatası';
+                  workspaceLogger.error('FILE_PROCESS', `SSE Error: ${errorMsg}`, null, { 
+                    fileName, 
+                    errorData: data 
+                  });
+                  throw new Error(errorMsg);
                 }
               } catch (parseError) {
-                console.error('Parse error:', parseError);
+                workspaceLogger.error('FILE_PROCESS', 'SSE Parse error', parseError, { 
+                  fileName, 
+                  line: line.substring(0, 100) 
+                });
               }
             }
           }
         }
+        
+        // ✅ Kalan buffer'ı işle (son message)
+        if (buffer && buffer.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(buffer.slice(6));
+            
+            if (data.type === 'success') {
+              const extractedText = data.text || '';
+              const wordCount = data.stats?.wordCount ||
+                               data.stats?.totalWordCount ||
+                               extractedText.split(/\s+/).filter((w: string) => w.length > 0).length;
+
+              updateFileStatus(fileName, {
+                status: 'completed',
+                progress: 'Tamamlandı',
+                extractedText,
+                wordCount
+              });
+              toast.success(`${fileName} işlendi (${wordCount.toLocaleString('tr-TR')} kelime)`);
+              
+              // Memory cleanup
+              setFileObjects(prev => {
+                const next = new Map(prev);
+                next.delete(fileName);
+                return next;
+              });
+            }
+          } catch (parseError) {
+            console.error('Final SSE parse error:', parseError);
+          }
+        }
       }
     } catch (error: any) {
-      console.error('Process error:', error);
+      // ✅ STRUCTURED ERROR HANDLING
+      const errorType = error.name || 'UnknownError';
+      const errorMessage = error.message || 'Bilinmeyen hata';
+      
+      // Detailed error logging
+      console.error('File processing failed:', {
+        fileName,
+        errorType,
+        errorMessage,
+        timestamp: new Date().toISOString(),
+        fileSize: fileObject?.size,
+        fileType: fileObject?.type
+      });
+      
+      // User-friendly error messages
+      let userMessage = '';
+      let retryable = true;
+      
+      if (errorType === 'NetworkError' || errorMessage.includes('network') || errorMessage.includes('fetch')) {
+        userMessage = 'İnternet bağlantınızı kontrol edin';
+        retryable = true;
+      } else if (errorType === 'TimeoutError' || errorMessage.includes('timeout')) {
+        userMessage = 'İşlem zaman aşımına uğradı. Tekrar deneyin';
+        retryable = true;
+      } else if (errorMessage.includes('size') || errorMessage.includes('large')) {
+        userMessage = 'Dosya çok büyük. Maksimum 50MB';
+        retryable = false;
+      } else if (errorMessage.includes('format') || errorMessage.includes('type')) {
+        userMessage = 'Desteklenmeyen dosya formatı';
+        retryable = false;
+      } else if (response && !response.ok) {
+        userMessage = `Sunucu hatası (${response.status}). Tekrar deneyin`;
+        retryable = true;
+      } else {
+        userMessage = 'Dosya işlenemedi. Destek ekibiyle iletişime geçin';
+        retryable = false;
+      }
+      
       updateFileStatus(fileName, {
         status: 'error',
         progress: 'Hata',
-        error: error.message || 'Bilinmeyen hata'
+        error: userMessage
       });
-      toast.error(`${fileName} işlenemedi`);
+      
+      // Toast with retry option
+      if (retryable) {
+        toast.error(`${fileName}: ${userMessage}`, {
+          action: {
+            label: 'Tekrar Dene',
+            onClick: () => handleFileProcess(fileName)
+          },
+          duration: 5000
+        });
+      } else {
+        toast.error(`${fileName}: ${userMessage}`);
+      }
+      
+      // ✅ MEMORY OPTIMIZATION: Hata durumunda da File objesini sil
+      setFileObjects(prev => {
+        const next = new Map(prev);
+        next.delete(fileName);
+        return next;
+      });
     }
   };
 
-  // Analiz başlat - Mevcut premium API kullanarak
+  // Analiz başlat - Token kontrolü ve chunking ile
   const handleStartAnalysis = async () => {
-    // Tüm dosyalar işlendi mi kontrol et
-    const allCompleted = fileStatuses.every(f => f.status === 'completed');
-    if (!allCompleted) {
-      toast.error('Önce tüm dosyaları işleyin!');
+    workspaceLogger.info('ANALYSIS', 'AI analizi başlatma talebi');
+
+    // 1. Validation - Tüm dosyalar işlendi mi
+    const completedFiles = fileStatuses.filter(f => f.status === 'completed');
+    if (completedFiles.length === 0) {
+      workspaceLogger.warning('ANALYSIS', 'İşlenmiş dosya yok');
+      toast.error('İşlenmiş dosya bulunamadı!', {
+        description: 'Önce dosyaları işleyin'
+      });
+      return;
+    }
+
+    // 2. Race condition kontrolü
+    if (processing) {
+      workspaceLogger.warning('ANALYSIS', 'Analiz zaten devam ediyor');
+      toast.warning('Analiz zaten devam ediyor...', {
+        description: 'Lütfen mevcut analizin tamamlanmasını bekleyin'
+      });
+      return;
+    }
+
+    // 3. Token limiti kontrolü
+    const totalWordCount = completedFiles.reduce((sum, f) => sum + (f.wordCount || 0), 0);
+    const estimatedTokens = Math.ceil(totalWordCount * 1.3);
+    
+    const tokenInfo = {
+      totalFiles: completedFiles.length,
+      totalWords: totalWordCount,
+      estimatedTokens,
+      maxTokens: MAX_TOKENS,
+      withinLimit: estimatedTokens <= MAX_TOKENS,
+      utilizationPercent: ((estimatedTokens / MAX_TOKENS) * 100).toFixed(1)
+    };
+
+    workspaceLogger.info('ANALYSIS', 'Token hesaplaması', tokenInfo);
+    AILogger.tokenUsage('claude', estimatedTokens, 0, 0, 0); // Estimated input tokens
+
+    if (estimatedTokens > MAX_TOKENS) {
+      workspaceLogger.error('ANALYSIS', 'Token limiti aşıldı', null, tokenInfo);
+      toast.error(
+        `Text çok uzun!`,
+        { 
+          duration: 7000,
+          description: `${estimatedTokens.toLocaleString('tr-TR')} token (limit: ${MAX_TOKENS.toLocaleString('tr-TR')}). Bazı dosyaları kaldırın.`
+        }
+      );
       return;
     }
 
     setProcessing(true);
-    toast.loading('AI analizi başlatılıyor...');
+    const startTime = Date.now();
+    const toastId = toast.loading('AI analizi hazırlanıyor...', {
+      description: `${completedFiles.length} dosya • ${estimatedTokens.toLocaleString('tr-TR')} token`
+    });
 
     try {
-      // Tüm dosyaların text'lerini birleştir
-      const combinedText = fileStatuses
+      // 4. Text'leri birleştir
+      workspaceLogger.info('ANALYSIS', 'Dosyalar birleştiriliyor', {
+        fileCount: completedFiles.length,
+        fileNames: completedFiles.map(f => f.fileMetadata.name)
+      });
+
+      const combinedText = completedFiles
         .map(f => `\n\n=== DOSYA: ${f.fileMetadata.name} ===\n${f.extractedText || ''}`)
         .join('\n');
 
-      // Premium AI analysis endpoint'i kullan
+      workspaceLogger.success('ANALYSIS', 'Dosyalar birleştirildi', {
+        combinedTextLength: combinedText.length,
+        estimatedTokens
+      });
+
+      toast.loading('AI analizi yapılıyor...', { 
+        id: toastId,
+        description: 'Claude AI çalışıyor...'
+      });
+
+      // Premium AI analysis endpoint
+      workspaceLogger.info('ANALYSIS', 'API request başlatılıyor');
       const response = await fetch('/api/ai/full-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: combinedText,
-          csvData: null // İleride CSV desteği eklenebilir
+          csvData: null
         })
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Analiz başarısız oldu');
+        const errorData = await response.json().catch(() => ({}));
+        const errorMsg = errorData.error || `Analiz başarısız (${response.status})`;
+        workspaceLogger.error('ANALYSIS', 'API request failed', null, {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorMsg
+        });
+        throw new Error(errorMsg);
       }
 
       const result = await response.json();
 
-      // API response: { success: true, data: AIAnalysisResult, metadata: {...} }
+      // Validate response
       if (!result.success || !result.data) {
+        workspaceLogger.error('ANALYSIS', 'Invalid API response', null, { result });
         throw new Error('Analiz sonucu alınamadı');
       }
 
-      toast.dismiss();
-      toast.success('Analiz tamamlandı!');
+      const processingTime = Date.now() - startTime;
 
-      // Zustand store'a kaydet (setCurrentAnalysis otomatik olarak history'e de ekler)
+      workspaceLogger.success('ANALYSIS', 'AI analizi tamamlandı', {
+        processingTime: `${(processingTime / 1000).toFixed(2)}s`,
+        hasData: !!result.data,
+        metadata: result.metadata
+      });
+
+      // Token usage logging if available
+      if (result.metadata?.tokenUsage) {
+        AILogger.tokenUsage(
+          'claude',
+          result.metadata.tokenUsage.input || estimatedTokens,
+          result.metadata.tokenUsage.output || 0,
+          result.metadata.tokenUsage.cost || 0,
+          processingTime / 1000
+        );
+      }
+
+      toast.success('Analiz tamamlandı!', { 
+        id: toastId,
+        description: `${(processingTime / 1000).toFixed(1)}s • Detaylar açılıyor...`
+      });
+
+      // Zustand store'a kaydet
+      workspaceLogger.info('ANALYSIS', 'Store\'a kaydediliyor');
       const { setCurrentAnalysis } = useIhaleStore.getState();
       setCurrentAnalysis(result.data);
 
-      // Store güncel analysisHistory'yi al (yeni analiz eklendi)
+      // Store güncel analysisHistory'yi al
       const updatedHistory = useIhaleStore.getState().analysisHistory;
       const lastIndex = updatedHistory.length - 1;
 
-      // Premium detay sayfasına yönlendir (HAM VERİ, TABLOLAR, DERİN ANALİZ)
+      workspaceLogger.success('ANALYSIS', 'Store\'a kaydedildi', {
+        historyLength: updatedHistory.length,
+        targetIndex: lastIndex
+      });
+
+      // Premium detay sayfasına yönlendir
+      workspaceLogger.info('ANALYSIS', `Detay sayfasına yönlendiriliyor: /ihale/analysis-${lastIndex}`);
       router.push(`/ihale/analysis-${lastIndex}`);
 
     } catch (error: any) {
-      console.error('Analysis error:', error);
-      toast.dismiss();
-      toast.error(error.message || 'Analiz başarısız oldu');
+      const processingTime = Date.now() - startTime;
+      
+      workspaceLogger.error('ANALYSIS', 'AI analizi başarısız', error, {
+        processingTime: `${(processingTime / 1000).toFixed(2)}s`,
+        errorMessage: error.message,
+        errorStack: IS_DEBUG ? error.stack : undefined
+      });
+      
+      // User-friendly error message
+      let userMessage = error.message || 'Analiz başarısız oldu';
+      let errorDescription = '';
+      
+      if (error.message?.includes('network') || error.message?.includes('fetch')) {
+        errorDescription = 'İnternet bağlantınızı kontrol edin';
+      } else if (error.message?.includes('timeout')) {
+        errorDescription = 'İşlem zaman aşımına uğradı';
+      } else if (error.message?.includes('401') || error.message?.includes('403')) {
+        errorDescription = 'Yetkilendirme hatası';
+      } else if (error.message?.includes('429')) {
+        errorDescription = 'Rate limit aşıldı. Biraz bekleyin';
+      } else if (error.message?.includes('500')) {
+        errorDescription = 'Sunucu hatası. Tekrar deneyin';
+      } else {
+        errorDescription = 'Detaylar terminal loglarında';
+      }
+      
+      toast.error(userMessage, { 
+        id: toastId,
+        duration: 7000,
+        description: errorDescription
+      });
+    } finally {
       setProcessing(false);
+      workspaceLogger.info('ANALYSIS', 'İşlem sonlandırıldı', { processing: false });
     }
   };
 
@@ -264,13 +827,24 @@ function ProcessingMode() {
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Header */}
         <div className="mb-6">
-          <button
-            onClick={() => router.push('/ihale')}
-            className="flex items-center gap-2 text-gray-400 hover:text-white mb-4 transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            İhale Dashboard'a Dön
-          </button>
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => router.push('/ihale')}
+              className="flex items-center gap-2 text-gray-400 hover:text-white mb-4 transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              İhale Dashboard'a Dön
+            </button>
+            
+            {/* Debug Mode Indicator (Development only) */}
+            {IS_DEBUG && (
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-500/10 border border-purple-500/30 rounded-lg">
+                <Bug className="w-4 h-4 text-purple-400" />
+                <span className="text-xs text-purple-300 font-medium">Debug Mode</span>
+                <Terminal className="w-3 h-3 text-purple-400 animate-pulse" />
+              </div>
+            )}
+          </div>
         </div>
 
         {/* SimpleDocumentList Component */}
