@@ -16,16 +16,19 @@ export const maxDuration = 120; // 2 dakika timeout (Vercel limit)
  */
 export async function POST(request: Request) {
   try {
-    const { url, tenderId } = await request.json();
+    const { url, tenderUrl, tenderId } = await request.json();
 
-    if (!url) {
+    // Frontend'den tenderUrl veya url olarak gelebilir
+    const targetUrl = tenderUrl || url;
+
+    if (!targetUrl) {
       return NextResponse.json(
         { success: false, error: 'URL gerekli' },
         { status: 400 }
       );
     }
 
-    console.log('🌐 Fetching full content from:', url);
+    console.log('🌐 Fetching full content from:', targetUrl);
 
     const browser = await puppeteer.launch({
       headless: true,
@@ -101,8 +104,8 @@ export async function POST(request: Request) {
     }
 
     // Navigate to the tender page
-    console.log('🌐 Navigating to tender page:', url);
-    await page.goto(url, {
+    console.log('🌐 Navigating to tender page:', targetUrl);
+    await page.goto(targetUrl, {
       waitUntil: 'networkidle0',
       timeout: 30000,
     });

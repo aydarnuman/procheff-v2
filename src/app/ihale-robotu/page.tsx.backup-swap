@@ -8,6 +8,17 @@ import { useIhaleStore } from '@/lib/stores/ihale-store';
 import { TokenCostCard } from '@/components/analytics/TokenCostCard';
 import { downloadDocuments } from '@/lib/utils/document-downloader';
 import { saveToIndexedDB, getFromIndexedDB, deleteFromIndexedDB, listIndexedDBKeys } from '@/lib/utils/indexed-db-storage';
+import { BatchToastManager } from '@/lib/utils/batch-toast';
+import { useModalConfirmation } from '@/hooks/useModalConfirmation';
+import { DOCUMENT_CONFIG } from '@/constants/documents';
+import {
+  createVirtualExports,
+  parseVirtualUrls,
+  parseRealUrls,
+  filterDuplicateDocuments,
+  type PreparedDocument,
+  type ExportType
+} from '@/lib/utils/document-preparation';
 
 // 🚦 SAFE MIGRATION: Feature flag ile kontrollü geçiş
 // Mevcut kod bozulmaz, yeni store test edilebilir
@@ -89,11 +100,16 @@ function IhaleTakipPageInner() {
   const [showPreviewModal, setShowPreviewModal] = useState(false); // 🆕 Önizleme modal'ı
   const [showZipContents, setShowZipContents] = useState(false); // 🆕 ZIP içerik modal'ı
   const [docPage, setDocPage] = useState(1); // 🆕 Döküman pagination
-  const DOCS_PER_PAGE = 10; // 🆕 Sayfa başına döküman sayısı
   const [zipFileInfo, setZipFileInfo] = useState<{fileName: string; size: number; extractedFiles?: string[]} | null>(null); // 🆕 ZIP bilgisi
   const [isAnalyzing, setIsAnalyzing] = useState(false); // 🆕 Analiz başlatılıyor mu
   const [preparedDocuments, setPreparedDocuments] = useState<any[]>([]); // 🆕 Hazırlanan dökümanlar (ZIP extract sonrası)
-  
+
+  // 🆕 Modal confirmation hook - Seçim varsa kapatma onayı iste
+  const hasUnsavedChanges = selectedDocuments.length > 0 || preparedDocuments.length > 0;
+  const confirmModalClose = useModalConfirmation(hasUnsavedChanges, {
+    message: `${selectedDocuments.length} döküman seçili${preparedDocuments.length > 0 ? ` ve ${preparedDocuments.length} döküman hazırlanmış` : ''}. Modal kapatılsın mı?`
+  });
+
   // ⏱️ Timer sistemi - Her loading için elapsed time
   const [loadingStartTime, setLoadingStartTime] = useState<number | null>(null);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
@@ -570,8 +586,46 @@ function IhaleTakipPageInner() {
     
     const { fetchFullContent: fetchFullContentAPI } = await import('@/lib/ihale-scraper/fetchFullContent');
     const content = await fetchFullContentAPI(tenderId);
-    
+
     if (content) {
+      // ✅ İçerik validasyonu ekle (cache'e kaydetmeden önce)
+      const { validateTenderContent, logValidationResult } = await import('@/lib/ihale-scraper/validators');
+      const validation = validateTenderContent(content, {
+        minTextLength: 100,
+        minDetailsCount: 3,
+        requireDocuments: false,
+        strict: false,
+      });
+
+      logValidationResult('fetchFullContent (ihale-robotu page)', validation, content);
+
+      if (!validation.valid) {
+        console.error('❌ Geçersiz içerik geldi:', validation.errors);
+
+        // Login hatası mı yoksa içerik hatası mı?
+        const isLoginError = validation.errors.some(e =>
+          e.toLowerCase().includes('login') ||
+          e.toLowerCase().includes('giriş')
+        );
+
+        if (isLoginError) {
+          toast.error('❌ Login hatası! Lütfen tekrar deneyin veya manuel login yapın.', {
+            id: 'fetch-content',
+            duration: 5000,
+          });
+        } else {
+          toast.error(`❌ İçerik yetersiz: ${validation.errors.join(', ')}`, {
+            id: 'fetch-content',
+            duration: 5000,
+          });
+        }
+
+        setLoadingContent(false);
+        setLoadingStartTime(null);
+        setAnalyzingId(null);
+        return;
+      }
+
       setFullContent(JSON.parse(JSON.stringify(content)));
       setSelectedTender(tender);
       setContentCache(prev => ({...prev, [tenderId]: JSON.parse(JSON.stringify(content))}));
@@ -899,154 +953,153 @@ function IhaleTakipPageInner() {
     }
   };
 
-  // 🆕 Dökümanları hazırla ve önizleme göster
+  // 🆕 Dökümanları hazırla ve önizleme göster (REFACTORED with utilities)
   const prepareDocuments = async () => {
-    console.log('📦 prepareDocuments başlatıldı');
-    
+    console.log('📦 prepareDocuments başlatıldı:', {
+      seciliDokumanSayisi: selectedDocuments.length,
+      ihaleBilgisi: selectedTender ? `${selectedTender.title.substring(0, 40)}...` : 'Yok',
+      fullContentVarMi: !!fullContent
+    });
+
     // Validation
     if (!selectedTender || !fullContent) {
+      console.error('❌ Validation hatası: İhale detayı veya içerik eksik');
       toast.error('⚠️ İhale detayı yüklenmemiş');
       return;
     }
 
     if (!fullContent.fullText || fullContent.fullText.length === 0) {
+      console.error('❌ Validation hatası: İhale metni boş');
       toast.error('⚠️ İhale metni bulunamadı');
       return;
     }
 
+    const toastManager = new BatchToastManager();
+
     try {
-      // ⏱️ Timer başlat
       setIsAnalyzing(true);
       setLoadingStartTime(Date.now());
-      
+
       if (selectedDocuments.length > 0) {
         console.log(`📥 ${selectedDocuments.length} döküman hazırlanıyor...`);
-        toast.loading(`Dökümanlar hazırlanıyor (0/${selectedDocuments.length})... ⏱️ 0s`, { id: 'doc-prep' });
-        
-        // 1️⃣ Virtual dosyaları ayır (JSON/TXT/CSV exports)
-        const virtualUrls = selectedDocuments.filter(url => url.startsWith('virtual://'));
-        const realUrls = selectedDocuments.filter(url => !url.startsWith('virtual://'));
-        
-        const allPrepared: any[] = [];
-        
-        // 2️⃣ Virtual dosyaları hazırla
-        for (const virtualUrl of virtualUrls) {
-          const exportType = virtualUrl.replace('virtual://', '');
-          let content = '';
-          let mimeType = '';
-          let filename = '';
-          
-          if (exportType === 'json') {
-            content = JSON.stringify({
-              title: selectedTender.title,
-              organization: selectedTender.organization,
-              details: fullContent.details,
-              fullText: fullContent.fullText,
-              documents: fullContent.documents
-            }, null, 2);
-            mimeType = 'application/json';
-            filename = `${selectedTender.title.substring(0, 30)}.json`;
-          } else if (exportType === 'txt') {
-            content = `İHALE DETAYI\n\n`;
-            content += `Başlık: ${selectedTender.title}\n`;
-            content += `Kurum: ${selectedTender.organization}\n\n`;
-            content += `DETAYLAR:\n`;
-            Object.entries(fullContent.details || {}).forEach(([key, value]) => {
-              content += `${key}: ${value}\n`;
-            });
-            content += `\n\nİÇERİK:\n${fullContent.fullText}`;
-            mimeType = 'text/plain';
-            filename = `${selectedTender.title.substring(0, 30)}.txt`;
-          } else if (exportType === 'csv') {
-            content = 'Alan,Değer\n';
-            content += `Başlık,"${selectedTender.title}"\n`;
-            content += `Kurum,"${selectedTender.organization}"\n`;
-            Object.entries(fullContent.details || {}).forEach(([key, value]) => {
-              content += `"${key}","${value}"\n`;
-            });
-            mimeType = 'text/csv';
-            filename = `${selectedTender.title.substring(0, 30)}.csv`;
-          }
-          
-          const blob = new Blob([content], { type: mimeType });
-          allPrepared.push({
-            title: filename,
-            url: virtualUrl,
-            mimeType: mimeType,
-            blob: blob,
-            size: blob.size,
-            type: 'export' as const,
-            isFromZip: false
-          });
-        }
-        
-        // 3️⃣ Gerçek dosyaları indir (paralel)
-        if (realUrls.length > 0) {
-          const downloadedFiles = await downloadDocuments(
-            realUrls,
-            {
-              onProgress: (progress) => {
-                const elapsed = Math.floor((Date.now() - loadingStartTime!) / 1000);
-                toast.loading(
-                  `Dökümanlar hazırlanıyor (${progress.current + virtualUrls.length}/${selectedDocuments.length})... ⏱️ ${elapsed}s`, 
-                  { id: 'doc-prep' }
-                );
-              }
-            }
-          );
 
-          // DownloadedFile[] → preparedDocuments formatına dönüştür
-          const realPrepared = downloadedFiles.map(df => ({
-            title: df.title,
-            url: df.url,
-            mimeType: df.mimeType,
-            blob: df.blob,
-            size: df.size,
-            type: 'document' as const,
-            isFromZip: df.isFromZip,
-            extractedFrom: df.isFromZip ? df.originalFilename : undefined
-          }));
-          
-          allPrepared.push(...realPrepared);
-        }
+        toastManager.start(selectedDocuments.length, 'Dökümanlar hazırlanıyor');
 
-        // 4️⃣ Duplicate kontrolü - mevcut dosyalara ekleme yap
-        setPreparedDocuments(prev => {
-          // 🆕 Unique key: title + url kombinasyonu (ZIP'ten çıkan aynı URL'li farklı dosyalar için)
-          const existingKeys = new Set(prev.map(doc => `${doc.title}|||${doc.url}`));
-          
-          // Sadece yeni dosyaları filtrele
-          const newFiles = allPrepared.filter(doc => {
-            const fileKey = `${doc.title}|||${doc.url}`;
-            if (existingKeys.has(fileKey)) {
-              console.log(`⏭️ Duplicate atlandı: ${doc.title}`);
-              return false;
-            }
-            return true;
-          });
-          
-          if (newFiles.length < allPrepared.length) {
-            const skippedCount = allPrepared.length - newFiles.length;
-            toast.warning(`⚠️ ${skippedCount} dosya zaten ekliydi, atlandı`);
-          }
-          
-          console.log(`📦 ${newFiles.length} yeni dosya eklendi (${allPrepared.length - newFiles.length} duplicate)`);
-          return [...prev, ...newFiles];
+        // 🎯 URL parsing with utility functions
+        const virtualExportTypes = parseVirtualUrls(selectedDocuments);
+        const realUrls = parseRealUrls(selectedDocuments);
+
+        console.log(`🔍 URL analizi:`, {
+          toplamSecim: selectedDocuments.length,
+          virtualExport: virtualExportTypes.length,
+          realDokuman: realUrls.length
         });
 
-        const elapsed = Math.floor((Date.now() - loadingStartTime!) / 1000);
-        toast.success(`✅ Hazırlama tamamlandı (${elapsed}s) → Analize gönderiliyor...`, { id: 'doc-prep', duration: 2000 });
-        
-        // ✅ Detay modal içinde gösterilecek (ayrı modal yok artık)
+        const allPrepared: PreparedDocument[] = [];
+
+        // 🎯 Virtual exports - using utility function
+        if (virtualExportTypes.length > 0) {
+          console.log(`📝 ${virtualExportTypes.length} virtual export oluşturuluyor...`);
+
+          try {
+            const virtualDocs = createVirtualExports(
+              { title: selectedTender.title, organization: selectedTender.organization },
+              {
+                details: fullContent.details,
+                fullText: fullContent.fullText,
+                documents: fullContent.documents
+              },
+              virtualExportTypes
+            );
+
+            allPrepared.push(...virtualDocs);
+
+            console.log(`✅ ${virtualDocs.length} virtual export oluşturuldu`);
+
+            // Update progress for each virtual file
+            virtualDocs.forEach((doc, idx) => {
+              toastManager.update(idx + 1, selectedDocuments.length, doc.title);
+            });
+          } catch (error: any) {
+            console.error('❌ Virtual export hatası:', error);
+            toast.error('⚠️ Virtual dosyalar oluşturulamadı', {
+              description: error.message
+            });
+          }
+        }
+
+        // 🎯 Real documents - using existing downloader
+        if (realUrls.length > 0) {
+          console.log(`📥 ${realUrls.length} gerçek döküman indiriliyor...`);
+
+          try {
+            const downloadedFiles = await downloadDocuments(realUrls, {
+              onProgress: (progress) => {
+                toastManager.update(
+                  progress.current + virtualExportTypes.length,
+                  selectedDocuments.length,
+                  progress.filename
+                );
+              }
+            });
+
+            console.log(`📦 ${downloadedFiles.length} dosya indirildi (bazıları ZIP'ten extract olmuş olabilir)`);
+
+            // Convert to PreparedDocument format
+            const realPrepared: PreparedDocument[] = downloadedFiles.map(df => ({
+              title: df.title,
+              url: df.url,
+              mimeType: df.mimeType,
+              blob: df.blob,
+              size: df.size,
+              type: 'document',
+              isFromZip: df.isFromZip || false,
+              originalFilename: df.originalFilename
+            }));
+
+            allPrepared.push(...realPrepared);
+
+            console.log(`✅ ${realPrepared.length} gerçek döküman hazırlandı`);
+          } catch (error: any) {
+            console.error('❌ Döküman indirme hatası:', error);
+            toast.error('⚠️ Bazı dökümanlar indirilemedi', {
+              description: error.message
+            });
+          }
+        }
+
+        // 🎯 Duplicate filtering - using utility function
+        console.log(`🔍 Duplicate kontrolü yapılıyor: ${allPrepared.length} dosya kontrol edilecek`);
+
+        setPreparedDocuments(prev => {
+          const uniqueFiles = filterDuplicateDocuments(allPrepared, prev);
+
+          if (uniqueFiles.length < allPrepared.length) {
+            const skippedCount = allPrepared.length - uniqueFiles.length;
+            console.warn(`⚠️ ${skippedCount} duplicate dosya atlandı`);
+            toast.warning(`⚠️ ${skippedCount} dosya zaten ekliydi, atlandı`);
+          }
+
+          console.log(`📦 State güncelleniyor: ${uniqueFiles.length} yeni dosya ekleniyor`);
+          return [...prev, ...uniqueFiles];
+        });
+
+        toastManager.complete(allPrepared.length, 'Tüm dökümanlar hazır!');
+        console.log(`🎉 prepareDocuments başarıyla tamamlandı: ${allPrepared.length} dosya`);
+      } else {
+        console.warn('⚠️ Seçili döküman yok');
+        toast.info('ℹ️ Döküman seçilmedi');
       }
 
-      // ⏱️ Reset timer (sendToAnalysis çağrılacağı için burada resetleme)
       setIsAnalyzing(false);
       setLoadingStartTime(null);
 
     } catch (error: any) {
-      console.error('❌ prepareDocuments hatası:', error);
-      toast.error('❌ Dökümanlar hazırlanırken hata oluştu', { id: 'doc-prep' });
+      console.error('❌ prepareDocuments kritik hatası:', {
+        hata: error.message,
+        stack: error.stack?.substring(0, 200)
+      });
+      toastManager.error('Dökümanlar hazırlanırken hata oluştu', error.message);
       setIsAnalyzing(false);
       setLoadingStartTime(null);
     }
@@ -1645,28 +1698,32 @@ Lütfen tarayıcı konsolunu kontrol edin ve geliştiriciyle iletişime geçin.`
     };
   }, [selectedTender]); // selectedTender değişince yeniden bağla
 
-  // 🆕 Modal'ı kapat ve URL parametresini temizle
+  // 🆕 Modal'ı kapat ve URL parametresini temizle (confirmation ile)
   const closeModal = () => {
-    // ✅ fullContent'i cache'e kaydet (modal kapatılınca kaybetme)
-    if (selectedTender && fullContent) {
-      console.log('💾 Modal kapatılıyor, fullContent cache\'e kaydediliyor:', selectedTender.id);
-      setContentCache(prev => ({
-        ...prev,
-        [selectedTender.id.toString()]: JSON.parse(JSON.stringify(fullContent))
-      }));
-    }
+    // 🎯 Confirmation wrapper - Seçim varsa onay iste
+    confirmModalClose(() => {
+      // ✅ fullContent'i cache'e kaydet (modal kapatılınca kaybetme)
+      if (selectedTender && fullContent) {
+        console.log('💾 Modal kapatılıyor, fullContent cache\'e kaydediliyor:', selectedTender.id);
+        setContentCache(prev => ({
+          ...prev,
+          [selectedTender.id.toString()]: JSON.parse(JSON.stringify(fullContent))
+        }));
+      }
 
-    setSelectedTender(null);
-    setFullContent(null); // ✅ State'i temizle ama cache'de kalsın
-    setIframeUrl(null);
-    setSelectedDocuments([]);
-    setDocumentsExpanded(true);
+      setSelectedTender(null);
+      setFullContent(null); // ✅ State'i temizle ama cache'de kalsın
+      setIframeUrl(null);
+      setSelectedDocuments([]);
+      setDocumentsExpanded(true);
+      setPreparedDocuments([]); // 🆕 Hazırlanan dökümanları da temizle
 
-    // URL parametresini kaldır
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete('detail');
-    const newUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname;
-    router.replace(newUrl, { scroll: false });
+      // URL parametresini kaldır
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete('detail');
+      const newUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname;
+      router.replace(newUrl, { scroll: false });
+    });
   };
 
   // İhale durumu hesaplama - Son Teklif Tarihine Göre
@@ -3038,15 +3095,15 @@ Lütfen tarayıcı konsolunu kontrol edin ve geliştiriciyle iletişime geçin.`
                               {(() => {
                                 // 🚀 Pagination logic - sadece görünen kartları render et
                                 const totalDocs = fullContent.documents.length;
-                                const totalPages = Math.ceil(totalDocs / DOCS_PER_PAGE);
-                                const startIdx = (docPage - 1) * DOCS_PER_PAGE;
-                                const endIdx = Math.min(startIdx + DOCS_PER_PAGE, totalDocs);
+                                const totalPages = Math.ceil(totalDocs / DOCUMENT_CONFIG.PAGINATION.ITEMS_PER_PAGE);
+                                const startIdx = (docPage - 1) * DOCUMENT_CONFIG.PAGINATION.ITEMS_PER_PAGE;
+                                const endIdx = Math.min(startIdx + DOCUMENT_CONFIG.PAGINATION.ITEMS_PER_PAGE, totalDocs);
                                 const visibleDocs = fullContent.documents.slice(startIdx, endIdx);
 
                                 return (
                                   <>
                                     {/* Pagination Info */}
-                                    {totalDocs > DOCS_PER_PAGE && (
+                                    {totalDocs > DOCUMENT_CONFIG.PAGINATION.ITEMS_PER_PAGE && (
                                       <div className="flex items-center justify-between mb-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200">
                                         <div className="flex items-center gap-2 text-sm text-gray-700">
                                           <span className="font-medium">
@@ -3213,14 +3270,14 @@ Lütfen tarayıcı konsolunu kontrol edin ve geliştiriciyle iletişime geçin.`
                                   >
                                     {/* Glow effect - Balon hissi */}
                                     {isSelected && (
-                                      <div className={`absolute -inset-1 bg-gradient-to-r ${docInfo.gradient} opacity-30 blur-lg rounded-3xl transition-all duration-300`}></div>
+                                      <div className={`absolute -inset-1 bg-gradient-to-r ${docInfo.gradient} opacity-30 blur-lg rounded-3xl transition-opacity duration-150`}></div>
                                     )}
-                                    
+
                                     <div
-                                      className={`relative overflow-hidden rounded-2xl border-2 transition-all duration-300 cursor-pointer backdrop-blur-sm ${
+                                      className={`relative overflow-hidden rounded-2xl border-2 transition-colors duration-150 cursor-pointer backdrop-blur-sm ${
                                         isSelected
-                                          ? `bg-white/90 ${docInfo.borderColor} shadow-2xl transform scale-[1.02]`
-                                          : 'bg-white/80 border-gray-200/50 hover:border-gray-300/70 hover:shadow-lg hover:bg-white/95'
+                                          ? `bg-white/90 ${docInfo.borderColor} shadow-lg`
+                                          : 'bg-white/80 border-gray-200/50 hover:border-gray-300/70 hover:bg-white/95'
                                       }`}
                                       onClick={() => toggleDocumentSelection(doc.url)}
                                     >
@@ -3237,15 +3294,15 @@ Lütfen tarayıcı konsolunu kontrol edin ve geliştiriciyle iletişime geçin.`
                                             e.stopPropagation();
                                             toggleDocumentSelection(doc.url);
                                           }}
-                                          className={`relative w-14 h-7 rounded-full transition-all duration-300 ${
+                                          className={`relative w-14 h-7 rounded-full transition-colors duration-150 ${
                                             isSelected
-                                              ? `bg-gradient-to-r ${docInfo.gradient} shadow-lg`
+                                              ? `bg-gradient-to-r ${docInfo.gradient}`
                                               : 'bg-gray-300 hover:bg-gray-400'
                                           }`}
                                           aria-label="Toggle selection"
                                         >
                                           <div
-                                            className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-all duration-300 flex items-center justify-center ${
+                                            className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-150 flex items-center justify-center ${
                                               isSelected ? 'translate-x-7' : 'translate-x-0'
                                             }`}
                                           >
@@ -3256,10 +3313,8 @@ Lütfen tarayıcı konsolunu kontrol edin ve geliştiriciyle iletişime geçin.`
                                         </button>
                                       </div>
 
-                                      {/* Icon - Gradient Background with Animation */}
-                                      <div className={`flex-shrink-0 w-14 h-14 rounded-xl ${docInfo.iconBg} flex items-center justify-center text-2xl shadow-sm transition-all duration-300 ${
-                                        isSelected ? 'scale-110 shadow-md' : 'scale-100'
-                                      }`}>
+                                      {/* Icon - Gradient Background */}
+                                      <div className={`flex-shrink-0 w-14 h-14 rounded-xl ${docInfo.iconBg} flex items-center justify-center text-2xl shadow-sm`}>
                                         {docInfo.icon}
                                       </div>
 

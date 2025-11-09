@@ -44,6 +44,29 @@ const testCases = [
 async function testAIExtraction() {
   console.log("🧪 AI Extraction Test Suite Başlatılıyor...\n");
 
+  // Önkoşul: AI anahtarı kontrolü (Anthropic/Claude)
+  const hasClaudeKey = !!process.env.ANTHROPIC_API_KEY || !!process.env.CLAUDE_API_KEY;
+  if (!hasClaudeKey) {
+    console.log("⚠️ AI anahtarı bulunamadı (ANTHROPIC_API_KEY/CLAUDE_API_KEY). Testler atlanıyor.\n");
+    return {
+      total: testCases.length,
+      passed: 0,
+      failed: 0,
+      details: [],
+      skipped: true,
+    } as any;
+  }
+
+  // Sunucu sağlık kontrolü
+  try {
+    const ok = await fetch("http://localhost:3000/api/health").then(r => r.ok);
+    if (!ok) {
+      console.log("⚠️ Sunucu sağlığı doğrulanamadı. Lütfen sunucuyu başlatın (npm start).\n");
+    }
+  } catch {
+    console.log("⚠️ Sunucuya bağlanılamadı. Lütfen sunucuyu başlatın (npm start).\n");
+  }
+
   const results = {
     total: testCases.length,
     passed: 0,
@@ -228,6 +251,11 @@ async function testAIExtraction() {
 if (require.main === module) {
   testAIExtraction()
     .then((results) => {
+      if ((results as any).skipped) {
+        console.log("⏭️  AI extraction testleri atlandı (konfigürasyon eksik).\n");
+        process.exit(0);
+        return;
+      }
       const successRate = (results.passed / results.total) * 100;
       process.exit(successRate >= 90 ? 0 : 1);
     })

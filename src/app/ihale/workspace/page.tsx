@@ -12,6 +12,7 @@ import { SimpleDocumentList } from '@/components/ihale/SimpleDocumentList';
 import { useIhaleStore, FileMetadata } from '@/lib/stores/ihale-store';
 import { toast } from 'sonner';
 import { AILogger } from '@/lib/utils/ai-logger';
+import JSZip from 'jszip';
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -285,6 +286,7 @@ function ProcessingMode() {
   const { fileStatuses, addFileStatus, updateFileStatus, removeFileStatus, clearFileStatuses } = useIhaleStore();
   const [processing, setProcessing] = useState(false);
   const [fileObjects, setFileObjects] = useState<Map<string, File>>(new Map());
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set()); // 🆕 Toplu seçim
 
   // ⚠️ MEMORY LEAK PREVENTİON: Component unmount olunca temizle
   useEffect(() => {
@@ -310,10 +312,10 @@ function ProcessingMode() {
     for (const file of files) {
       // ✅ FILE VALIDATION
       const validation = validateFile(file);
-      
+
       if (!validation.valid) {
         // Geçersiz dosya - kullanıcıyı uyar
-        toast.error(`${file.name}: ${validation.error}`, { 
+        toast.error(`${file.name}: ${validation.error}`, {
           duration: 5000,
           description: 'Dosya validation başarısız'
         });
@@ -322,29 +324,121 @@ function ProcessingMode() {
         continue; // Bu dosyayı atla
       }
 
-      // File metadata oluştur
-      const metadata: FileMetadata = {
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        lastModified: file.lastModified
-      };
+      // ✅ ZIP DETECTION & EXTRACTION
+      const isZip = file.name.toLowerCase().endsWith('.zip');
 
-      // Store'a ekle
-      addFileStatus({
-        fileMetadata: metadata,
-        status: 'pending',
-        progress: 'Bekliyor...'
-      });
+      if (isZip) {
+        try {
+          workspaceLogger.info('ZIP_EXTRACT', `ZIP dosyası tespit edildi: ${file.name}`);
+          toast.loading(`📦 ${file.name} çıkarılıyor...`, { id: `zip-${file.name}` });
 
-      // File objesini geçici olarak sakla (işlendikten sonra silinecek)
-      setFileObjects(prev => new Map(prev).set(file.name, file));
-      validCount++;
-      
-      workspaceLogger.success('FILE_SELECT', `Dosya eklendi: ${file.name}`, {
-        size: file.size,
-        type: file.type
-      });
+          const arrayBuffer = await file.arrayBuffer();
+          const zip = await JSZip.loadAsync(arrayBuffer);
+          const entries = Object.keys(zip.files).filter(k => !zip.files[k].dir);
+          const totalFiles = entries.length;
+
+          workspaceLogger.info('ZIP_EXTRACT', `ZIP içeriği: ${totalFiles} dosya`, { entries });
+
+          let extractedCount = 0;
+          for (const entryName of entries) {
+            const entry = zip.files[entryName];
+            const entryArrayBuffer = await entry.async('arraybuffer');
+
+            // Dosya türünü belirle
+            const ext = entryName.toLowerCase().split('.').pop() || '';
+            let mimeType = 'application/octet-stream';
+            if (ext === 'pdf') mimeType = 'application/pdf';
+            else if (ext === 'doc') mimeType = 'application/msword';
+            else if (ext === 'docx') mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+            else if (ext === 'txt') mimeType = 'text/plain';
+            else if (ext === 'json') mimeType = 'application/json';
+            else if (ext === 'csv') mimeType = 'text/csv';
+            else if (['jpg', 'jpeg'].includes(ext)) mimeType = 'image/jpeg';
+            else if (ext === 'png') mimeType = 'image/png';
+
+            const blob = new Blob([entryArrayBuffer], { type: mimeType });
+
+            // Extracted file'ı virtual File olarak oluştur
+            const extractedFile = new File([blob], entryName, {
+              type: mimeType,
+              lastModified: Date.now()
+            });
+
+            // Validate extracted file
+            const extractedValidation = validateFile(extractedFile);
+            if (!extractedValidation.valid) {
+              workspaceLogger.warning('ZIP_EXTRACT', `Geçersiz dosya atlandı: ${entryName}`, { error: extractedValidation.error });
+              continue;
+            }
+
+            // File metadata oluştur - extractedFrom bilgisi ile
+            const metadata: FileMetadata = {
+              name: entryName,
+              size: blob.size,
+              type: mimeType,
+              lastModified: Date.now(),
+              extractedFrom: {
+                archiveName: file.name,
+                totalFiles
+              }
+            };
+
+            // Store'a ekle
+            addFileStatus({
+              fileMetadata: metadata,
+              status: 'pending',
+              progress: 'Bekliyor...'
+            });
+
+            // File objesini geçici olarak sakla
+            setFileObjects(prev => new Map(prev).set(entryName, extractedFile));
+            extractedCount++;
+            validCount++;
+          }
+
+          toast.success(`📦 ${file.name} çıkarıldı`, {
+            id: `zip-${file.name}`,
+            description: `${extractedCount} dosya eklendi`
+          });
+
+          workspaceLogger.success('ZIP_EXTRACT', `ZIP extraction tamamlandı: ${file.name}`, {
+            totalFiles,
+            extractedCount
+          });
+
+        } catch (error: any) {
+          workspaceLogger.error('ZIP_EXTRACT', `ZIP extraction hatası: ${file.name}`, error);
+          toast.error(`ZIP hatası: ${file.name}`, {
+            id: `zip-${file.name}`,
+            description: error.message || 'Dosya çıkarılamadı'
+          });
+          invalidCount++;
+        }
+      } else {
+        // Normal file (non-ZIP)
+        const metadata: FileMetadata = {
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          lastModified: file.lastModified
+        };
+
+        // Store'a ekle
+        addFileStatus({
+          fileMetadata: metadata,
+          status: 'pending',
+          progress: 'Bekliyor...'
+        });
+
+        // File objesini geçici olarak sakla (işlendikten sonra silinecek)
+        setFileObjects(prev => new Map(prev).set(file.name, file));
+        validCount++;
+
+        workspaceLogger.success('FILE_SELECT', `Dosya eklendi: ${file.name}`, {
+          size: file.size,
+          type: file.type
+        });
+      }
     }
 
     // Özet logging
@@ -382,7 +476,191 @@ function ProcessingMode() {
       next.delete(fileName);
       return next;
     });
+    // Seçili dosyalardan da kaldır
+    setSelectedFiles(prev => {
+      const next = new Set(prev);
+      next.delete(fileName);
+      return next;
+    });
     toast.success(`${fileName} silindi`);
+  };
+
+  // 🆕 Dosya seçimi toggle
+  const handleToggleFileSelection = (fileName: string) => {
+    setSelectedFiles(prev => {
+      const next = new Set(prev);
+      if (next.has(fileName)) {
+        next.delete(fileName);
+      } else {
+        next.add(fileName);
+      }
+      return next;
+    });
+  };
+
+  // 🆕 Toplu İndir (ZIP oluşturma)
+  const handleBulkDownload = async () => {
+    if (selectedFiles.size === 0) {
+      toast.error('Dosya seçilmedi!');
+      return;
+    }
+
+    workspaceLogger.info('BULK_DOWNLOAD', `Toplu indirme başlatılıyor: ${selectedFiles.size} dosya`);
+    toast.loading('ZIP oluşturuluyor...', { id: 'bulk-download' });
+
+    try {
+      const zip = new JSZip();
+      const selectedArray = Array.from(selectedFiles);
+
+      for (const fileName of selectedArray) {
+        const fileStatus = fileStatuses.find(f => f.fileMetadata.name === fileName);
+        if (!fileStatus || fileStatus.status !== 'completed') continue;
+
+        // extractedText varsa, metni de ZIP'e ekle
+        if (fileStatus.extractedText) {
+          zip.file(`${fileName}.txt`, fileStatus.extractedText);
+        }
+
+        // Orijinal dosya varsa onu da ekle
+        const fileObject = fileObjects.get(fileName);
+        if (fileObject) {
+          zip.file(fileName, fileObject);
+        }
+      }
+
+      const content = await zip.generateAsync({ type: 'blob' });
+      const now = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      const downloadFileName = `procheff-documents-${now}.zip`;
+
+      // Native download (file-saver olmadan)
+      const url = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = downloadFileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast.success(`${selectedFiles.size} dosya indirildi!`, {
+        id: 'bulk-download',
+        description: downloadFileName
+      });
+
+      workspaceLogger.success('BULK_DOWNLOAD', 'Toplu indirme tamamlandı', {
+        fileCount: selectedFiles.size,
+        zipFileName: downloadFileName
+      });
+
+    } catch (error: any) {
+      workspaceLogger.error('BULK_DOWNLOAD', 'Toplu indirme hatası', error);
+      toast.error('ZIP oluşturulamadı!', {
+        id: 'bulk-download',
+        description: error.message
+      });
+    }
+  };
+
+  // 🆕 Toplu Analize Gönder
+  const handleBulkAnalyze = async () => {
+    if (selectedFiles.size === 0) {
+      toast.error('Dosya seçilmedi!');
+      return;
+    }
+
+    workspaceLogger.info('BULK_ANALYZE', `Toplu analiz başlatılıyor: ${selectedFiles.size} dosya`);
+
+    // Seçili dosyaların extractedText'lerini birleştir
+    const selectedArray = Array.from(selectedFiles);
+    const textsToAnalyze: string[] = [];
+    let totalWordCount = 0;
+
+    for (const fileName of selectedArray) {
+      const fileStatus = fileStatuses.find(f => f.fileMetadata.name === fileName);
+      if (fileStatus && fileStatus.status === 'completed' && fileStatus.extractedText) {
+        textsToAnalyze.push(`\n\n=== DOSYA: ${fileName} ===\n${fileStatus.extractedText}`);
+        totalWordCount += fileStatus.wordCount || 0;
+      }
+    }
+
+    if (textsToAnalyze.length === 0) {
+      toast.error('Seçili dosyalarda metin bulunamadı!');
+      return;
+    }
+
+    // Token kontrolü
+    const estimatedTokens = Math.ceil(totalWordCount * 1.3);
+    if (estimatedTokens > MAX_TOKENS) {
+      toast.error(`Token limiti aşıldı!`, {
+        description: `${estimatedTokens.toLocaleString('tr-TR')} token (limit: ${MAX_TOKENS.toLocaleString('tr-TR')})`
+      });
+      return;
+    }
+
+    setProcessing(true);
+    const startTime = Date.now();
+    const toastId = toast.loading('Seçili dosyalar analiz ediliyor...', {
+      description: `${selectedFiles.size} dosya • ${estimatedTokens.toLocaleString('tr-TR')} token`
+    });
+
+    try {
+      const combinedText = textsToAnalyze.join('\n');
+
+      const response = await fetch('/api/ai/full-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: combinedText,
+          csvData: null
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Analiz başarısız (${response.status})`);
+      }
+
+      const result = await response.json();
+
+      if (!result.success || !result.data) {
+        throw new Error('Analiz sonucu alınamadı');
+      }
+
+      const processingTime = Date.now() - startTime;
+
+      workspaceLogger.success('BULK_ANALYZE', 'Toplu analiz tamamlandı', {
+        fileCount: selectedFiles.size,
+        processingTime: `${(processingTime / 1000).toFixed(2)}s`
+      });
+
+      toast.success('Analiz tamamlandı!', {
+        id: toastId,
+        description: `${selectedFiles.size} dosya • ${(processingTime / 1000).toFixed(1)}s`
+      });
+
+      // Store'a kaydet
+      const { setCurrentAnalysis } = useIhaleStore.getState();
+      setCurrentAnalysis(result.data);
+
+      // Detay sayfasına yönlendir
+      const updatedHistory = useIhaleStore.getState().analysisHistory;
+      const lastIndex = updatedHistory.length - 1;
+      router.push(`/ihale/analysis-${lastIndex}`);
+
+    } catch (error: any) {
+      const processingTime = Date.now() - startTime;
+
+      workspaceLogger.error('BULK_ANALYZE', 'Toplu analiz hatası', error, {
+        processingTime: `${(processingTime / 1000).toFixed(2)}s`
+      });
+
+      toast.error(error.message || 'Analiz başarısız!', {
+        id: toastId,
+        description: 'Detaylar için terminal loglarına bakın'
+      });
+    } finally {
+      setProcessing(false);
+    }
   };
 
   // Tek dosyayı işle
@@ -853,6 +1131,10 @@ function ProcessingMode() {
           onFileSelect={handleFileSelect}
           onFileRemove={handleFileRemove}
           onFileProcess={handleFileProcess}
+          selectedFiles={selectedFiles}
+          onToggleFileSelection={handleToggleFileSelection}
+          onBulkDownload={handleBulkDownload}
+          onBulkAnalyze={handleBulkAnalyze}
         />
 
         {/* Start Analysis Button - Sadece tüm dosyalar işlendiyse */}

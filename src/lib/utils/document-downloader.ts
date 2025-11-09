@@ -138,8 +138,11 @@ export async function downloadDocument(
           { type: mimeType }
         );
 
+        // 📦 ZIP'ten extract edilen dosyalara prefix ekle
+        const displayTitle = `[ZIP] ${file.name}`;
+
         return {
-          title: file.name,
+          title: displayTitle,
           url: url,
           mimeType: mimeType,
           blob,
@@ -291,7 +294,84 @@ export async function downloadDocuments(
  * 🔄 File objelerine dönüştür (upload için)
  */
 export function convertToFiles(downloadedFiles: DownloadedFile[]): File[] {
-  return downloadedFiles.map(df => 
+  return downloadedFiles.map(df =>
     new File([df.blob], df.title, { type: df.mimeType })
   );
+}
+
+/**
+ * 🎯 ZIP dosyalarını otomatik extract et (sadece URL listesi için)
+ *
+ * Döküman listesinden ZIP dosyalarını bulur, indirir ve extract eder.
+ * ZIP dosyasının kendisini listeden kaldırır, içindeki dosyaları ekler.
+ *
+ * @param documents - Döküman listesi [{title, url, type}]
+ * @returns Extract edilmiş döküman listesi (ZIP'ler expand edilmiş)
+ */
+export async function autoExtractZipsInDocumentList(
+  documents: Array<{title: string; url: string; type: string}>
+): Promise<Array<{title: string; url: string; type: string; isFromZip?: boolean; originalFilename?: string}>> {
+  const zipUrls: string[] = [];
+  const nonZipDocs: Array<{title: string; url: string; type: string}> = [];
+
+  // ZIP ve non-ZIP dosyaları ayır
+  documents.forEach(doc => {
+    const isZip = doc.url.toLowerCase().endsWith('.zip') ||
+                  doc.title.toLowerCase().endsWith('.zip') ||
+                  doc.title.toLowerCase().includes('şartname') && doc.url.toLowerCase().includes('.zip');
+
+    if (isZip) {
+      zipUrls.push(doc.url);
+      console.log(`📦 ZIP tespit edildi: ${doc.title} → ${doc.url.substring(0, 80)}`);
+    } else {
+      nonZipDocs.push(doc);
+    }
+  });
+
+  // ZIP yoksa direkt geri dön
+  if (zipUrls.length === 0) {
+    console.log('✅ ZIP dosyası yok, dökümanlar olduğu gibi döndürülüyor');
+    return documents;
+  }
+
+  console.log(`🎯 ${zipUrls.length} ZIP dosyası otomatik extract edilecek...`);
+
+  try {
+    // ZIP'leri indir ve extract et
+    const extractedFiles = await downloadDocuments(zipUrls);
+
+    console.log(`📦 ZIP extraction tamamlandı: ${extractedFiles.length} dosya extract edildi`);
+
+    // Extract edilen dosyaları URL formatına dönüştür (virtual URL ile)
+    const extractedDocs = extractedFiles.map(file => {
+      // Virtual URL oluştur (browser memory'de blob URL olarak)
+      const blobUrl = URL.createObjectURL(file.blob);
+
+      return {
+        title: file.originalFilename || file.title,
+        url: blobUrl, // ⚠️ DIKKAT: Virtual blob URL - indirilebilir
+        type: file.type || 'diger',
+        isFromZip: true,
+        originalFilename: file.originalFilename
+      };
+    });
+
+    // Non-ZIP + Extract edilmiş dosyalar
+    const finalDocuments = [...nonZipDocs, ...extractedDocs];
+
+    console.log(`✅ Döküman listesi hazır:`, {
+      toplamOnce: documents.length,
+      zipSayisi: zipUrls.length,
+      extractEdilen: extractedDocs.length,
+      nonZip: nonZipDocs.length,
+      toplamSonra: finalDocuments.length
+    });
+
+    return finalDocuments;
+  } catch (error: any) {
+    console.error('❌ ZIP auto-extract hatası:', error);
+    // Hata durumunda orijinal listeyi geri dön
+    console.warn('⚠️ ZIP extract edilemedi, orijinal liste döndürülüyor');
+    return documents;
+  }
 }

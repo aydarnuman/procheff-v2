@@ -17,6 +17,10 @@ export interface FileMetadata {
   type: string;
   lastModified: number;
   url?: string; // 🆕 İhale Robotu'ndan gelen dosyalar için indirme URL'i
+  extractedFrom?: {
+    archiveName: string;
+    totalFiles: number;
+  }; // 🆕 ZIP'ten çıkarılan dosyalar için
 }
 
 export interface FileProcessingStatus {

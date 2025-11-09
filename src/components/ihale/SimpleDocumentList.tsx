@@ -3,7 +3,7 @@
 import React from 'react';
 import { FileProcessingStatus, CSVFileStatus } from '@/lib/stores/ihale-store';
 import { BelgeTuru, BELGE_TURU_LABELS } from '@/types/ai';
-import { FileText, Trash2, CheckCircle, AlertCircle, Loader2, Upload, FileImage, FileCode, Eye, X } from 'lucide-react';
+import { FileText, Trash2, CheckCircle, AlertCircle, Loader2, Upload, FileImage, FileCode, Eye, X, Download, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface SimpleDocumentListProps {
@@ -17,6 +17,11 @@ interface SimpleDocumentListProps {
   onCSVProcess?: (fileName: string) => Promise<void>;
   readOnly?: boolean; // 🆕 Yeni prop - sadece görüntüleme modu için
   onStartAnalysis?: () => void; // 🚀 AI Analiz başlatma butonu için
+  // 🆕 Toplu işlem için
+  selectedFiles?: Set<string>; // Seçili dosya isimleri
+  onToggleFileSelection?: (fileName: string) => void; // Dosya seçme/kaldırma
+  onBulkDownload?: () => void; // Toplu indirme
+  onBulkAnalyze?: () => void; // Toplu analiz
 }
 
 export function SimpleDocumentList({
@@ -29,7 +34,11 @@ export function SimpleDocumentList({
   onCSVRemove,
   onCSVProcess,
   readOnly = false, // 🆕 Default false - upload adımında düzenlenebilir
-  onStartAnalysis // 🚀 AI Analiz başlatma butonu için
+  onStartAnalysis, // 🚀 AI Analiz başlatma butonu için
+  selectedFiles = new Set(), // 🆕 Seçili dosyalar
+  onToggleFileSelection, // 🆕 Dosya seçme toggle
+  onBulkDownload, // 🆕 Toplu indirme
+  onBulkAnalyze // 🆕 Toplu analiz
 }: SimpleDocumentListProps) {
   const [isDragging, setIsDragging] = React.useState(false);
   const [previewModal, setPreviewModal] = React.useState<{ fileName: string; content: string } | null>(null);
@@ -366,8 +375,8 @@ export function SimpleDocumentList({
                   exit={{ opacity: 0, x: -50, scale: 0.95 }}
                   transition={{ duration: 0.2, delay: index * 0.03 }}
                   className={`
-                    group relative flex items-center gap-3 p-3 rounded-xl border backdrop-blur-sm
-                    transition-all duration-300 hover:scale-[1.01] hover:shadow-2xl hover:shadow-purple-500/10
+                    group relative flex items-center gap-2 p-2 rounded-lg border backdrop-blur-sm
+                    transition-all duration-200 hover:scale-[1.005] hover:shadow-lg hover:shadow-purple-500/5
                     bg-gradient-to-br from-slate-900/90 to-slate-800/90
                     ${file.status === 'processing'
                       ? 'border-blue-500/40 shadow-lg shadow-blue-500/20'
@@ -379,21 +388,35 @@ export function SimpleDocumentList({
                     }
                   `}
                 >
-                  {/* Dosya Tipi İkonu - Premium */}
-                  <div className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-lg bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/50 transform group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
-                    {getFileTypeIcon(file.fileMetadata.name)}
+                  {/* 🆕 Checkbox - Sadece completed dosyalar için */}
+                  {onToggleFileSelection && file.status === 'completed' && (
+                    <div className="flex-shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={selectedFiles.has(file.fileMetadata.name)}
+                        onChange={() => onToggleFileSelection(file.fileMetadata.name)}
+                        className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
+                      />
+                    </div>
+                  )}
+
+                  {/* Dosya Tipi İkonu - Compact */}
+                  <div className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-md bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/50 transform group-hover:scale-105 transition-all duration-200">
+                    <div className="scale-75">
+                      {getFileTypeIcon(file.fileMetadata.name)}
+                    </div>
                   </div>
 
                   {/* File Info */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <h4 className="font-semibold text-white text-sm truncate group-hover:text-blue-400 transition-colors">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <h4 className="font-medium text-white text-xs truncate group-hover:text-blue-400 transition-colors">
                         {file.fileMetadata.name}
                       </h4>
-                      
-                      {/* Status Badge - Premium */}
+
+                      {/* Status Badge - Compact */}
                       <div className={`
-                        flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium backdrop-blur-sm
+                        flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium backdrop-blur-sm
                         ${file.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
                           file.status === 'processing' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30 animate-pulse' :
                           file.status === 'error' ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
@@ -439,6 +462,16 @@ export function SimpleDocumentList({
                         </>
                       )}
                     </div>
+
+                    {/* 🆕 ZIP Badge - extractedFrom gösterimi - Compact */}
+                    {file.fileMetadata.extractedFrom && (
+                      <div className="mt-1 flex items-center gap-1 px-1.5 py-0.5 bg-yellow-500/10 border border-yellow-500/30 rounded">
+                        <span className="text-xs">📦</span>
+                        <span className="text-yellow-300 text-[10px] font-medium">
+                          {file.fileMetadata.extractedFrom.archiveName} ({file.fileMetadata.extractedFrom.totalFiles} dosya)
+                        </span>
+                      </div>
+                    )}
 
                     {/* 🆕 İçerik Önizlemesi (TXT/JSON/CSV için) */}
                     {file.extractedText && 
@@ -490,12 +523,12 @@ export function SimpleDocumentList({
                     )}
                   </div>
 
-                  {/* Actions */}
-                <div className="flex items-center gap-2 flex-shrink-0">
+                  {/* Actions - Compact */}
+                <div className="flex items-center gap-1 flex-shrink-0">
                   {file.status === 'pending' && (
                     <button
                       onClick={() => onFileProcess(file.fileMetadata.name)}
-                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium"
+                      className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-medium"
                       aria-label={`${file.fileMetadata.name} dosyasını işle`}
                     >
                       İşle
@@ -504,11 +537,11 @@ export function SimpleDocumentList({
                   {file.status !== 'processing' && (
                     <button
                       onClick={() => onFileRemove(file.fileMetadata.name)}
-                      className="p-1.5 hover:bg-red-500/20 rounded transition-colors"
+                      className="p-1 hover:bg-red-500/20 rounded transition-colors"
                       title="Sil"
                       aria-label={`${file.fileMetadata.name} dosyasını sil`}
                     >
-                      <Trash2 className="w-4 h-4 text-red-400" />
+                      <Trash2 className="w-3 h-3 text-red-400" />
                     </button>
                   )}
                 </div>
@@ -594,59 +627,111 @@ export function SimpleDocumentList({
         </div>
       </div>
 
-      {/* Summary - Premium Stats Cards */}
+      {/* 🆕 Toplu İşlem Butonları */}
+      {onBulkDownload && onBulkAnalyze && selectedFiles.size > 0 && (
+        <div className="flex items-center justify-between gap-4 p-4 bg-slate-900/50 border border-slate-800 rounded-xl">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+              <CheckCircle className="w-4 h-4 text-blue-400" />
+              <span className="text-sm font-semibold text-blue-300">
+                {selectedFiles.size} dosya seçildi
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                // Tümünü seç/kaldır
+                if (selectedFiles.size === fileStatuses.filter(f => f.status === 'completed').length) {
+                  // Tümü seçili - hepsini kaldır
+                  fileStatuses.filter(f => f.status === 'completed').forEach(f => {
+                    if (onToggleFileSelection) onToggleFileSelection(f.fileMetadata.name);
+                  });
+                } else {
+                  // Tümünü seç
+                  fileStatuses.filter(f => f.status === 'completed').forEach(f => {
+                    if (!selectedFiles.has(f.fileMetadata.name) && onToggleFileSelection) {
+                      onToggleFileSelection(f.fileMetadata.name);
+                    }
+                  });
+                }
+              }}
+              className="text-xs text-slate-400 hover:text-white transition-colors"
+            >
+              {selectedFiles.size === fileStatuses.filter(f => f.status === 'completed').length ? 'Seçimi Kaldır' : 'Tümünü Seç'}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onBulkDownload}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all text-sm font-medium"
+            >
+              <Download className="w-4 h-4" />
+              <span>Toplu İndir ({selectedFiles.size})</span>
+            </button>
+            <button
+              onClick={onBulkAnalyze}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white rounded-lg transition-all text-sm font-medium"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>Analize Gönder ({selectedFiles.size})</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Summary - Compact Stats Cards */}
       {(fileStatuses.length > 0 || csvFiles.length > 0) && (
-        <div className="grid grid-cols-4 gap-4 mx-8">
+        <div className="grid grid-cols-4 gap-2">
           {/* Toplam Dosya */}
-          <div className="bg-slate-900 border border-slate-800 rounded-lg p-5 hover:border-slate-700 transition-colors">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="p-2 bg-slate-800 rounded">
-                <FileText className="w-5 h-5 text-slate-400" />
+          <div className="bg-slate-900 border border-slate-800 rounded-lg p-3 hover:border-slate-700 transition-colors">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="p-1.5 bg-slate-800 rounded">
+                <FileText className="w-4 h-4 text-slate-400" />
               </div>
-              <div className="text-2xl font-bold text-slate-200">
+              <div className="text-xl font-bold text-slate-200">
                 {fileStatuses.length + csvFiles.length}
               </div>
             </div>
-            <div className="text-sm text-slate-500 font-medium">Toplam Dosya</div>
+            <div className="text-xs text-slate-500 font-medium">Toplam Dosya</div>
           </div>
 
           {/* Bekliyor */}
-          <div className="bg-slate-900 border border-slate-800 rounded-lg p-5 hover:border-yellow-900/50 transition-colors">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="p-2 bg-yellow-950/50 rounded">
-                <span className="text-xl">⏸</span>
+          <div className="bg-slate-900 border border-slate-800 rounded-lg p-3 hover:border-yellow-900/50 transition-colors">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="p-1.5 bg-yellow-950/50 rounded">
+                <span className="text-sm">⏸</span>
               </div>
-              <div className="text-2xl font-bold text-yellow-600">
+              <div className="text-xl font-bold text-yellow-600">
                 {fileStatuses.filter(f => f.status === 'pending').length + csvFiles.filter(c => c.status === 'pending').length}
               </div>
             </div>
-            <div className="text-sm text-slate-500 font-medium">Bekliyor</div>
+            <div className="text-xs text-slate-500 font-medium">Bekliyor</div>
           </div>
 
           {/* İşleniyor */}
-          <div className="bg-slate-900 border border-slate-800 rounded-lg p-5 hover:border-blue-900/50 transition-colors">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="p-2 bg-blue-950/50 rounded">
-                <span className="text-xl">⚙️</span>
+          <div className="bg-slate-900 border border-slate-800 rounded-lg p-3 hover:border-blue-900/50 transition-colors">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="p-1.5 bg-blue-950/50 rounded">
+                <span className="text-sm">⚙️</span>
               </div>
-              <div className="text-2xl font-bold text-blue-600">
+              <div className="text-xl font-bold text-blue-600">
                 {fileStatuses.filter(f => f.status === 'processing').length + csvFiles.filter(c => c.status === 'processing').length}
               </div>
             </div>
-            <div className="text-sm text-slate-500 font-medium">İşleniyor</div>
+            <div className="text-xs text-slate-500 font-medium">İşleniyor</div>
           </div>
 
           {/* Tamamlandı */}
-          <div className="bg-slate-900 border border-slate-800 rounded-lg p-5 hover:border-green-900/50 transition-colors">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="p-2 bg-green-950/50 rounded">
-                <CheckCircle className="w-5 h-5 text-green-700" />
+          <div className="bg-slate-900 border border-slate-800 rounded-lg p-3 hover:border-green-900/50 transition-colors">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="p-1.5 bg-green-950/50 rounded">
+                <CheckCircle className="w-4 h-4 text-green-700" />
               </div>
-              <div className="text-2xl font-bold text-green-700">
+              <div className="text-xl font-bold text-green-700">
                 {fileStatuses.filter(f => f.status === 'completed').length + csvFiles.filter(c => c.status === 'completed').length}
               </div>
             </div>
-            <div className="text-sm text-slate-500 font-medium">Tamamlandı</div>
+            <div className="text-xs text-slate-500 font-medium">Tamamlandı</div>
           </div>
         </div>
       )}

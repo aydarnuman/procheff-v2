@@ -14,53 +14,15 @@ export async function GET(req: NextRequest, context: { params: Promise<{ tenderI
 
   const savedData = result.analysisResult || {};
 
-  console.log(`🔄 [TRANSFORM] Transforming data for tender ${tenderId}`);
-  console.log(`🔄 [TRANSFORM] savedData keys:`, Object.keys(savedData));
-  console.log(`🔄 [TRANSFORM] Has extracted_data?`, !!savedData.extracted_data);
+  console.log(`✅ [DB API] Returning scraper format for tender ${tenderId}`);
+  console.log(`✅ [DB API] Keys:`, Object.keys(savedData));
+  console.log(`✅ [DB API] Has details?`, !!savedData.details, `(${Object.keys(savedData.details || {}).length} fields)`);
+  console.log(`✅ [DB API] Has fullText?`, !!savedData.fullText, `(${(savedData.fullText || '').length} chars)`);
+  console.log(`✅ [DB API] Has documents?`, !!savedData.documents, `(${(savedData.documents || []).length} docs)`);
 
-  // Eğer savedData zaten doğru formattaysa (extracted_data var), direkt döndür
-  if (savedData.extracted_data) {
-    console.log(`✅ [TRANSFORM] Already in correct format, returning as-is`);
-    return Response.json({ success: true, data: JSON.parse(JSON.stringify(savedData)) });
-  }
-
-  // Değilse, ihale scraper formatından AI analysis formatına dönüştür
-  console.log(`🔄 [TRANSFORM] Converting scraper format to AI analysis format`);
-  const transformedData = {
-    extracted_data: {
-      kurum: savedData.organization || '',
-      ihale_turu: 'Hizmet Alımı', // Default, details'den parse edilebilir
-      kisi_sayisi: null,
-      ogun_sayisi: null,
-      gun_sayisi: null,
-      tahmini_butce: null,
-      ozel_sartlar: [],
-      riskler: [],
-      guven_skoru: 0.7, // Scraper data için default güven skoru
-      kanitlar: {},
-      veri_havuzu: {
-        ham_metin: savedData.fullText || '',
-        kaynaklar: savedData.documents || []
-      },
-      detayli_veri: savedData.details || {},
-      tablolar: []
-    },
-    contextual_analysis: {
-      firsat_analizi: { puan: 0, gerekce: 'Henüz analiz edilmedi' },
-      operasyonel_riskler: { seviye: 'orta', detaylar: [] },
-      rekabet_analizi: { tahmini_katilimci: 0, zorluk: 'orta' },
-      oneriler: ['Detaylı analiz için "Tam Analiz Yap" butonunu kullanın']
-    },
-    fullContent: result.fullContent || {},
-    processing_metadata: {
-      processing_time: 0,
-      ai_provider: 'cached_scraper_data',
-      confidence_score: 0.7
-    }
-  };
-
-  // Saf JSON olarak döndür
-  return Response.json({ success: true, data: JSON.parse(JSON.stringify(transformedData)) });
+  // ✅ MODAL için scraper formatını direkt döndür
+  // { title, organization, details, documents, fullText, itemsList }
+  return Response.json({ success: true, data: JSON.parse(JSON.stringify(savedData)) });
 }
 
 export async function POST(req: NextRequest, context: { params: Promise<{ tenderId: string }> }) {
